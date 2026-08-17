@@ -1,0 +1,28 @@
+diff --git a/node_modules/onnxruntime-react-native/.bun-tag-b2c3099d9dfb3181 b/.bun-tag-b2c3099d9dfb3181
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/android/CMakeLists.txt b/android/CMakeLists.txt
+index 2f814e871ad773c46a958c99ac5efc90d8e64357..b460790e56f8f9171a9fe853591d93d2b6837572 100644
+--- a/android/CMakeLists.txt
++++ b/android/CMakeLists.txt
+@@ -97,3 +97,7 @@ target_link_libraries(
+   ${log-lib} # <-- Logcat logger
+   android # <-- Android JNI core
+ )
++
++# Android 15+ supports 16 KB page size devices; shared libraries must have
++# LOAD segments aligned to 16 KB or the OS refuses to load the app.
++target_link_options(onnxruntimejsi PRIVATE "-Wl,-z,max-page-size=16384")
+diff --git a/android/build.gradle b/android/build.gradle
+index 41b43599a9af6ef1c170047d39db1f3baa6ca682..50126eb4e1606247d20e1aa7fb71c4008bf13b45 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -247,7 +247,7 @@ dependencies {
+     extractLibs "com.microsoft.onnxruntime:onnxruntime-android:latest.integration@aar"
+   }
+ 
+-  if (VersionNumber.parse(REACT_NATIVE_VERSION) < VersionNumber.parse("0.71")) {
++  if (REACT_NATIVE_MINOR_VERSION < 71) {
+     extractLibs "com.facebook.fbjni:fbjni:+:headers"
+     extractLibs "com.facebook.fbjni:fbjni:+"
+   }

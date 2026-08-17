@@ -1,0 +1,72 @@
+{
+  "name": "iphotos",
+  "main": "expo-router/entry",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "expo start",
+    "dev": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "doctor": "npx expo-doctor"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
+    "@shopify/flash-list": "2.0.2",
+    "buffer": "^6.0.3",
+    "expo": "~57.0.13",
+    "expo-application": "~57.0.2",
+    "expo-constants": "~57.0.11",
+    "expo-crypto": "~57.0.1",
+    "expo-device": "~57.0.1",
+    "expo-file-system": "~57.0.4",
+    "expo-font": "~57.0.1",
+    "expo-haptics": "~57.0.1",
+    "expo-image": "~57.0.3",
+    "expo-image-manipulator": "~57.0.11",
+    "expo-linking": "~57.0.6",
+    "expo-local-authentication": "~57.0.2",
+    "expo-media-library": "~57.0.4",
+    "expo-router": "~57.0.13",
+    "expo-secure-store": "~57.0.1",
+    "expo-sharing": "~57.0.12",
+    "expo-splash-screen": "~57.0.6",
+    "expo-sqlite": "~57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.2",
+    "expo-video": "~57.0.2",
+    "expo-video-thumbnails": "~57.0.1",
+    "onnxruntime-react-native": "^1.24.3",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-nitro-modules": "^0.36.5",
+    "react-native-quick-crypto": "^1.1.7",
+    "react-native-reanimated": "4.5.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-web": "~0.21.0",
+    "react-native-worklets": "0.10.1",
+    "upng-js": "^2.1.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "@xenova/transformers": "^2.17.2",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.1",
+    "jpeg-js": "^0.4.4",
+    "typescript": "~6.0.3"
+  },
+  "trustedDependencies": [
+    "protobufjs",
+    "unrs-resolver"
+  ],
+  "patchedDependencies": {
+    "onnxruntime-react-native@1.24.3": "patches/onnxruntime-react-native@1.24.3.patch"
+  }
+}

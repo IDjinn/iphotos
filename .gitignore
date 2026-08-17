@@ -1,0 +1,49 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# editor / agent tooling
+.vscode/
+.zcode/
+.idea/
+
+# native build outputs (android/ folder itself is hand-maintained source — keep tracked)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+android/.cxx/
+android/.kotlin/
+android/local.properties
+
+# app build outputs (APKs copied out of the WSL build)
+/build/
+
+# secrets
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+.env*.local
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+
+# typescript
+*.tsbuildinfo

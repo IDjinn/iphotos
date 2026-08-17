@@ -1,0 +1,77 @@
+{
+  "expo": {
+    "name": "iPhotos",
+    "slug": "iphotos",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "iphotos",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/expo.icon",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "iPhotos needs access to your photo library to display your photos and videos.",
+        "NSFaceIDUsageDescription": "iPhotos uses Face ID to unlock your Locked Folder."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1F1F1F",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+      ],
+      "package": "com.idjinn.iphotos"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0B0B0D",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow iPhotos to access your photos.",
+          "savePhotosPermission": "Allow iPhotos to save photos.",
+          "granularPermissions": [
+            "photo",
+            "video"
+          ]
+        }
+      ],
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-video",
+      "expo-sharing",
+      "expo-font",
+      "expo-image",
+      "expo-status-bar",
+      "react-native-quick-crypto"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
