@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
@@ -11,6 +11,7 @@ import { countLabeledAssets } from '@/data/labels-repository';
 import { resolveActiveModel } from '@/stores/ai-model';
 import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useAccountStore } from '@/stores/account';
+import { useBackupStore } from '@/stores/backup';
 import { useClassificationStore } from '@/stores/classification';
 import { useSettingsStore } from '@/stores/settings';
 import type { ThemeMode } from '@/theme/context';
@@ -56,6 +57,8 @@ export default function SettingsScreen() {
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
   const account = useAccountStore();
+  const backup = useBackupStore();
+  const startBackup = useBackupStore((s) => s.start);
   const localSearchEnabled = useClassificationStore((s) => s.localEnabled);
   const setLocalSearchEnabled = useClassificationStore((s) => s.setLocalEnabled);
   const indexationRunning = useClassificationStore((s) => s.running);
@@ -89,6 +92,25 @@ export default function SettingsScreen() {
         ? `${formatCount(labeledCount)} items labeled on this device`
         : 'Labels your folders on this device';
 
+  const backupProgress = backup.progress;
+  const backupCaption = !backup.running
+    ? backup.lastError
+      ? backup.lastError
+      : backupProgress && backupProgress.total > 0
+        ? `Last run: ${formatCount(backupProgress.uploaded)} uploaded · ${formatCount(backupProgress.skipped)} already saved${
+            backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} failed` : ''
+          }`
+        : 'Upload your photos to the cloud'
+    : backupProgress
+      ? backupProgress.phase === 'inventory'
+        ? 'Scanning your library…'
+        : backupProgress.total > 0
+          ? `Backing up ${formatCount(Math.min(backupProgress.processed, backupProgress.total))} of ${formatCount(
+              backupProgress.total
+            )}${backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} failed` : ''}`
+          : 'Backing up…'
+      : 'Starting…';
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -111,7 +133,7 @@ export default function SettingsScreen() {
             style={({ pressed }) => [styles.row, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
             onPress={() => {
               haptic('light');
-              router.push('/login');
+              router.push(account.user ? '/settings/account' : '/login');
             }}
             accessibilityLabel="Account settings"
           >
@@ -127,17 +149,61 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="Backup & sync">
-          <View style={[styles.row, { backgroundColor: colors.surface }]}>
-            <Icon name="cloud-offline-outline" size={22} color={colors.iconInactive} />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                Backup
-              </ThemedText>
-              <ThemedText variant="bodySmall" color="secondary">
-                Requires Cloud mode — coming in a future update
-              </ThemedText>
+          {account.mode === 'cloud' ? (
+            <Pressable
+              style={({ pressed }) => [styles.row, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+              onPress={() => {
+                haptic('medium');
+                if (!backup.running) void startBackup();
+              }}
+              disabled={backup.running}
+              accessibilityLabel="Back up photos"
+            >
+              <Icon name="cloud-upload-outline" size={22} color={colors.accent} />
+              <View style={styles.rowText}>
+                <ThemedText variant="body" style={styles.rowLabel}>
+                  Backup
+                </ThemedText>
+                <ThemedText variant="bodySmall" color="secondary">
+                  {backupCaption}
+                </ThemedText>
+                {backup.running && backup.progress && backup.progress.total > 0 ? (
+                  <View style={styles.backupBarTrack}>
+                    <View
+                      style={[
+                        styles.backupBarFill,
+                        {
+                          backgroundColor: colors.accent,
+                          flex: Math.max(
+                            0.02,
+                            (backup.progress.processed - backup.progress.failed) /
+                              Math.max(1, backup.progress.total)
+                          ),
+                        },
+                      ]}
+                    />
+                  </View>
+                ) : null}
+              </View>
+              {backup.running ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+              )}
+            </Pressable>
+          ) : (
+            <View style={[styles.row, { backgroundColor: colors.surface }]}>
+              <Icon name="cloud-offline-outline" size={22} color={colors.iconInactive} />
+              <View style={styles.rowText}>
+                <ThemedText variant="body" style={styles.rowLabel}>
+                  Backup
+                </ThemedText>
+                <ThemedText variant="bodySmall" color="secondary">
+                  Requires Cloud mode — log in to back up your photos
+                </ThemedText>
+              </View>
             </View>
-          </View>
+          )}
           <View style={[styles.row, { backgroundColor: colors.surface, marginTop: 8 }]}>
             <Icon name="archive-outline" size={22} color={colors.iconInactive} />
             <View style={styles.rowText}>
@@ -325,5 +391,7 @@ const styles = StyleSheet.create({
   },
   rowLabel: { flex: 1 },
   rowText: { flex: 1, gap: 2 },
+  backupBarTrack: { height: 4, borderRadius: 2, backgroundColor: 'rgba(128,128,128,0.25)', flexDirection: 'row', marginTop: 4 },
+  backupBarFill: { borderRadius: 2 },
   license: { marginTop: 14, lineHeight: 18, textAlign: 'center' },
 });

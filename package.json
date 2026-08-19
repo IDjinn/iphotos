@@ -16,6 +16,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@shopify/flash-list": "2.0.2",
+    "axios": "^1.19.0",
     "buffer": "^6.0.3",
     "expo": "~57.0.13",
     "expo-application": "~57.0.2",

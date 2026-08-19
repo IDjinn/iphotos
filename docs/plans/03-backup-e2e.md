@@ -1,6 +1,16 @@
 # 03 — Motor de backup com criptografia ponta a ponta (E2E)
 
-> Fase 2 (estágio A, local) → Fase 3 (B–F, cloud) · Depende de: 02 · Alimenta: 04, 05B, 06, 07
+> **Atualização 2026-08-18 (D11): superseded para o v1.** O backend implementado
+> (doc 09) é um **servidor confiável**: upload em texto claro com dedup SHA-256,
+> variantes geradas no servidor e EXIF indexado no PostgreSQL — **sem criptografia
+> de cliente**. O estágio **03A (inventário local) continua 100% válido e é o próximo
+> passo** (o `content_hash` SHA-256 casa exatamente com o dedup do backend); o upload
+> da fase 3 usa `cloud-photos-repository` (doc 09 §4) no lugar de `StorageProvider` +
+> cifragem. Os estágios B–F (criptografia, chave de recuperação, GC/tombstones com
+> grace period) permanecem planejados para o **modo E2E futuro** — a tabela `users`
+> do backend já reserva os campos (`wrapped_master_key`, `kdf_salt`, `kdf_params`).
+>
+> Fase 2 (estágio A, local) → [03B–F: futuro, modo E2E] · Depende de: 02 · Alimenta: 04, 05B, 06, 07, 09
 > Objetivo: planejar **como os backups das imagens serão feitos**: inventário local
 > com hashes, fila com retomada, criptografia do lado do cliente (o servidor nunca
 > vê conteúdo), upload deduplicado, restore em novo dispositivo e limpeza de exclusões.

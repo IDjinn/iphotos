@@ -7,6 +7,13 @@
 > com **modelos locais no dispositivo** e um **serviço opcional de classificação na
 > nuvem** (decisão D4): durante o upload, a imagem é enviada de forma anônima para
 > classificação e o resultado volta ao cliente, que o cifra e armazena junto ao asset.
+>
+> **Nota 2026-08-18 (D11):** com o backend v1 (doc 09) sendo servidor confiável, o
+> fluxo do 05B fica **mais simples** — a foto já transita em texto claro no upload
+> (`POST /api/photos`), então o hook pós-upload pode chamar o classificador sem o
+> argumento de anonimato do §5.3 (que permanece como design para o modo E2E futuro).
+> O endpoint `/v1/classify` **não existe** no backend v1 (follow-up, doc 09 §7); a
+> dependência de 03C cai — o 05B passa a depender apenas do fluxo de upload do doc 09.
 
 ## 1. Contexto atual
 

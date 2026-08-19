@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SystemUI from 'expo-system-ui';
 
 import { ViewerOverlay } from '@/components/viewer/ViewerOverlay';
+import { useAccountStore } from '@/stores/account';
 import { useClassificationStore } from '@/stores/classification';
 import { useLibraryStore } from '@/stores/library';
 import { ThemeProvider, useTheme } from '@/theme/context';
@@ -30,6 +31,9 @@ function AppShell() {
 
   useEffect(() => {
     refreshLibrary();
+    // Validate the persisted refresh token (docs/plans/09-backend-api.md §4) —
+    // flips the account to cloud mode when a session survives the restart.
+    void useAccountStore.getState().resolveSession();
     void SplashScreen.hideAsync().catch(() => undefined);
   }, [refreshLibrary]);
 
@@ -78,6 +82,8 @@ function AppShell() {
         <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/ai-model" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/ai-labeling" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings/account" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="cloud-photos" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="album/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="labels" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="label/[label]" options={{ animation: 'slide_from_right' }} />

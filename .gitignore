@@ -47,3 +47,9 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+
+bun.lock
+.env*
+!.env.example
+*.apk

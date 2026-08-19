@@ -78,16 +78,20 @@
   `Cloud service is not available yet — you can continue in offline mode.`
   e oferece botão `Continue offline` que conclui o onboarding em modo offline.
   Assim, a Fase 3 apenas troca o handler do submit pela chamada real de API
-  (doc 03 §auth), sem retrabalho de UI.
+  (doc 09 §3.1: `POST /api/auth/login|register`, auth e-mail+senha+JWT), sem
+  retrabalho de UI.
 - Ambas têm link de volta para `/welcome`.
 
 ### 2.4 Conclusão do onboarding
 
 - "Continue without account" (e o fallback do stub) → `completeOnboarding('offline')`
   → `router.replace('/')`.
-- Após login/registro reais (Fase 3): `completeOnboarding('cloud')`; exibir em
-  sequência a geração da chave de recuperação (doc 03 §11) e o consentimento de
-  classificação (doc 05 §5) — já especificados nos docs respectivos.
+- Após login/registro reais (Fase 3, doc 09): `completeOnboarding('cloud')` com
+  tokens em SecureStore. A geração da chave de recuperação (doc 03 §11) e o
+  consentimento de classificação (doc 05 §5) pertencem ao **modo E2E futuro** —
+  no v1 (servidor confiável, D11) não há chave de recuperação; trocar o checkbox
+  "losing your password…" por aviso de que **reset de senha ainda não existe**
+  no backend (follow-up doc 09 §7) até o endpoint existir.
 
 ## 3. Especificação técnica
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -8,6 +8,9 @@ import { Icon } from '@/components/Icon';
 import { LabeledInput } from '@/components/LabeledInput';
 import { PressableScale } from '@/components/PressableScale';
 import { ThemedText } from '@/components/ThemedText';
+import { login } from '@/data/api-client';
+import { authErrorMessage } from '@/data/auth-errors';
+import { useAccountStore } from '@/stores/account';
 import { useOnboardingStore } from '@/stores/onboarding';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -21,17 +24,28 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [unavailable, setUnavailable] = useState(false);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     const next: typeof errors = {};
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = 'Enter a valid e-mail address.';
     if (password.length === 0) next.password = 'Enter your password.';
     setErrors(next);
-    if (Object.keys(next).length === 0) {
-      // Cloud auth arrives with the phase-3 backend (docs/plans/03-backup-e2e.md §10).
-      haptic('medium');
-      setUnavailable(true);
+    if (Object.keys(next).length > 0) return;
+
+    haptic('medium');
+    setSubmitting(true);
+    setUnavailable(null);
+    try {
+      const user = await login(email.trim(), password);
+      useAccountStore.getState().signIn(user);
+      complete('cloud');
+      router.replace('/');
+    } catch (error) {
+      setUnavailable(authErrorMessage(error));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -62,7 +76,7 @@ export default function LoginScreen() {
           value={email}
           onChangeText={(text) => {
             setEmail(text);
-            setUnavailable(false);
+            setUnavailable(null);
           }}
           error={errors.email}
           autoCapitalize="none"
@@ -75,13 +89,19 @@ export default function LoginScreen() {
           value={password}
           onChangeText={(text) => {
             setPassword(text);
-            setUnavailable(false);
+            setUnavailable(null);
           }}
           error={errors.password}
           secureTextEntry
           autoComplete="password"
         />
-        <Pressable hitSlop={8} onPress={() => setUnavailable(true)} accessibilityRole="button">
+        <Pressable
+          hitSlop={8}
+          onPress={() =>
+            setUnavailable('Password reset is not available yet — a recovery e-mail flow arrives in a future update.')
+          }
+          accessibilityRole="button"
+        >
           <ThemedText variant="bodySmall" color="accent" style={styles.forgot}>
             Forgot password?
           </ThemedText>
@@ -92,10 +112,15 @@ export default function LoginScreen() {
           onPress={submit}
           accessibilityRole="button"
           accessibilityLabel="Log in"
+          disabled={submitting}
         >
-          <ThemedText variant="titleMedium" style={{ color: colors.background }}>
-            Log in
-          </ThemedText>
+          {submitting ? (
+            <ActivityIndicator color={colors.background} />
+          ) : (
+            <ThemedText variant="titleMedium" style={{ color: colors.background }}>
+              Log in
+            </ThemedText>
+          )}
         </PressableScale>
 
         {unavailable ? (
@@ -106,7 +131,7 @@ export default function LoginScreen() {
             <Icon name="cloud-offline-outline" size={20} color={colors.accent} />
             <View style={styles.bannerText}>
               <ThemedText variant="bodySmall" color="secondary">
-                Cloud service is not available yet — you can continue in offline mode.
+                {unavailable}
               </ThemedText>
               <Pressable
                 hitSlop={8}

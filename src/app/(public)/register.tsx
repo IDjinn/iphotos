@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -8,6 +8,9 @@ import { Icon } from '@/components/Icon';
 import { LabeledInput } from '@/components/LabeledInput';
 import { PressableScale } from '@/components/PressableScale';
 import { ThemedText } from '@/components/ThemedText';
+import { register } from '@/data/api-client';
+import { authErrorMessage } from '@/data/auth-errors';
+import { useAccountStore } from '@/stores/account';
 import { useOnboardingStore } from '@/stores/onboarding';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -31,9 +34,10 @@ export default function RegisterScreen() {
   const [confirm, setConfirm] = useState('');
   const [ack, setAck] = useState(false);
   const [errors, setErrors] = useState<RegisterErrors>({});
-  const [unavailable, setUnavailable] = useState(false);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     const next: RegisterErrors = {};
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = 'Enter a valid e-mail address.';
     if (password.length < 8 || !/\d/.test(password)) {
@@ -42,11 +46,20 @@ export default function RegisterScreen() {
     if (confirm !== password) next.confirm = 'Passwords do not match.';
     if (!ack) next.ack = 'Please confirm you understand.';
     setErrors(next);
-    if (Object.keys(next).length === 0) {
-      // Cloud registration (and the recovery-key flow) arrives with the
-      // phase-3 backend — docs/plans/03-backup-e2e.md §6 and §11.
-      haptic('medium');
-      setUnavailable(true);
+    if (Object.keys(next).length > 0) return;
+
+    haptic('medium');
+    setSubmitting(true);
+    setUnavailable(null);
+    try {
+      const user = await register(email.trim(), password, name.trim() || undefined);
+      useAccountStore.getState().signIn(user);
+      complete('cloud');
+      router.replace('/');
+    } catch (error) {
+      setUnavailable(authErrorMessage(error));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -84,7 +97,7 @@ export default function RegisterScreen() {
           value={email}
           onChangeText={(text) => {
             setEmail(text);
-            setUnavailable(false);
+            setUnavailable(null);
           }}
           error={errors.email}
           autoCapitalize="none"
@@ -97,7 +110,7 @@ export default function RegisterScreen() {
           value={password}
           onChangeText={(text) => {
             setPassword(text);
-            setUnavailable(false);
+            setUnavailable(null);
           }}
           error={errors.password}
           secureTextEntry
@@ -108,7 +121,7 @@ export default function RegisterScreen() {
           value={confirm}
           onChangeText={(text) => {
             setConfirm(text);
-            setUnavailable(false);
+            setUnavailable(null);
           }}
           error={errors.confirm}
           secureTextEntry
@@ -128,7 +141,8 @@ export default function RegisterScreen() {
         >
           <Icon name={ack ? 'checkbox' : 'square-outline'} size={22} color={ack ? colors.accent : colors.iconInactive} />
           <ThemedText variant="bodySmall" color="secondary" style={styles.ackText}>
-            I understand that losing my password may make my cloud backups unrecoverable.
+            I understand that password reset is not available yet — losing my password
+            will make my cloud backups unrecoverable.
           </ThemedText>
         </Pressable>
         {errors.ack ? (
@@ -142,10 +156,15 @@ export default function RegisterScreen() {
           onPress={submit}
           accessibilityRole="button"
           accessibilityLabel="Create account"
+          disabled={submitting}
         >
-          <ThemedText variant="titleMedium" style={{ color: colors.background }}>
-            Create account
-          </ThemedText>
+          {submitting ? (
+            <ActivityIndicator color={colors.background} />
+          ) : (
+            <ThemedText variant="titleMedium" style={{ color: colors.background }}>
+              Create account
+            </ThemedText>
+          )}
         </PressableScale>
 
         {unavailable ? (
@@ -156,7 +175,7 @@ export default function RegisterScreen() {
             <Icon name="cloud-offline-outline" size={20} color={colors.accent} />
             <View style={styles.bannerText}>
               <ThemedText variant="bodySmall" color="secondary">
-                Cloud service is not available yet — you can continue in offline mode.
+                {unavailable}
               </ThemedText>
               <Pressable
                 hitSlop={8}

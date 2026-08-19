@@ -2,7 +2,11 @@
 
 > **Status: 🟡 Fase 1 implementada (2026-08-16)** — seções Account (modo local + CTA login), Backup & sync (placeholders desabilitados) e Smart search com toggle/contagem; placeholder "Local only · phase 2" removido. Subtelas `/settings/account`, `/settings/backup` e `/settings/backup/folders` ficam para as Fases 2–3.
 >
-> Fase 1 (Conta básica) → Fase 2–3 (Backup, Segurança) · Depende de: 01, 02, 03, 04, 05, 06
+> **Atualização 2026-08-18:** o backend v1 existe (doc 09) — a subtelas da Fase 3
+> consomem `GET /api/usage`, `POST /api/auth/logout` e o fluxo de
+> backup/restore do doc 09 §4 (v1 sem MasterKey/recovery key; ver §4 abaixo).
+>
+> Fase 1 (Conta básica) → Fase 2–3 (Backup, Segurança) · Depende de: 01, 02, 03, 04, 05, 06, 09
 > Objetivo: estruturar as Settings do app com as seções de **Conta**, **Modo ativo**,
 > **Backup** (status, pastas, condições, restore, importar ZIP) e **Segurança/Privacidade**,
 > substituindo o placeholder atual "Backup: Local only · phase 2".
@@ -54,11 +58,15 @@ Backup & sync
 ## 4. `/settings/account`
 
 - **Com conta**: e-mail; avatar gerado (hash do e-mail → cor/iniciais, sem serviço
-  externo); plano atual + barra de uso (`GET /usage` do doc 03 §10); "Manage
+  externo); plano atual + barra de uso (`GET /api/usage` — **implementado no backend
+  v1**, doc 09 §3.2: `{ usedBytes, quotaBytes, photoCount, variantCount }`);
+  "Manage
   subscription" (deep link do billing, D5); **Sign out**; **Delete account**
   (fluxo destrutivo: exigir senha + oferecer "download all data antes" = restore
   completo; confirmação em 2 passos; agenda exclusão de blobs no servidor).
-- **Segurança** (subseção): "Change password" (re-wrap da MasterKey, doc 03 §6.2);
+- **Segurança** (subseção): "Change password" (re-wrap da MasterKey, doc 03 §6.2 —
+  **só no modo E2E futuro**; no v1 depende de endpoint de troca de senha, que é
+  follow-up do backend, doc 09 §7);
   "Recovery key" (ver = exigir senha; regenerar = invalidar a anterior);
   "Cloud classification" (toggle opt-in do doc 05 §5, default off, com link para a
   explicação honesta de privacidade).

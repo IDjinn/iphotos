@@ -2,7 +2,15 @@
 
 > **Status: 🟡 base implementada (2026-08-16)** — `AppMode`, store `account` (mode/user/plan/signOut) e matriz refletida na UI (Settings mostra modo local + recursos desabilitados com explicação). `StorageProvider`, transições cloud e billing ainda não implementados (§3, §5, §6).
 >
-> Fase 1 (base) → Fase 3 (billing) → Futuro (hosting custom) · Depende de: 01 · Alimenta: 03, 07
+> **Atualização 2026-08-18 (D11):** o backend do modo Cloud **v1 já existe** e é um
+> **servidor confiável estilo Immich** (doc 09): auth e-mail+senha+JWT, upload em
+> texto claro com dedup SHA-256, variantes thumb/preview geradas no servidor e EXIF
+> indexado no PostgreSQL. Isso muda a linha "Servidor vê as fotos" do modo Cloud:
+> no v1 o servidor **vê** as fotos enviadas (não há criptografia de cliente).
+> O zero-knowledge do §5 e o `StorageProvider` (§3) permanecem como design futuro
+> (hosting custom / modo E2E) — os campos E2E já estão reservados no backend.
+>
+> Fase 1 (base) → Fase 3 (billing) → Futuro (hosting custom) · Depende de: 01 · Alimenta: 03, 07, 09
 > Objetivo: definir os dois modos de operação do app, o que cada um habilita e
 > como o usuário transita entre eles, incluindo o modelo de licenciamento
 > (vitalícia para hosting custom no Offline; assinatura mensal no Cloud).

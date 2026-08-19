@@ -1,6 +1,6 @@
 # Roadmap — iPhotos: Conta, Backup E2E e Classificação
 
-> Última atualização: 2026-08-16 · Idioma: PT-BR (código e UI permanecem em inglês)
+> Última atualização: 2026-08-18 · Idioma: PT-BR (código e UI permanecem em inglês)
 > Esta pasta (`docs/plans/`) contém o planejamento por tópicos. Cada documento é
 > autocontido e pensado para ser implementado **um tópico por sessão de trabalho**.
 
@@ -41,6 +41,8 @@ A evolução planejada adiciona, sem perder o caráter local-first:
 | [05-classificacao.md](./05-classificacao.md) | Classificação (IA) | Modelos locais on-device + serviço opcional de classificação na nuvem |
 | [06-importacao-zip.md](./06-importacao-zip.md) | Importação por ZIP | Seleção, validação, extração, dedupe, salvamento em lote, relatório |
 | [07-configuracoes-conta.md](./07-configuracoes-conta.md) | Configurações da conta | Telas de conta, backup, segurança e privacidade nas Settings |
+| [08-pasta-segura-cofre.md](./08-pasta-segura-cofre.md) | Pasta Segura (cofre) | Itens cifrados com AES-256-GCM em storage privado, invisíveis à galeria do sistema |
+| [09-backend-api.md](./09-backend-api.md) | Backend API (contrato) | Endpoints reais do backend v1 (auth JWT, upload, variantes, usage) e o mapeamento para as seams do app |
 
 ## 3. Fases de implementação
 
@@ -57,10 +59,13 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
 - 04 Regras de pastas sincronizadas/ignoradas
 - 06 Importação por ZIP (reaproveita o inventário para dedupe)
 
-### Fase 3 — Cloud E2E (backend + app)
-- 03B–03E Criptografia, upload, restore, exclusões/GC
+### Fase 3 — Cloud v1 (backend ✅ implementado + integração no app)
+- 09 Integração front↔backend: auth real (e-mail+senha+JWT), upload com dedup,
+  variantes (thumb/preview/original), polling de estado, usage
+- 07 Telas de backup/conta conectadas ao serviço (`GET /api/usage`, logout real)
 - 02 Billing/planos (Play Billing ou Stripe — decisão D5)
-- 07 Telas de backup/conta conectadas ao serviço
+- E2E/zero-knowledge (03B–03F): **futuro** — o backend v1 é servidor confiável (D11)
+  e já reserva os campos E2E na tabela `users`
 
 ### Fase 4 — Classificação local
 - 05A Runtime de modelos on-device, indexação em background, busca semântica
@@ -81,6 +86,7 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
                                 └──► 05B classificação cloud (precisa de 03C)
 05A classificação local (independente — pode rodar antes mesmo das fases 1–3)
 07 settings (parcial na fase 1; completa conforme 03/05 avançam)
+09 backend-api (backend já implementado; o front da fase 3 consome este contrato)
 ```
 
 ## 5. Status
@@ -95,6 +101,7 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
 | 06 Importação ZIP | 2 | ⬜ Não iniciado (placeholder "Coming soon" nas Settings) |
 | 07 Configurações da conta | 1–3 | 🟡 **Fase 1 implementada**: seções Account, Backup & sync e Smart search; subtelas `/settings/account` e `/settings/backup` nas fases 2–3 |
 | 08 Pasta Segura (cofre cifrado) | — | 🟡 **Implementado** (2026-08-16): itens movidos para a Pasta Segura são cifrados com AES-256-GCM em storage privado e removidos da galeria do sistema; migração dos itens hide-only antigos; ver doc `08-pasta-segura-cofre.md` |
+| 09 Backend API | 3 | ✅ **Implementado** (2026-08-18): backend .NET 10 + PostgreSQL em `C:\dev\csharp\iPhotos` — auth e-mail+senha+JWT (Argon2id, refresh rotativo), upload multipart com dedup SHA-256 e quota, variantes thumb/preview/original via worker separado, indexação EXIF (data/câmera/GPS/dimensões), listagem com filtros, usage; 107 testes (TDD) + compose; **integração do front pendente** (doc `09-backend-api.md`) |
 
 > Atualizar esta tabela ao concluir cada estágio.
 
@@ -121,15 +128,32 @@ Adições de 2026-08-17 (navegação por labels + progresso da indexação):
 - Indexer (`label-indexer.ts`) reporta progresso `{scanned, total}` das pastas pendentes e falhas de leitura por pasta; store `classification` expõe `progress`/`lastError` (erro persistido) e o Settings mostra "Indexing… X% (a of b)" + último erro em vermelho.
 - Correção de build: **removido `expo-video-thumbnails` do array `plugins` do app.json** — o pacote não exporta config plugin e quebrava a resolução de config do CLI/prebuild ("No app.plugin.js found"); o autolink da dep continua válido.
 
+Adições de 2026-08-18 (backend v1 implementado, doc 09):
+
+- **Backend próprio** em `C:\dev\csharp\iPhotos` (.NET 10 + PostgreSQL 17, TDD): API
+  (`/api/auth/*`, `/api/photos*`, `/api/usage`, `/health`) + **worker separado** que
+  consome a fila `variant_jobs` (FOR UPDATE SKIP LOCKED) e gera **thumbnail 320px /
+  preview 2048px** e indexa **EXIF** (takenAt, câmera, GPS, dimensões).
+- Auth **e-mail + senha** com Argon2id + JWT (access 15 min, refresh 30 dias rotativo,
+  reuso de refresh revogado → 401). Upload multipart (JPEG/PNG/WebP, 200 MB) com
+  **dedup por SHA-256 por conta** e quota 15 GiB (413). Erros como `{ error }`
+  (400/401/404/409/413/429). Enums como strings, datas UTC.
+- Rodar: `docker compose up --build` (postgres + api + worker, migrations no startup);
+  API em `http://localhost:5205`, OpenAPI `/openapi/v1.json`. Testes: `dotnet test`.
+- Decisões novas: **D11** (auth padrão / servidor confiável, supersede OPAQUE no v1)
+  e **D12** (stack do backend). Campos E2E ficam reservados na tabela `users`.
+
 ## 5.2 Próximas etapas (pós-implementação, em ordem recomendada)
 
-1. **03A — Inventário local**: tabela `backup_inventory`, scan incremental com SHA-256 e cache por `size+mtime`, estatísticas. Desbloqueia 04 e 06.
-2. **04 — Pastas sincronizadas/ignoradas**: `sync_rules`, tela `settings/backup/folders`, reconciliação com o scan (reusa `listDeviceFolders`).
-3. **06 — Importação por ZIP**: lib nativa + wrapper, dedupe pelos hashes do 03A, álbum "Imported — <nome>".
-4. **05A-ML — Modelo local de verdade**: `onnxruntime-react-native` (dev build), CLIP ViT-B/32 int8 baixado sob demanda, tabela `asset_embeddings`, indexação via `expo-task-manager` em background (substituindo a indexação na abertura), provider semântico na busca. A interface atual (labels + `source`) já acomoda o novo modelo sem migração de dados, e a escolha do modelo já vem de `model-registry`/tela `/settings/ai-model`.
-5. **03B–F — Cloud E2E**: `crypto.ts` (libsodium/quick-crypto), `cloudStorageProvider`, upload chunked, restore, GC, chave de recuperação (decidir D3).
-6. **02/D5 — Billing**: Play Billing vs Stripe, sincronização de `plan`.
-7. **Futuro — Hosting custom**: `s3StorageProvider`/`webdavStorageProvider` + licença vitalícia.
+1. **09 — Integração front↔backend** ✅ (2026-08-18): `api-client.ts` + tokens em
+   SecureStore, login/registro reais (troca os stubs do 01), upload com progresso e poll
+   `Ready|Failed`, thumbs autenticadas no grid, `GET /api/usage` na conta. Detalhes no doc 09 §5.
+2. **03A — Inventário local**: tabela `backup_inventory`, scan incremental com SHA-256 e cache por `size+mtime`, estatísticas. Desbloqueia 04 e 06. O `content_hash` casa com o dedup do backend (doc 09 §4).
+3. **04 — Pastas sincronizadas/ignoradas**: `sync_rules`, tela `settings/backup/folders`, reconciliação com o scan (reusa `listDeviceFolders`).
+4. **06 — Importação por ZIP**: lib nativa + wrapper, dedupe pelos hashes do 03A, álbum "Imported — <nome>".
+5. **05A-ML — Modelo local de verdade**: `onnxruntime-react-native` (dev build), CLIP ViT-B/32 int8 baixado sob demanda, tabela `asset_embeddings`, indexação via `expo-task-manager` em background (substituindo a indexação na abertura), provider semântico na busca. A interface atual (labels + `source`) já acomoda o novo modelo sem migração de dados, e a escolha do modelo já vem de `model-registry`/tela `/settings/ai-model`.
+6. **02/D5 — Billing**: Play Billing vs Stripe, sincronização de `plan` (o backend já expõe `plan`/quota no `users`).
+7. **Futuro — E2E zero-knowledge (03B–F)**: `crypto.ts` (libsodium/quick-crypto), chave de recuperação (D3) — os campos já estão reservados no backend (doc 09 §1); **Futuro — Hosting custom**: `s3StorageProvider`/`webdavStorageProvider` + licença vitalícia.
 
 Dividas técnicas conhecidas da implementação atual:
 - Regra `react-hooks/set-state-in-effect` falha no repo inteiro (pré-existente; ~57 erros antes desta implementação). Tratar em uma passada própria de lint.
@@ -142,8 +166,8 @@ Dividas técnicas conhecidas da implementação atual:
 | # | Decisão | Status |
 |---|---------|--------|
 | D1 | Documentos de plano em PT-BR; código/UI em inglês | ✔ Decidido |
-| D2 | Backend do modo Cloud: **premissa de trabalho = backend próprio enxuto + storage S3-compatible** (alternativa: BaaS) | Premissa — revisitar em 02 |
-| D3 | Recuperação E2E: **recomendação = chave de recuperação** gerada no cadastro (padrão Proton); sem senha e sem chave = dados irrecuperáveis | Recomendação — decidir em 03 |
+| D2 | Backend do modo Cloud: **premissa de trabalho = backend próprio enxuto + storage S3-compatible** (alternativa: BaaS) | ✔ **Implementado** (2026-08-18): backend próprio em `C:\dev\csharp\iPhotos` (.NET 10 + PostgreSQL); storage S3-compatible segue como follow-up (hoje filesystem) |
+| D3 | Recuperação E2E: **recomendação = chave de recuperação** gerada no cadastro (padrão Proton); sem senha e sem chave = dados irrecuperáveis | Recomendação — decidir quando o modo E2E (03B–F, futuro) for implementado |
 | D4 | Classificação cloud: **inferência no servidor, opt-in, anônima** — a imagem é enviada durante o upload para classificação e o resultado volta cifrado ao cliente; servidor processa de forma efêmera, sem persistir a imagem e sem vínculo com a conta | ✔ Decidido pelo autor |
 | D5 | Billing: Play Billing vs Stripe (ou ambos) | Aberto — 02 |
 | D6 | Biblioteca de criptografia: nativa via dev build (libsodium/quick-crypto) vs pura-JS | Parcial — `react-native-quick-crypto` adotado no cofre da Pasta Segura (08); backup E2E (03) pode seguir na mesma |
@@ -151,6 +175,8 @@ Dividas técnicas conhecidas da implementação atual:
 | D8 | Permissão de mídia pedida no onboarding ou mantida no PermissionGate da aba Photos | Recomendação em 01 |
 | D9 | Modelos locais: CLIP/SigLIP quantizado (embeddings + labels zero-shot) vs MobileNet (labels) | Recomendação em 05 |
 | D10 | Labels v1 = heurísticas de pasta do MediaStore (sem ML), toggle "Smart search" default **on**, busca por texto livre consulta o índice | ✔ Implementado 2026-08-16 |
+| D11 | Auth do v1: **e-mail + senha + JWT (servidor confiável, estilo Immich)** — o servidor vê as fotos para gerar variantes e indexar EXIF; **supersede a premissa OPAQUE/zero-knowledge do 03 para o v1**. O modo zero-knowledge permanece como futuro: a tabela `users` do backend já reserva `wrapped_master_key`/`kdf_salt`/`kdf_params` | ✔ Decidido 2026-08-18 |
+| D12 | Stack do backend: .NET 10 + PostgreSQL + EF Core (migrations) + worker separado para variantes (fila `variant_jobs`, SKIP LOCKED) + ImageSharp 3.1 (fixado: a 4.0 exige chave de licença no build Docker); TDD com Testcontainers | ✔ Implementado 2026-08-18 |
 
 ## 7. Como usar estes documentos
 
@@ -174,3 +200,8 @@ Dividas técnicas conhecidas da implementação atual:
 - Seams de fase 2 já preparados: `AssetRepository` (`src/data/asset-repository.ts`)
   e `SearchProvider` (`src/data/search-providers.ts`).
 - Placeholder atual de backup: `src/app/settings.tsx` → "Backup: Local only · phase 2".
+- **Backend v1 implementado** (2026-08-18, repo `C:\dev\csharp\iPhotos`): .NET 10 +
+  PostgreSQL 17 + worker de variantes; auth e-mail+senha+JWT, upload com dedup,
+  thumb/preview/original, indexação EXIF, usage. Contrato completo para o front no
+  doc `09-backend-api.md` (endpoints, formatos, base URL por ambiente e mapeamento
+  para as seams: `account.ts`, `api-client.ts`, `cloud-photos-repository.ts`).
