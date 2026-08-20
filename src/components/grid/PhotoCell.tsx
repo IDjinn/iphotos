@@ -11,6 +11,7 @@ import Animated, {
 
 import { registerHeroCell } from '@/animations/hero';
 import { Icon } from '@/components/Icon';
+import { useThumbnailUri } from '@/hooks/use-thumbnail-uri';
 import { useSelectionStore } from '@/stores/selection';
 import { Springs } from '@/theme/tokens';
 import { useTheme } from '@/theme/context';
@@ -52,6 +53,7 @@ export function PhotoCell({ asset, size, onPress }: PhotoCellProps) {
   }));
 
   const isVideo = asset.mediaType === 'video';
+  const sourceUri = useThumbnailUri(asset);
 
   return (
     <View ref={viewRef} collapsable={false} style={{ width: size, height: size }}>
@@ -64,8 +66,8 @@ export function PhotoCell({ asset, size, onPress }: PhotoCellProps) {
           }}
           style={StyleSheet.absoluteFill}
         >
-          <Image
-            source={{ uri: asset.uri }}
+            <Image
+            source={{ uri: sourceUri }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             transition={180}

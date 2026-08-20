@@ -1,6 +1,6 @@
 # Roadmap — iPhotos: Conta, Backup E2E e Classificação
 
-> Última atualização: 2026-08-18 · Idioma: PT-BR (código e UI permanecem em inglês)
+> Última atualização: 2026-08-19 · Idioma: PT-BR (código e UI permanecem em inglês)
 > Esta pasta (`docs/plans/`) contém o planejamento por tópicos. Cada documento é
 > autocontido e pensado para ser implementado **um tópico por sessão de trabalho**.
 
@@ -43,6 +43,9 @@ A evolução planejada adiciona, sem perder o caráter local-first:
 | [07-configuracoes-conta.md](./07-configuracoes-conta.md) | Configurações da conta | Telas de conta, backup, segurança e privacidade nas Settings |
 | [08-pasta-segura-cofre.md](./08-pasta-segura-cofre.md) | Pasta Segura (cofre) | Itens cifrados com AES-256-GCM em storage privado, invisíveis à galeria do sistema |
 | [09-backend-api.md](./09-backend-api.md) | Backend API (contrato) | Endpoints reais do backend v1 (auth JWT, upload, variantes, usage) e o mapeamento para as seams do app |
+| [10-billing-assinaturas.md](./10-billing-assinaturas.md) | Billing & assinaturas | Decisão D5 (Play Billing vs Stripe), sync de `plan`/quota com o backend, paywall e matriz de planos |
+| [11-e2e-zero-knowledge.md](./11-e2e-zero-knowledge.md) | Modo E2E zero-knowledge | Estágios 03B–03F detalhados: cripto de cliente, chave de recuperação (D3), upload cifrado, restore, GC |
+| [12-hosting-custom.md](./12-hosting-custom.md) | Hosting custom (Offline estendido) | `StorageProvider` S3/WebDAV com credenciais do usuário + licença vitalícia |
 
 ## 3. Fases de implementação
 
@@ -95,13 +98,14 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
 |--------|------|--------|
 | 01 Onboarding | 1 | ✅ **Implementado** (2026-08-16): welcome + login/registro stub + gate no layout raiz |
 | 02 Modos offline/cloud | 1 (base) / 3 (billing) / futuro (S3) | 🟡 **Base implementada**: `AppMode`, store de conta, matriz refletida na UI; `StorageProvider`, billing e S3 ficam para as fases seguintes |
-| 03 Backup E2E | 2–3 | ⬜ Não iniciado |
+| 03 Backup E2E | 2–3 | 🟡 **Motor v1 simplificado** (2026-08-18, junto com a integração 09): `backup-engine.ts` com lista de uploaded-ids no `kv`, upload sequencial com progresso, dedup vs hashes do servidor, HEIC→JPEG, poll `Ready/Failed`, skip de itens trancados, tratamento 413/429/offline. O **03A formal (inventário `backup_inventory`)** ainda pendente — ver doc 03 §1; E2E (03B–F) detalhado no doc 11 |
 | 04 Pastas sync/ignore | 2 | ⬜ Não iniciado |
-| 05 Classificação | 4 (local) / 5 (cloud) | 🟡 **Base local implementada** (labels v1 por pastas + indexer incremental com % de progresso e último erro + toggle + busca + navegador de labels `/labels` com álbuns `/label/[label]`); **base de seleção de modelos** (catálogo `model-registry` + capability por RAM + tela `/settings/ai-model` com recomendação/cloud-only); ML on-device (ONNX/embeddings) e classificação cloud futuros |
+| 05 Classificação | 4 (local) / 5 (cloud) | 🟡 **05A local implementado** (2026-08-17): runtime ONNX (`src/data/ml/`) com CLIP ViT-B/32 int8 (~85 MB, download sob demanda), labels zero-shot PT+EN (`prompts.json`), indexer incremental `source='ml'` com progresso/último erro, telas `/settings/ai-model` e `/settings/ai-labeling` (endpoint do usuário, `source='ai'`), navegação `/labels` + `/label/[label]`. **Faltam**: tabela `asset_embeddings` + busca semântica (tarefa 5.5), indexação em background via `expo-task-manager`, fallback MobileNet e todo o 05B |
 | 06 Importação ZIP | 2 | ⬜ Não iniciado (placeholder "Coming soon" nas Settings) |
-| 07 Configurações da conta | 1–3 | 🟡 **Fase 1 implementada**: seções Account, Backup & sync e Smart search; subtelas `/settings/account` e `/settings/backup` nas fases 2–3 |
+| 07 Configurações da conta | 1–3 | 🟡 **Fase 1 implementada**: seções Account, Backup & sync e Smart search; `/settings/account` conectada ao backend (usage, logout real — 2026-08-18); `/settings/backup` completa nas fases 2–3 |
 | 08 Pasta Segura (cofre cifrado) | — | 🟡 **Implementado** (2026-08-16): itens movidos para a Pasta Segura são cifrados com AES-256-GCM em storage privado e removidos da galeria do sistema; migração dos itens hide-only antigos; ver doc `08-pasta-segura-cofre.md` |
-| 09 Backend API | 3 | ✅ **Implementado** (2026-08-18): backend .NET 10 + PostgreSQL em `C:\dev\csharp\iPhotos` — auth e-mail+senha+JWT (Argon2id, refresh rotativo), upload multipart com dedup SHA-256 e quota, variantes thumb/preview/original via worker separado, indexação EXIF (data/câmera/GPS/dimensões), listagem com filtros, usage; 107 testes (TDD) + compose; **integração do front pendente** (doc `09-backend-api.md`) |
+| 09 Backend API | 3 | ✅ **Implementado** (2026-08-18): backend .NET 10 + PostgreSQL em `C:\dev\csharp\iPhotos` — auth e-mail+senha+JWT (Argon2id, refresh rotativo), upload multipart com dedup SHA-256 e quota, variantes thumb/preview/original via worker separado, indexação EXIF (data/câmera/GPS/dimensões), listagem com filtros, usage; 107 testes (TDD) + compose. **Integração front ✅** (2026-08-18, commit `e547c82`): `api-client.ts` (refresh single-flight em 401), login/registro/logout reais, backup-engine v1, timeline remota `/cloud-photos` com thumbs autenticadas, `GET /api/usage` na conta |
+| 13 IA off + previews + modo encriptado | — | ✅ **Implementado** (2026-08-20): master switch "Artificial intelligence" nas Settings (desliga CLIP local, labeling cloud, indexação automática e esconde labels/entradas de IA, sem apagar dados); pipeline local de thumbnails ~512px (`src/data/thumbnails.ts`, tabela `thumbnails`, `PhotoCell` usa preview com fallback); modo encriptado offline (`docs/plans/13-encrypted-mode.md`) — fotos cifradas AES-256-GCM com chave derivada de senha (PBKDF2 200k), removidas da galeria do sistema, galeria interna com previews descriptografados sob demanda, original decriptado ao abrir, cache de sessão purge no lock/background, disable decripta tudo de volta |
 
 > Atualizar esta tabela ao concluir cada estágio.
 
@@ -143,6 +147,19 @@ Adições de 2026-08-18 (backend v1 implementado, doc 09):
 - Decisões novas: **D11** (auth padrão / servidor confiável, supersede OPAQUE no v1)
   e **D12** (stack do backend). Campos E2E ficam reservados na tabela `users`.
 
+Adições de 2026-08-19 (planejamento das fases restantes):
+
+- **Integração front↔backend registrada** (item 1 do §5.2 ✅, commit `e547c82`):
+  `api-client.ts` + `cloud-photos-repository` + `backup-engine` v1 + timeline
+  `/cloud-photos` + usage na conta.
+- **Novos docs de plano** para as fases que faltavam detalhamento:
+  **10-billing-assinaturas.md** (D5 — Play Billing vs Stripe, sync de `plan`/quota,
+  paywall), **11-e2e-zero-knowledge.md** (estágios 03B–03F do doc 03 expandidos
+  para modo E2E futuro sobre os campos já reservados no backend) e
+  **12-hosting-custom.md** (`StorageProvider` S3/WebDAV + licença vitalícia).
+- Docs 03/04/06 revisados contra o código atual (motor v1 simplificado,
+  `listDeviceFolders`/`forEachFolderAsset` já existem no `media-repository`).
+
 ## 5.2 Próximas etapas (pós-implementação, em ordem recomendada)
 
 1. **09 — Integração front↔backend** ✅ (2026-08-18): `api-client.ts` + tokens em
@@ -152,8 +169,8 @@ Adições de 2026-08-18 (backend v1 implementado, doc 09):
 3. **04 — Pastas sincronizadas/ignoradas**: `sync_rules`, tela `settings/backup/folders`, reconciliação com o scan (reusa `listDeviceFolders`).
 4. **06 — Importação por ZIP**: lib nativa + wrapper, dedupe pelos hashes do 03A, álbum "Imported — <nome>".
 5. **05A-ML — Modelo local de verdade**: `onnxruntime-react-native` (dev build), CLIP ViT-B/32 int8 baixado sob demanda, tabela `asset_embeddings`, indexação via `expo-task-manager` em background (substituindo a indexação na abertura), provider semântico na busca. A interface atual (labels + `source`) já acomoda o novo modelo sem migração de dados, e a escolha do modelo já vem de `model-registry`/tela `/settings/ai-model`.
-6. **02/D5 — Billing**: Play Billing vs Stripe, sincronização de `plan` (o backend já expõe `plan`/quota no `users`).
-7. **Futuro — E2E zero-knowledge (03B–F)**: `crypto.ts` (libsodium/quick-crypto), chave de recuperação (D3) — os campos já estão reservados no backend (doc 09 §1); **Futuro — Hosting custom**: `s3StorageProvider`/`webdavStorageProvider` + licença vitalícia.
+6. **02/D5 — Billing**: plano detalhado no **doc 10** (recomendação Play Billing v1 + Stripe como follow-up); sincronização de `plan` (o backend já expõe `plan`/quota no `users`).
+7. **Futuro — E2E zero-knowledge (03B–F)**: plano detalhado no **doc 11** (cripto de cliente, chave de recuperação D3, sobre os campos reservados no backend); **Futuro — Hosting custom**: plano detalhado no **doc 12** (`s3StorageProvider`/`webdavStorageProvider` + licença vitalícia).
 
 Dividas técnicas conhecidas da implementação atual:
 - Regra `react-hooks/set-state-in-effect` falha no repo inteiro (pré-existente; ~57 erros antes desta implementação). Tratar em uma passada própria de lint.
@@ -169,7 +186,7 @@ Dividas técnicas conhecidas da implementação atual:
 | D2 | Backend do modo Cloud: **premissa de trabalho = backend próprio enxuto + storage S3-compatible** (alternativa: BaaS) | ✔ **Implementado** (2026-08-18): backend próprio em `C:\dev\csharp\iPhotos` (.NET 10 + PostgreSQL); storage S3-compatible segue como follow-up (hoje filesystem) |
 | D3 | Recuperação E2E: **recomendação = chave de recuperação** gerada no cadastro (padrão Proton); sem senha e sem chave = dados irrecuperáveis | Recomendação — decidir quando o modo E2E (03B–F, futuro) for implementado |
 | D4 | Classificação cloud: **inferência no servidor, opt-in, anônima** — a imagem é enviada durante o upload para classificação e o resultado volta cifrado ao cliente; servidor processa de forma efêmera, sem persistir a imagem e sem vínculo com a conta | ✔ Decidido pelo autor |
-| D5 | Billing: Play Billing vs Stripe (ou ambos) | Aberto — 02 |
+| D5 | Billing: Play Billing vs Stripe (ou ambos) | 🟡 Recomendação no doc 10 (Play Billing v1 no Android + verificação no backend; Stripe como follow-up web/desktop) — confirmar antes de implementar |
 | D6 | Biblioteca de criptografia: nativa via dev build (libsodium/quick-crypto) vs pura-JS | Parcial — `react-native-quick-crypto` adotado no cofre da Pasta Segura (08); backup E2E (03) pode seguir na mesma |
 | D7 | Biblioteca de ZIP: nativa (dev build) vs JS (compatível com Expo Go) | Recomendação em 06 |
 | D8 | Permissão de mídia pedida no onboarding ou mantida no PermissionGate da aba Photos | Recomendação em 01 |

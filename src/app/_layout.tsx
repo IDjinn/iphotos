@@ -10,6 +10,7 @@ import * as SystemUI from 'expo-system-ui';
 import { ViewerOverlay } from '@/components/viewer/ViewerOverlay';
 import { useAccountStore } from '@/stores/account';
 import { useClassificationStore } from '@/stores/classification';
+import { useEncryptedModeStore } from '@/stores/encrypted-mode';
 import { useLibraryStore } from '@/stores/library';
 import { ThemeProvider, useTheme } from '@/theme/context';
 import { useLockedSessionStore } from '@/stores/locked-session';
@@ -23,7 +24,7 @@ function AppShell() {
   const segments = useSegments();
   const refreshLibrary = useLibraryStore((s) => s.refresh);
   const onboardingCompleted = useOnboardingStore((s) => s.completed);
-  const classificationEnabled = useClassificationStore((s) => s.localEnabled);
+  const classificationEnabled = useClassificationStore((s) => s.localEnabled && s.aiEnabled);
   const runIndexation = useClassificationStore((s) => s.runIndexation);
 
   const inPublicGroup = segments[0] === '(public)';
@@ -34,6 +35,7 @@ function AppShell() {
     // Validate the persisted refresh token (docs/plans/09-backend-api.md §4) —
     // flips the account to cloud mode when a session survives the restart.
     void useAccountStore.getState().resolveSession();
+    void useEncryptedModeStore.getState().refresh();
     void SplashScreen.hideAsync().catch(() => undefined);
   }, [refreshLibrary]);
 
@@ -55,10 +57,14 @@ function AppShell() {
     SystemUI.setBackgroundColorAsync(colors.background).catch(() => undefined);
   }, [colors.background]);
 
-  // Relock the Locked Folder whenever the app leaves the foreground.
+  // Relock the Locked Folder and the encrypted offline mode whenever the app
+  // leaves the foreground (both purge decrypted plaintext on lock).
   useEffect(() => {
     const listener = AppState.addEventListener('change', (next) => {
-      if (next !== 'active') useLockedSessionStore.getState().lock();
+      if (next !== 'active') {
+        useLockedSessionStore.getState().lock();
+        useEncryptedModeStore.getState().lock();
+      }
     });
     return () => listener.remove();
   }, []);
@@ -83,6 +89,7 @@ function AppShell() {
         <Stack.Screen name="settings/ai-model" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/ai-labeling" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/account" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings/encrypted-mode" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="cloud-photos" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="album/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="labels" options={{ animation: 'slide_from_right' }} />

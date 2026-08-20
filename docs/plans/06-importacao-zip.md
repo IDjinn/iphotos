@@ -8,7 +8,8 @@
 ## 1. Contexto atual
 
 - Library tab (`src/app/(tabs)/library.tsx`) já tem o padrão de "utility cards"
-  (Favorites, Locked Folder) — o card "Import from ZIP" segue esse padrão.
+  (Favorites, Locked Folder) — o card "Import from ZIP" segue esse padrão. Hoje há
+  um placeholder "Coming soon" nas Settings apontando para esta fase.
 - Salvamento na galeria: `expo-media-library` (`saveToLibraryAsync`) — encapsular
   em `src/data/media-repository.ts` (regra do projeto).
 - Deleção/compartilhamento já usam padrões em `src/utils/share.ts`.

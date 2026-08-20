@@ -31,7 +31,8 @@ export default function SearchScreen() {
   const [recents, setRecents] = useState<string[]>([]);
   const [results, setResults] = useState<PhotoAsset[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const localSearchEnabled = useClassificationStore((s) => s.localEnabled);
+  const localSearchEnabled = useClassificationStore((s) => s.localEnabled && s.aiEnabled);
+  const aiEnabled = useClassificationStore((s) => s.aiEnabled);
   const indexationRunning = useClassificationStore((s) => s.running);
   const [topLabels, setTopLabels] = useState<string[]>([]);
 
@@ -226,6 +227,7 @@ export default function SearchScreen() {
             </Animated.View>
           ) : null}
 
+          {aiEnabled ? (
           <View style={[styles.aiCard, { backgroundColor: colors.surface }]}>
             <Icon name="sparkles-outline" size={22} color={colors.accent} />
             <View style={styles.aiCardText}>
@@ -239,6 +241,7 @@ export default function SearchScreen() {
               </ThemedText>
             </View>
           </View>
+          ) : null}
         </View>
       ) : searching ? (
         <View style={styles.center}>

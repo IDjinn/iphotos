@@ -84,7 +84,8 @@ export const useLocalMlStore = create<LocalMlState>()((set, get) => ({
 
   runLabeling: async (fromScratch = false) => {
     if (get().running) return;
-    if (!useClassificationStore.getState().localEnabled) return;
+    const classification = useClassificationStore.getState();
+    if (!classification.localEnabled || !classification.aiEnabled) return;
     if (!get().modelReady) {
       set({ lastError: 'The on-device model is not downloaded yet.' });
       return;

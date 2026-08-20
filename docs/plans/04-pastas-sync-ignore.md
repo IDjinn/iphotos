@@ -10,7 +10,12 @@
 - `src/data/media-repository.ts` encapsula `expo-media-library/legacy`; álbuns do
   sistema (fotos da câmera, screenshots, pastas de apps como WhatsApp) aparecem como
   *albums* do MediaStore — cada um corresponde a um bucket/pasta do dispositivo.
-- O inventário do doc 03A grava `folder` por asset em `backup_inventory`.
+  Já existem (usados pelo indexer de labels): `listDeviceFolders()` e
+  `forEachFolderAsset()` — a tarefa 4.1 parte delas em vez de começar do zero.
+- O motor de backup v1 (`src/data/backup-engine.ts`) roda hoje sobre **todas** as
+  pastas (exceto itens da Pasta Segura, já pulados) sem noção de regras.
+- O inventário do doc 03A grava `folder` por asset em `backup_inventory`
+  (pré-requisito — os contadores por pasta da UI vêm de lá).
 - Regra do projeto: telas nunca importam `expo-media-library` direto — tudo via
   `media-repository` (estender lá o que faltar).
 

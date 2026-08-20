@@ -71,6 +71,23 @@ const MIGRATIONS: string[] = [
     added_at INTEGER NOT NULL
   );
   `,
+  `
+  CREATE TABLE IF NOT EXISTS thumbnails (
+    asset_id TEXT PRIMARY KEY NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS encrypted_assets (
+    asset_id TEXT PRIMARY KEY NOT NULL,
+    filename TEXT NOT NULL,
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    creation_time INTEGER NOT NULL,
+    size INTEGER NOT NULL,
+    encrypted_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 db.execSync('PRAGMA journal_mode = WAL;');
@@ -113,5 +130,6 @@ export function purgeAssetMetadata(assetIds: string[]): void {
     db.runSync(`DELETE FROM favorites WHERE asset_id IN (${placeholders})`, assetIds);
     db.runSync(`DELETE FROM locked_assets WHERE asset_id IN (${placeholders})`, assetIds);
     db.runSync(`DELETE FROM asset_labels WHERE asset_id IN (${placeholders})`, assetIds);
+    db.runSync(`DELETE FROM thumbnails WHERE asset_id IN (${placeholders})`, assetIds);
   });
 }

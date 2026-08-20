@@ -20,6 +20,8 @@ interface PhotoGridProps {
   refreshing?: boolean;
   onEndReached?: () => void;
   stickyMonths?: boolean;
+  /** Overrides the default viewer open (e.g. decrypt-on-demand in encrypted mode). */
+  onCellPress?: (asset: PhotoAsset) => void;
 }
 
 /**
@@ -34,6 +36,7 @@ export function PhotoGrid({
   refreshing = false,
   onEndReached,
   stickyMonths = true,
+  onCellPress,
 }: PhotoGridProps) {
   const { colors } = useTheme();
   const listRef = useRef<FlashListRef<GridItem>>(null);
@@ -41,7 +44,7 @@ export function PhotoGrid({
 
   const gridData = useMemo(() => buildGridData(assets, GRID_COLUMNS), [assets]);
 
-  const onCellPress = useCallback(
+  const defaultCellPress = useCallback(
     (asset: PhotoAsset) => {
       const selection = useSelectionStore.getState();
       if (selection.active) {
@@ -55,6 +58,14 @@ export function PhotoGrid({
       });
     },
     [assets, context, albumId, openViewer]
+  );
+
+  const handleCellPress = useCallback(
+    (asset: PhotoAsset) => {
+      if (onCellPress) onCellPress(asset);
+      else defaultCellPress(asset);
+    },
+    [onCellPress, defaultCellPress]
   );
 
   const renderItem = useCallback<ListRenderItem<GridItem>>(
@@ -71,11 +82,11 @@ export function PhotoGrid({
           return <DayHeader label={item.label} />;
         case 'row':
           return (
-            <GridRow assets={item.assets} cellSize={GRID_CELL_SIZE} gap={GRID_GAP} onPress={onCellPress} />
+            <GridRow assets={item.assets} cellSize={GRID_CELL_SIZE} gap={GRID_GAP} onPress={handleCellPress} />
           );
       }
     },
-    [onCellPress]
+    [handleCellPress]
   );
 
   return (

@@ -9,6 +9,12 @@ import { aiLabelingConfigured, getAiApiKey, useAiLabelingStore } from '@/stores/
 
 interface ClassificationState {
   /**
+   * Master switch for every AI feature (on-device CLIP, cloud labeling, model
+   * screens, label browsing). Turning it off stops all indexing and hides the
+   * AI surfaces; nothing is deleted, so it can be re-enabled at any time.
+   */
+  aiEnabled: boolean;
+  /**
    * On-device labels & search. Optional: turning it off stops indexing and
    * removes labels from search (existing rows are kept for when it returns).
    */
@@ -25,6 +31,7 @@ interface ClassificationState {
   aiLastError: string | null;
   aiLastRunAt: number | null;
   setLocalEnabled: (enabled: boolean) => void;
+  setAiEnabled: (enabled: boolean) => void;
   runIndexation: () => Promise<void>;
   runAiIndexation: (fromScratch?: boolean) => Promise<void>;
 }
@@ -39,6 +46,7 @@ function summarizeFolderErrors(folders: string[]): string | null {
 export const useClassificationStore = create<ClassificationState>()(
   persist(
     (set, get) => ({
+      aiEnabled: true,
       localEnabled: true,
       running: false,
       progress: null,
@@ -50,10 +58,11 @@ export const useClassificationStore = create<ClassificationState>()(
       aiLastRunAt: null,
       setLocalEnabled: (localEnabled) => {
         set({ localEnabled });
-        if (localEnabled) void get().runIndexation();
+        if (localEnabled && get().aiEnabled) void get().runIndexation();
       },
+      setAiEnabled: (aiEnabled) => set({ aiEnabled }),
       runIndexation: async () => {
-        if (get().running || !get().localEnabled) return;
+        if (get().running || !get().localEnabled || !get().aiEnabled) return;
         set({ running: true, progress: null });
         try {
           const result = await indexDeviceLabels((progress) => set({ progress }));
@@ -65,7 +74,7 @@ export const useClassificationStore = create<ClassificationState>()(
         }
       },
       runAiIndexation: async (fromScratch = false) => {
-        if (get().aiRunning || !get().localEnabled) return;
+        if (get().aiRunning || !get().localEnabled || !get().aiEnabled) return;
         if (!aiLabelingConfigured()) {
           set({ aiLastError: 'AI labeling is not set up — add an endpoint in Settings → AI labeling.' });
           return;
@@ -88,6 +97,7 @@ export const useClassificationStore = create<ClassificationState>()(
       name: 'classification',
       storage: createJSONStorage(() => sqliteStorage),
       partialize: (state) => ({
+        aiEnabled: state.aiEnabled,
         localEnabled: state.localEnabled,
         lastRunAt: state.lastRunAt,
         lastError: state.lastError,

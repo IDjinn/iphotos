@@ -13,7 +13,9 @@ import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useAccountStore } from '@/stores/account';
 import { useBackupStore } from '@/stores/backup';
 import { useClassificationStore } from '@/stores/classification';
+import { useEncryptedModeStore } from '@/stores/encrypted-mode';
 import { useSettingsStore } from '@/stores/settings';
+import { useThumbnailsStore } from '@/stores/thumbnails';
 import type { ThemeMode } from '@/theme/context';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -58,7 +60,11 @@ export default function SettingsScreen() {
   const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
   const account = useAccountStore();
   const backup = useBackupStore();
+  const thumbnails = useThumbnailsStore();
+  const encryptedMode = useEncryptedModeStore();
   const startBackup = useBackupStore((s) => s.start);
+  const aiEnabled = useClassificationStore((s) => s.aiEnabled);
+  const setAiEnabled = useClassificationStore((s) => s.setAiEnabled);
   const localSearchEnabled = useClassificationStore((s) => s.localEnabled);
   const setLocalSearchEnabled = useClassificationStore((s) => s.setLocalEnabled);
   const indexationRunning = useClassificationStore((s) => s.running);
@@ -242,6 +248,43 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+          <Pressable
+            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, marginTop: 10 }, pressed && { opacity: 0.75 }]}
+            onPress={() => {
+              haptic('medium');
+              if (!thumbnails.running) void thumbnails.startBatch();
+            }}
+            disabled={thumbnails.running}
+            accessibilityLabel="Generate photo previews"
+          >
+            <Icon name="images-outline" size={22} color={colors.icon} />
+            <View style={styles.rowText}>
+              <ThemedText variant="body" style={styles.rowLabel}>
+                Photo previews
+              </ThemedText>
+              <ThemedText variant="bodySmall" color="secondary">
+                {thumbnails.lastError
+                  ? thumbnails.lastError
+                  : thumbnails.running
+                    ? thumbnails.progress && thumbnails.progress.total > 0
+                      ? `Generating… ${Math.min(
+                          100,
+                          Math.floor(
+                            ((thumbnails.progress.generated + thumbnails.progress.skipped) /
+                              thumbnails.progress.total) *
+                              100
+                          )
+                        )}%`
+                      : 'Scanning your library…'
+                    : 'Create small previews so the gallery loads faster'}
+              </ThemedText>
+            </View>
+            {thumbnails.running ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+            )}
+          </Pressable>
         </Section>
 
         <Section title="Feedback">
@@ -275,6 +318,53 @@ export default function SettingsScreen() {
             </ThemedText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
           </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, marginTop: 8 }, pressed && { opacity: 0.75 }]}
+            onPress={() => {
+              haptic('light');
+              router.push('/settings/encrypted-mode');
+            }}
+            accessibilityLabel="Encrypted mode"
+          >
+            <Icon name="lock-closed-outline" size={22} color={colors.icon} />
+            <View style={styles.rowText}>
+              <ThemedText variant="body" style={styles.rowLabel}>
+                Encrypted mode
+              </ThemedText>
+              <ThemedText variant="bodySmall" color="secondary">
+                {encryptedMode.enabled
+                  ? encryptedMode.unlocked
+                    ? 'Unlocked — photos are browsable'
+                    : 'On — photos are encrypted and locked'
+                  : 'Encrypt your photos on this device (offline)'}
+              </ThemedText>
+            </View>
+            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+          </Pressable>
+          <View style={[styles.row, { backgroundColor: colors.surface, marginTop: 8 }]}>
+            <Icon name="sparkles-outline" size={22} color={colors.icon} />
+            <View style={styles.rowText}>
+              <ThemedText variant="body" style={styles.rowLabel}>
+                Artificial intelligence
+              </ThemedText>
+              <ThemedText variant="bodySmall" color="secondary">
+                {aiEnabled
+                  ? 'On-device labeling and smart search are available'
+                  : 'All AI features are off — nothing is indexed or sent anywhere'}
+              </ThemedText>
+            </View>
+            <Switch
+              value={aiEnabled}
+              onValueChange={(v) => {
+                haptic('medium');
+                setAiEnabled(v);
+              }}
+              trackColor={{ true: colors.accent, false: colors.outline }}
+              accessibilityLabel="Artificial intelligence"
+            />
+          </View>
+          {aiEnabled ? (
+          <>
           <View style={[styles.row, { backgroundColor: colors.surface, marginTop: 8 }]}>
             <Icon name="sparkles-outline" size={22} color={colors.icon} />
             <View style={styles.rowText}>
@@ -346,6 +436,8 @@ export default function SettingsScreen() {
             </View>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
           </Pressable>
+          </>
+          ) : null}
         </Section>
 
         <Section title="About">

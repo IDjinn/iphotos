@@ -59,8 +59,8 @@ export function ensureVaultDirectories(): void {
 }
 
 /** Encrypts the file at `srcUri` into `dest` using a fresh per-file IV. */
-export async function encryptFile(srcUri: string, dest: File): Promise<void> {
-  const key = await getVaultKey();
+export async function encryptFile(srcUri: string, dest: File, explicitKey?: Buffer): Promise<void> {
+  const key = explicitKey ?? (await getVaultKey());
   const src = new File(srcUri);
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
@@ -95,8 +95,8 @@ export async function encryptFile(srcUri: string, dest: File): Promise<void> {
  * Decrypts the vault file `src` into `dest`. Rejects when the GCM tag does
  * not match (wrong key or corrupted file).
  */
-export async function decryptFile(src: File, dest: File): Promise<void> {
-  const key = await getVaultKey();
+export async function decryptFile(src: File, dest: File, explicitKey?: Buffer): Promise<void> {
+  const key = explicitKey ?? (await getVaultKey());
   const total = src.size;
   if (total <= IV_LENGTH + TAG_LENGTH) throw new Error('vault: file too short');
 

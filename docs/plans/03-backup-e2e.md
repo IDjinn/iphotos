@@ -7,7 +7,8 @@
 > passo** (o `content_hash` SHA-256 casa exatamente com o dedup do backend); o upload
 > da fase 3 usa `cloud-photos-repository` (doc 09 §4) no lugar de `StorageProvider` +
 > cifragem. Os estágios B–F (criptografia, chave de recuperação, GC/tombstones com
-> grace period) permanecem planejados para o **modo E2E futuro** — a tabela `users`
+> grace period) permanecem planejados para o **modo E2E futuro** — expansão
+> detalhada no **doc 11** (`11-e2e-zero-knowledge.md`); a tabela `users`
 > do backend já reserva os campos (`wrapped_master_key`, `kdf_salt`, `kdf_params`).
 >
 > Fase 2 (estágio A, local) → [03B–F: futuro, modo E2E] · Depende de: 02 · Alimenta: 04, 05B, 06, 07, 09
@@ -15,17 +16,34 @@
 > com hashes, fila com retomada, criptografia do lado do cliente (o servidor nunca
 > vê conteúdo), upload deduplicado, restore em novo dispositivo e limpeza de exclusões.
 
-## 1. Contexto atual
+## 1. Contexto atual (atualizado 2026-08-19)
 
-- Nenhum código de backup existe. Placeholder: `src/app/settings.tsx` ("Backup:
-  Local only · phase 2").
+- **Motor v1 simplificado já existe** (entregue junto com a integração do doc 09,
+  2026-08-18): `src/data/backup-engine.ts` — upload sequencial com progresso via
+  `expo-file-system.uploadAsync`, dedup consultando os hashes SHA-256 que o backend
+  já conhece (`GET /api/photos`), conversão HEIC→JPEG, poll do estado até
+  `Ready|Failed`, skip de itens da Pasta Segura, tratamento de 413 (quota), 429
+  (rate-limit) e offline. Estado na store `src/stores/backup.ts`.
+- **Limitação do v1**: não há inventário persistido — a lista de itens já enviados
+  vive como ids na tabela `kv` (zustand persist), sem `content_hash`, sem cache
+  `size+mtime` e sem estados por item. **O estágio 03A abaixo formaliza isso** na
+  tabela `backup_inventory` e o motor passa a ler/escrever nela (migração dos ids
+  já enviados → `state='uploaded'`). O `content_hash` SHA-256 calculado no cliente
+  casa exatamente com o dedup por conta do backend (doc 09 §4), eliminando a
+  listagem completa para dedup no v2.
 - Fonte local de mídia: `src/data/media-repository.ts` (consultas paginadas
-  newest-first, listener de mudanças da biblioteca) sobre `expo-media-library/legacy`.
+  newest-first, listener de mudanças da biblioteca, `listDeviceFolders()` e
+  `forEachFolderAsset()` — já usados pelo indexer de labels) sobre
+  `expo-media-library/legacy`.
 - DB: `src/data/db.ts` — SQLite com migrações por `PRAGMA user_version`
   (nova tabela = nova migração).
-- Crypto disponível hoje: `expo-crypto` (digests SHA-256, random bytes) — **não**
-  cobre AEAD nem KDF de senha; `expo-secure-store` para segredos do dispositivo.
-- Premissa de infraestrutura (D2): backend próprio enxuto + storage S3-compatible.
+- Crypto disponível: `react-native-quick-crypto` (AES-256-GCM/HKDF nativos, já
+  usados no cofre da Pasta Segura — doc 08/D6); `expo-crypto` (digests SHA-256);
+  `expo-secure-store` para segredos do dispositivo.
+- Backend v1 (D11, servidor confiável): upload em texto claro com dedup SHA-256
+  por conta, variantes geradas no servidor, EXIF indexado — **sem criptografia de
+  cliente**. Os estágios B–F abaixo permanecem para o **modo E2E futuro**
+  (detalhados no doc 11).
 
 ## 2. Visão geral do pipeline
 
@@ -243,9 +261,11 @@ do resultado no índice. O ponto de extensão no pipeline é o estado `uploaded`
 
 ## 11. Estágios e tarefas
 
-- [ ] **03A (Fase 2, local):** migração + `backup_inventory`; scan incremental;
+- [ ] **03A (Fase 2, local):** migração + `backup_inventory` (inclui migrar os ids
+      já enviados do `kv` para `state='uploaded'`); scan incremental;
       hashing com cache; exclusão por regras (doc 04); estatísticas (X itens,
-      Y GB) expostas em `src/stores/backup.ts`
+      Y GB) expostas em `src/stores/backup.ts`; motor v1 passa a deduplicar pelo
+      `content_hash` local em vez de listar tudo do backend
 - [ ] **03B (Fase 3):** `src/data/crypto.ts` + round-trip tests; derivação de
       chaves; wrap/recovery (D3 decidir antes)
 - [ ] **03C (Fase 3):** `cloudStorageProvider`; upload chunked multipart com
