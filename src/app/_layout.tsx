@@ -89,6 +89,7 @@ function AppShell() {
         <Stack.Screen name="settings/ai-model" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/ai-labeling" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/account" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings/backup" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/encrypted-mode" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="cloud-photos" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="album/[id]" options={{ animation: 'slide_from_right' }} />

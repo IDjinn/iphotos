@@ -88,6 +88,22 @@ const MIGRATIONS: string[] = [
     encrypted_at INTEGER NOT NULL
   );
   `,
+  `
+  CREATE TABLE IF NOT EXISTS backup_inventory (
+    asset_id TEXT PRIMARY KEY NOT NULL,
+    content_hash TEXT,
+    size_bytes INTEGER NOT NULL,
+    mtime_ms INTEGER NOT NULL,
+    folder TEXT,
+    state TEXT NOT NULL DEFAULT 'pending',
+    blob_key TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    uploaded_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_inventory_state ON backup_inventory(state);
+  CREATE INDEX IF NOT EXISTS idx_inventory_hash ON backup_inventory(content_hash);
+  `,
 ];
 
 db.execSync('PRAGMA journal_mode = WAL;');
@@ -131,5 +147,6 @@ export function purgeAssetMetadata(assetIds: string[]): void {
     db.runSync(`DELETE FROM locked_assets WHERE asset_id IN (${placeholders})`, assetIds);
     db.runSync(`DELETE FROM asset_labels WHERE asset_id IN (${placeholders})`, assetIds);
     db.runSync(`DELETE FROM thumbnails WHERE asset_id IN (${placeholders})`, assetIds);
+    db.runSync(`DELETE FROM backup_inventory WHERE asset_id IN (${placeholders})`, assetIds);
   });
 }

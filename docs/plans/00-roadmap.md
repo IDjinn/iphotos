@@ -1,6 +1,6 @@
 # Roadmap — iPhotos: Conta, Backup E2E e Classificação
 
-> Última atualização: 2026-08-19 · Idioma: PT-BR (código e UI permanecem em inglês)
+> Última atualização: 2026-08-22 · Idioma: PT-BR (código e UI permanecem em inglês)
 > Esta pasta (`docs/plans/`) contém o planejamento por tópicos. Cada documento é
 > autocontido e pensado para ser implementado **um tópico por sessão de trabalho**.
 
@@ -98,7 +98,7 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
 |--------|------|--------|
 | 01 Onboarding | 1 | ✅ **Implementado** (2026-08-16): welcome + login/registro stub + gate no layout raiz |
 | 02 Modos offline/cloud | 1 (base) / 3 (billing) / futuro (S3) | 🟡 **Base implementada**: `AppMode`, store de conta, matriz refletida na UI; `StorageProvider`, billing e S3 ficam para as fases seguintes |
-| 03 Backup E2E | 2–3 | 🟡 **Motor v1 simplificado** (2026-08-18, junto com a integração 09): `backup-engine.ts` com lista de uploaded-ids no `kv`, upload sequencial com progresso, dedup vs hashes do servidor, HEIC→JPEG, poll `Ready/Failed`, skip de itens trancados, tratamento 413/429/offline. O **03A formal (inventário `backup_inventory`)** ainda pendente — ver doc 03 §1; E2E (03B–F) detalhado no doc 11 |
+| 03 Backup E2E | 2–3 | ✅ **03A implementado** (2026-08-22): tabela `backup_inventory` (migração v11), scan incremental com cache `size+mtime`, hash SHA-256 em chunks (`file-hash.ts`), migração one-time dos ids do `kv`, motor v2 com dedup pelo hash local (seed único do servidor após reinstall) e tela `settings/backup` com estatísticas + "Scan now" offline. Estados transientes se recuperam de crash. **Pendências**: exclusão por regras de pasta (doc 04), backoff/tombstones e todo o E2E 03B–F (doc 11) |
 | 04 Pastas sync/ignore | 2 | ⬜ Não iniciado |
 | 05 Classificação | 4 (local) / 5 (cloud) | 🟡 **05A local implementado** (2026-08-17): runtime ONNX (`src/data/ml/`) com CLIP ViT-B/32 int8 (~85 MB, download sob demanda), labels zero-shot PT+EN (`prompts.json`), indexer incremental `source='ml'` com progresso/último erro, telas `/settings/ai-model` e `/settings/ai-labeling` (endpoint do usuário, `source='ai'`), navegação `/labels` + `/label/[label]`. **Faltam**: tabela `asset_embeddings` + busca semântica (tarefa 5.5), indexação em background via `expo-task-manager`, fallback MobileNet e todo o 05B |
 | 06 Importação ZIP | 2 | ⬜ Não iniciado (placeholder "Coming soon" nas Settings) |
@@ -160,12 +160,36 @@ Adições de 2026-08-19 (planejamento das fases restantes):
 - Docs 03/04/06 revisados contra o código atual (motor v1 simplificado,
   `listDeviceFolders`/`forEachFolderAsset` já existem no `media-repository`).
 
+Adições de 2026-08-22 (estágio 03A — inventário local de backup):
+
+- **Migração v11** em `db.ts`: tabela `backup_inventory` (schema do doc 03 §3.1,
+  índices por estado e hash) + `purgeAssetMetadata` também limpa o inventário.
+- **Migração one-time** dos ids `backup.uploadedIds.v1` (kv) para linhas
+  `state='uploaded'` (size/mtime 0 → o próximo scan preenche sem re-subir nada).
+- **Novos módulos**: `file-hash.ts` (SHA-256 streaming em chunks de 1 MB,
+  substitui a leitura integral do arquivo na memória),
+  `upload-prepare.ts` (`prepareForUpload` extraído do motor),
+  `backup-inventory-repository.ts` (upsert do scan com reset apenas quando
+  `size+mtime` muda, `removeAbsent` via temp table, stats GROUP BY, seed por
+  hash, recuperação de estados `hashing`/`uploading` órfãos) e
+  `backup-inventory.ts` (`runInventoryScan` por pasta — só fotos, itens
+  trancados nunca entram; `hashPendingItems` em lotes; hash sempre dos bytes
+  enviados — HEIC transcodado antes).
+- **Motor v2** (`backup-engine.ts`): fases `inventory → hashing → uploading`;
+  dedup pelo hash local; listagem completa do backend **apenas uma vez** para
+  semear após reinstall/novo dispositivo; falhas gravam `attempts`/`last_error`;
+  `duplicated:true` do servidor conta como skipped.
+- **UI**: tela `settings/backup` (estatísticas por estado com bytes, "Scan now"
+  offline, "Back up now" só no modo cloud, erros); linha Backup nas Settings
+  agora navega (visível também offline, com resumo do inventário); store
+  `backup.ts` expõe `stats`/`scan()`.
+
 ## 5.2 Próximas etapas (pós-implementação, em ordem recomendada)
 
 1. **09 — Integração front↔backend** ✅ (2026-08-18): `api-client.ts` + tokens em
    SecureStore, login/registro reais (troca os stubs do 01), upload com progresso e poll
    `Ready|Failed`, thumbs autenticadas no grid, `GET /api/usage` na conta. Detalhes no doc 09 §5.
-2. **03A — Inventário local**: tabela `backup_inventory`, scan incremental com SHA-256 e cache por `size+mtime`, estatísticas. Desbloqueia 04 e 06. O `content_hash` casa com o dedup do backend (doc 09 §4).
+2. **03A — Inventário local** ✅ (2026-08-22): tabela `backup_inventory`, scan incremental com SHA-256 e cache por `size+mtime`, migração dos ids do `kv`, estatísticas e motor v2 com dedup local (seed único do servidor). Detalhes no doc 03 §1.
 3. **04 — Pastas sincronizadas/ignoradas**: `sync_rules`, tela `settings/backup/folders`, reconciliação com o scan (reusa `listDeviceFolders`).
 4. **06 — Importação por ZIP**: lib nativa + wrapper, dedupe pelos hashes do 03A, álbum "Imported — <nome>".
 5. **05A-ML — Modelo local de verdade**: `onnxruntime-react-native` (dev build), CLIP ViT-B/32 int8 baixado sob demanda, tabela `asset_embeddings`, indexação via `expo-task-manager` em background (substituindo a indexação na abertura), provider semântico na busca. A interface atual (labels + `source`) já acomoda o novo modelo sem migração de dados, e a escolha do modelo já vem de `model-registry`/tela `/settings/ai-model`.
@@ -216,7 +240,9 @@ Dividas técnicas conhecidas da implementação atual:
 - Mídia: `expo-media-library/legacy` encapsulado em `src/data/media-repository.ts`.
 - Seams de fase 2 já preparados: `AssetRepository` (`src/data/asset-repository.ts`)
   e `SearchProvider` (`src/data/search-providers.ts`).
-- Placeholder atual de backup: `src/app/settings.tsx` → "Backup: Local only · phase 2".
+- Backup atual: tela `src/app/settings/backup.tsx` (estágio 03A — inventário,
+  scan offline e upload em modo cloud); regras de pasta (04) e ZIP (06) chegam
+  nas próximas fases.
 - **Backend v1 implementado** (2026-08-18, repo `C:\dev\csharp\iPhotos`): .NET 10 +
   PostgreSQL 17 + worker de variantes; auth e-mail+senha+JWT, upload com dedup,
   thumb/preview/original, indexação EXIF, usage. Contrato completo para o front no

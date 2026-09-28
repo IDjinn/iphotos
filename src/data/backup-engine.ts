@@ -1,5 +1,3 @@
-import { Buffer } from 'buffer';
-
 import { ApiError } from '@/data/api-client';
 import {
   listAllContentHashes,
@@ -7,22 +5,32 @@ import {
   uploadPhoto,
   type CloudPhoto,
 } from '@/data/cloud-photos-repository';
-import { kv } from '@/data/db';
-import { getLockedIds } from '@/data/locked-repository';
+import { hashPendingItems, runInventoryScan } from '@/data/backup-inventory';
+import {
+  getQueuedRows,
+  getUploadedHashes,
+  markExcluded,
+  markFailed,
+  markUploadStarted,
+  markUploaded,
+  markUploadedByHashes,
+} from '@/data/backup-inventory-repository';
+import { fetchAssetsByIds } from '@/data/media-repository';
+import { prepareForUpload } from '@/data/upload-prepare';
 import type { PhotoAsset } from '@/data/types';
 
 /**
- * Backup engine v1 — docs/plans/03-backup-e2e.md stage 03A + docs/plans/09-backend-api.md §4.
- * Server-trusted model (decision D11): uploads are plaintext; dedup is the
- * server-side SHA-256 (`contentHash`) matched against a local inventory.
+ * Backup engine v2 — docs/plans/03-backup-e2e.md stages 03A + doc 09 §4.
+ * Server-trusted model (decision D11): plaintext uploads deduplicated by the
+ * SHA-256 cached in the local `backup_inventory` table. The full backend
+ * listing is only fetched once, to seed the inventory after a reinstall or
+ * on a new device; afterwards dedup is fully local.
  */
 
-const UPLOADED_IDS_KEY = 'backup.uploadedIds.v1';
-const SUPPORTED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
-const CONVERTIBLE_EXTENSIONS = new Set(['heic', 'heif']);
+const UPLOAD_BATCH = 100;
 
 export interface BackupProgress {
-  phase: 'inventory' | 'uploading' | 'done' | 'error';
+  phase: 'inventory' | 'hashing' | 'uploading' | 'done' | 'error';
   total: number;
   processed: number;
   uploaded: number;
@@ -32,152 +40,114 @@ export interface BackupProgress {
   error?: string;
 }
 
-export function getUploadedIds(): Set<string> {
-  const raw = kv.get(UPLOADED_IDS_KEY);
-  if (!raw) return new Set();
-  try {
-    return new Set(JSON.parse(raw) as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-function markUploaded(assetId: string): void {
-  const ids = getUploadedIds();
-  ids.add(assetId);
-  kv.set(UPLOADED_IDS_KEY, JSON.stringify([...ids]));
-}
-
-export function resetBackupState(): void {
-  kv.remove(UPLOADED_IDS_KEY);
-}
-
-function extensionOf(filename: string): string {
-  const dot = filename.lastIndexOf('.');
-  return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : '';
-}
-
-function mimeFor(extension: string): string {
-  if (extension === 'png') return 'image/png';
-  if (extension === 'webp') return 'image/webp';
-  return 'image/jpeg';
-}
-
-/** SHA-256 of the file bytes, matching the server-side `contentHash`. Null when unreadable. */
-async function sha256File(uri: string): Promise<string | null> {
-  try {
-    const { File } = await import('expo-file-system');
-    const { createHash } = await import('react-native-quick-crypto');
-    const bytes = await new File(uri).arrayBuffer();
-    return createHash('sha256').update(Buffer.from(bytes)).digest('hex');
-  } catch {
-    return null;
-  }
-}
-
-/** HEIC/HEIF must be transcoded client-side — the backend only accepts jpeg|png|webp. */
-async function prepareForUpload(asset: PhotoAsset): Promise<{ uri: string; fileName: string; mimeType: string } | null> {
-  const extension = extensionOf(asset.filename);
-  if (SUPPORTED_EXTENSIONS.has(extension)) {
-    return { uri: asset.uri, fileName: asset.filename, mimeType: mimeFor(extension) };
-  }
-  if (CONVERTIBLE_EXTENSIONS.has(extension)) {
-    try {
-      const { manipulateAsync, SaveFormat } = await import('expo-image-manipulator');
-      const result = await manipulateAsync(asset.uri, [], { format: SaveFormat.JPEG, compress: 0.92 });
-      const fileName = `${asset.filename.replace(/\.[^.]+$/, '')}.jpg`;
-      return { uri: result.uri, fileName, mimeType: 'image/jpeg' };
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
 async function confirmProcessed(photo: CloudPhoto): Promise<void> {
   // The worker picks jobs up within ~2s; a timeout is not an upload failure.
   await pollUntilDone(photo.id, { timeoutMs: 60_000, intervalMs: 2_500 }).catch(() => undefined);
 }
 
 /**
- * Uploads every local photo not yet backed up. Returns the final progress.
- * Skips: already-uploaded asset ids, server-known content hashes (dedup),
- * locked-folder items and unsupported formats.
+ * Uploads every local photo not yet backed up, deduplicating against the
+ * inventory hashes (and, once per install, the server's). Returns the final
+ * progress. Skips: hashes already uploaded, server-side duplicates, locked
+ * items (kept out of the inventory by the scan) and unsupported formats.
  */
 export async function runBackup(onProgress: (progress: BackupProgress) => void): Promise<BackupProgress> {
-  const lockedIds = getLockedIds();
-  const uploadedIds = getUploadedIds();
-  const pending: PhotoAsset[] = [];
-  let progress: BackupProgress = { phase: 'inventory', total: 0, processed: 0, uploaded: 0, skipped: 0, failed: 0 };
+  let progress: BackupProgress = {
+    phase: 'inventory',
+    total: 0,
+    processed: 0,
+    uploaded: 0,
+    skipped: 0,
+    failed: 0,
+  };
   const report = (next: Partial<BackupProgress>) => {
     progress = { ...progress, ...next };
     onProgress(progress);
   };
 
-  const { forEachLibraryPhoto } = await import('@/data/media-repository');
-  await forEachLibraryPhoto((assets) => {
-    for (const asset of assets) {
-      if (lockedIds.has(asset.id) || asset.vaultId) continue;
-      if (uploadedIds.has(asset.id)) continue;
-      pending.push(asset);
-    }
-  });
-  report({ total: pending.length });
+  await runInventoryScan((scan) => report({ phase: 'inventory', processed: scan.scanned, total: scan.total }));
+  await hashPendingItems((hashing) => report({ phase: 'hashing', processed: hashing.hashed, total: hashing.total }));
 
-  let serverHashes: Set<string> | null = null;
-  try {
-    serverHashes = await listAllContentHashes();
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 0) {
-      report({ phase: 'error', error: 'Could not reach the cloud service — check your connection.' });
-      return progress;
+  // Seed the local dedup set when the inventory has no upload history yet
+  // (reinstall / new device): hashes the server already knows are matched
+  // against queued items so only genuinely new content is transferred.
+  let uploadedHashes = getUploadedHashes();
+  if (uploadedHashes.size === 0 && getQueuedRows().length > 0) {
+    try {
+      const serverHashes = await listAllContentHashes();
+      markUploadedByHashes(serverHashes);
+      uploadedHashes = getUploadedHashes();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 0) {
+        report({ phase: 'error', error: 'Could not reach the cloud service — check your connection.' });
+        return progress;
+      }
+      throw error;
     }
-    throw error;
   }
 
-  report({ phase: 'uploading' });
+  const queue = getQueuedRows();
+  report({ phase: 'uploading', total: queue.length, processed: 0 });
   let consecutiveFailures = 0;
-  for (const asset of pending) {
-    if (consecutiveFailures >= 5) {
-      report({ phase: 'error', error: 'Too many failures in a row — backup stopped. Try again later.' });
-      return progress;
-    }
-    report({ current: asset.filename, processed: progress.processed + 1 });
 
-    const prepared = await prepareForUpload(asset);
-    if (!prepared) {
-      report({ skipped: progress.skipped + 1 });
-      markUploaded(asset.id);
-      consecutiveFailures = 0;
-      continue;
-    }
+  for (let i = 0; i < queue.length; i += UPLOAD_BATCH) {
+    const batch = queue.slice(i, i + UPLOAD_BATCH);
+    const assets = await fetchAssetsByIds(batch.map((row) => row.asset_id));
+    const byId = new Map<string, PhotoAsset>(assets.map((asset) => [asset.id, asset]));
 
-    try {
-      const localHash = await sha256File(prepared.uri);
-      if (localHash && serverHashes?.has(localHash)) {
-        serverHashes.delete(localHash);
+    for (const row of batch) {
+      if (consecutiveFailures >= 5) {
+        report({ phase: 'error', error: 'Too many failures in a row — backup stopped. Try again later.' });
+        return progress;
+      }
+      const asset = byId.get(row.asset_id);
+      if (!asset) {
+        // Deleted between scan and upload — the next scan prunes the row.
+        markExcluded(row.asset_id, null);
+        report({ skipped: progress.skipped + 1, processed: progress.processed + 1 });
+        continue;
+      }
+      report({ current: asset.filename, processed: progress.processed + 1 });
+
+      if (row.content_hash && uploadedHashes.has(row.content_hash)) {
+        markUploaded(row.asset_id, row.content_hash, null);
         report({ skipped: progress.skipped + 1 });
-        markUploaded(asset.id);
+        continue;
+      }
+
+      const prepared = await prepareForUpload(asset);
+      if (!prepared) {
+        markExcluded(row.asset_id, 'unsupported format');
+        report({ skipped: progress.skipped + 1 });
         consecutiveFailures = 0;
         continue;
       }
 
-      const outcome = await uploadPhoto(prepared.uri, {
-        fileName: prepared.fileName,
-        mimeType: prepared.mimeType,
-      });
-      if (!outcome.duplicated && outcome.photo.contentHash) serverHashes?.add(outcome.photo.contentHash);
-      await confirmProcessed(outcome.photo);
-      markUploaded(asset.id);
-      report({ uploaded: progress.uploaded + 1 });
-      consecutiveFailures = 0;
-    } catch (error) {
-      if (error instanceof ApiError && (error.status === 413 || error.status === 401)) {
-        report({ phase: 'error', failed: progress.failed + 1, error: error.message });
-        return progress;
+      try {
+        markUploadStarted(row.asset_id);
+        const outcome = await uploadPhoto(prepared.uri, {
+          fileName: prepared.fileName,
+          mimeType: prepared.mimeType,
+        });
+        if (outcome.photo.contentHash) uploadedHashes.add(outcome.photo.contentHash);
+        await confirmProcessed(outcome.photo);
+        markUploaded(row.asset_id, outcome.photo.contentHash ?? row.content_hash, outcome.photo.id);
+        if (outcome.duplicated) {
+          report({ skipped: progress.skipped + 1 });
+        } else {
+          report({ uploaded: progress.uploaded + 1 });
+        }
+        consecutiveFailures = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Upload failed.';
+        markFailed(row.asset_id, message);
+        if (error instanceof ApiError && (error.status === 413 || error.status === 401)) {
+          report({ phase: 'error', failed: progress.failed + 1, error: error.message });
+          return progress;
+        }
+        report({ failed: progress.failed + 1 });
+        consecutiveFailures += 1;
       }
-      report({ failed: progress.failed + 1 });
-      consecutiveFailures += 1;
     }
   }
 

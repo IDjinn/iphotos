@@ -24,13 +24,22 @@
   já conhece (`GET /api/photos`), conversão HEIC→JPEG, poll do estado até
   `Ready|Failed`, skip de itens da Pasta Segura, tratamento de 413 (quota), 429
   (rate-limit) e offline. Estado na store `src/stores/backup.ts`.
-- **Limitação do v1**: não há inventário persistido — a lista de itens já enviados
-  vive como ids na tabela `kv` (zustand persist), sem `content_hash`, sem cache
-  `size+mtime` e sem estados por item. **O estágio 03A abaixo formaliza isso** na
-  tabela `backup_inventory` e o motor passa a ler/escrever nela (migração dos ids
-  já enviados → `state='uploaded'`). O `content_hash` SHA-256 calculado no cliente
-  casa exatamente com o dedup por conta do backend (doc 09 §4), eliminando a
-  listagem completa para dedup no v2.
+- **03A implementado** (2026-08-22): tabela `backup_inventory` (migração v11 em
+  `db.ts`) com `content_hash`, cache `size+mtime`, `folder` (id do álbum) e a
+  máquina de estados do §4; migração one-time dos ids `backup.uploadedIds.v1`
+  do `kv` → `state='uploaded'`; scan incremental em
+  `src/data/backup-inventory.ts` (`runInventoryScan` por pasta, só fotos, itens
+  trancados nunca entram; `hashPendingItems` em lotes com o hash dos bytes que
+  seriam enviados — HEIC transcodado antes); hash SHA-256 em chunks de 1 MB em
+  `src/data/file-hash.ts`; repositório completo em
+  `backup-inventory-repository.ts` (stats, seed por hash, recuperação de
+  estados transientes). O **motor v2** (`backup-engine.ts`) deduplica pelo
+  `content_hash` local — a listagem completa do backend só acontece uma vez
+  para semear o inventário após reinstall/novo aparelho (`markUploadedByHashes`).
+  UI: tela `src/app/settings/backup.tsx` (estatísticas, "Scan now" offline,
+  "Back up now" no modo cloud), stats expostos em `src/stores/backup.ts`.
+  A exclusão por regras de pasta (doc 04) ainda não existe — o estado
+  `excluded` hoje só é usado para formatos não suportados.
 - Fonte local de mídia: `src/data/media-repository.ts` (consultas paginadas
   newest-first, listener de mudanças da biblioteca, `listDeviceFolders()` e
   `forEachFolderAsset()` — já usados pelo indexer de labels) sobre
@@ -261,11 +270,12 @@ do resultado no índice. O ponto de extensão no pipeline é o estado `uploaded`
 
 ## 11. Estágios e tarefas
 
-- [ ] **03A (Fase 2, local):** migração + `backup_inventory` (inclui migrar os ids
+- [x] **03A (Fase 2, local):** migração + `backup_inventory` (inclui migrar os ids
       já enviados do `kv` para `state='uploaded'`); scan incremental;
-      hashing com cache; exclusão por regras (doc 04); estatísticas (X itens,
+      hashing com cache; ~~exclusão por regras (doc 04)~~ (fica para o 04 —
+      `excluded` hoje só cobre formatos não suportados); estatísticas (X itens,
       Y GB) expostas em `src/stores/backup.ts`; motor v1 passa a deduplicar pelo
-      `content_hash` local em vez de listar tudo do backend
+      `content_hash` local em vez de listar tudo do backend ✅ 2026-08-22
 - [ ] **03B (Fase 3):** `src/data/crypto.ts` + round-trip tests; derivação de
       chaves; wrap/recovery (D3 decidir antes)
 - [ ] **03C (Fase 3):** `cloudStorageProvider`; upload chunked multipart com

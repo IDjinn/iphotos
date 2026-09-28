@@ -41,6 +41,12 @@ function formatCount(count: number): string {
   return count.toLocaleString('en-US');
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+  return `${Math.max(0, Math.round(bytes / 1024))} KB`;
+}
+
 /** Just the host of the configured endpoint (never the key or full path). */
 function aiHost(url: string): string {
   try {
@@ -62,7 +68,6 @@ export default function SettingsScreen() {
   const backup = useBackupStore();
   const thumbnails = useThumbnailsStore();
   const encryptedMode = useEncryptedModeStore();
-  const startBackup = useBackupStore((s) => s.start);
   const aiEnabled = useClassificationStore((s) => s.aiEnabled);
   const setAiEnabled = useClassificationStore((s) => s.setAiEnabled);
   const localSearchEnabled = useClassificationStore((s) => s.localEnabled);
@@ -82,7 +87,14 @@ export default function SettingsScreen() {
     const unsubscribe = useClassificationStore.subscribe((state, prev) => {
       if (!state.running && prev.running) setLabeledCount(countLabeledAssets());
     });
-    return unsubscribe;
+    const unsubscribeBackup = useBackupStore.subscribe((state, prev) => {
+      if ((!state.running && prev.running) || (!state.scanning && prev.scanning)) state.refreshStats();
+    });
+    useBackupStore.getState().refreshStats();
+    return () => {
+      unsubscribe();
+      unsubscribeBackup();
+    };
   }, []);
 
   const searchCaption = !localSearchEnabled
@@ -99,23 +111,40 @@ export default function SettingsScreen() {
         : 'Labels your folders on this device';
 
   const backupProgress = backup.progress;
-  const backupCaption = !backup.running
-    ? backup.lastError
-      ? backup.lastError
-      : backupProgress && backupProgress.total > 0
-        ? `Last run: ${formatCount(backupProgress.uploaded)} uploaded · ${formatCount(backupProgress.skipped)} already saved${
-            backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} failed` : ''
-          }`
-        : 'Upload your photos to the cloud'
+  const backupStats = backup.stats;
+  const backupBusy = backup.running || backup.scanning;
+  const backupBusyCaption = backup.scanning
+    ? backup.scanProgress && backup.scanProgress.total > 0
+      ? `${backup.scanProgress.phase === 'scanning' ? 'Scanning' : 'Hashing'}… ${formatCount(
+          Math.min(backup.scanProgress.processed, backup.scanProgress.total)
+        )} of ${formatCount(backup.scanProgress.total)}`
+      : backup.scanProgress?.phase === 'hashing'
+        ? 'Hashing your photos…'
+        : 'Scanning your library…'
     : backupProgress
       ? backupProgress.phase === 'inventory'
         ? 'Scanning your library…'
-        : backupProgress.total > 0
-          ? `Backing up ${formatCount(Math.min(backupProgress.processed, backupProgress.total))} of ${formatCount(
-              backupProgress.total
-            )}${backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} failed` : ''}`
-          : 'Backing up…'
+        : backupProgress.phase === 'hashing'
+          ? `Hashing ${formatCount(backupProgress.processed)} of ${formatCount(backupProgress.total)}…`
+          : backupProgress.total > 0
+            ? `Backing up ${formatCount(Math.min(backupProgress.processed, backupProgress.total))} of ${formatCount(
+                backupProgress.total
+              )}${backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} failed` : ''}`
+            : 'Backing up…'
       : 'Starting…';
+  const backupCaption = backupBusy
+    ? backupBusyCaption
+    : backup.lastError
+      ? backup.lastError
+      : backupStats && backupStats.totalItems > 0
+        ? `${formatCount(backupStats.totalItems)} items · ${formatBytes(backupStats.totalBytes)} · ${formatBytes(
+            backupStats.uploadedBytes
+          )} backed up`
+        : backupProgress && backupProgress.total > 0
+          ? `Last run: ${formatCount(backupProgress.uploaded)} uploaded · ${formatCount(backupProgress.skipped)} already saved${
+              backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} failed` : ''
+            }`
+          : 'Inventory, scan and cloud backup';
 
   return (
     <ScrollView
@@ -155,61 +184,49 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="Backup & sync">
-          {account.mode === 'cloud' ? (
-            <Pressable
-              style={({ pressed }) => [styles.row, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
-              onPress={() => {
-                haptic('medium');
-                if (!backup.running) void startBackup();
-              }}
-              disabled={backup.running}
-              accessibilityLabel="Back up photos"
-            >
-              <Icon name="cloud-upload-outline" size={22} color={colors.accent} />
-              <View style={styles.rowText}>
-                <ThemedText variant="body" style={styles.rowLabel}>
-                  Backup
-                </ThemedText>
-                <ThemedText variant="bodySmall" color="secondary">
-                  {backupCaption}
-                </ThemedText>
-                {backup.running && backup.progress && backup.progress.total > 0 ? (
-                  <View style={styles.backupBarTrack}>
-                    <View
-                      style={[
-                        styles.backupBarFill,
-                        {
-                          backgroundColor: colors.accent,
-                          flex: Math.max(
-                            0.02,
-                            (backup.progress.processed - backup.progress.failed) /
-                              Math.max(1, backup.progress.total)
-                          ),
-                        },
-                      ]}
-                    />
-                  </View>
-                ) : null}
-              </View>
-              {backup.running ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-              )}
-            </Pressable>
-          ) : (
-            <View style={[styles.row, { backgroundColor: colors.surface }]}>
-              <Icon name="cloud-offline-outline" size={22} color={colors.iconInactive} />
-              <View style={styles.rowText}>
-                <ThemedText variant="body" style={styles.rowLabel}>
-                  Backup
-                </ThemedText>
-                <ThemedText variant="bodySmall" color="secondary">
-                  Requires Cloud mode — log in to back up your photos
-                </ThemedText>
-              </View>
+          <Pressable
+            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+            onPress={() => {
+              haptic('light');
+              router.push('/settings/backup');
+            }}
+            accessibilityLabel="Backup settings"
+          >
+            <Icon
+              name={account.mode === 'cloud' ? 'cloud-upload-outline' : 'cloud-offline-outline'}
+              size={22}
+              color={account.mode === 'cloud' ? colors.accent : colors.icon}
+            />
+            <View style={styles.rowText}>
+              <ThemedText variant="body" style={styles.rowLabel}>
+                Backup
+              </ThemedText>
+              <ThemedText variant="bodySmall" color="secondary">
+                {backupCaption}
+              </ThemedText>
+              {backup.running && backupProgress && backupProgress.phase === 'uploading' && backupProgress.total > 0 ? (
+                <View style={styles.backupBarTrack}>
+                  <View
+                    style={[
+                      styles.backupBarFill,
+                      {
+                        backgroundColor: colors.accent,
+                        flex: Math.max(
+                          0.02,
+                          (backupProgress.processed - backupProgress.failed) / Math.max(1, backupProgress.total)
+                        ),
+                      },
+                    ]}
+                  />
+                </View>
+              ) : null}
             </View>
-          )}
+            {backupBusy ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+            )}
+          </Pressable>
           <View style={[styles.row, { backgroundColor: colors.surface, marginTop: 8 }]}>
             <Icon name="archive-outline" size={22} color={colors.iconInactive} />
             <View style={styles.rowText}>
