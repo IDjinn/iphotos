@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Content Include="..\.dockerignore">
+        <Link>.dockerignore</Link>
+      </Content>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\iPhotos.Application\iPhotos.Application.csproj" />
+      <ProjectReference Include="..\iPhotos.Infrastructure\iPhotos.Infrastructure.csproj" />
+      <ProjectReference Include="..\iPhotos.Imaging\iPhotos.Imaging.csproj" />
+      <ProjectReference Include="..\iPhotos.Auth\iPhotos.Auth.csproj" />
+    </ItemGroup>
+
+</Project>

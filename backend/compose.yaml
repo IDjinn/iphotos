@@ -1,0 +1,106 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: iphotos
+      POSTGRES_PASSWORD: iphotos
+      POSTGRES_DB: iphotos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iphotos -d iphotos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Loopback-only: psql access is local-dev only; nothing on the LAN.
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  # Standalone blob/object storage (filesystem, S3/Wasabi/MinIO, WebDAV, Google Drive).
+  # The api and worker talk to it over HTTP; no shared volume is needed when
+  # BlobStorage__Mode=Http. With the default filesystem provider the objects live in
+  # the storage-data volume below.
+  storage:
+    image: iphotos.storage
+    build:
+      context: .
+      dockerfile: iPhotos.Storage.Host/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Storage__ApiKey: ${IPHOTOS_STORAGE_API_KEY:-change-me-storage-api-key}
+      Storage__SigningKey: ${IPHOTOS_STORAGE_SIGNING_KEY:-change-me-in-production-32-bytes-minimum!!}
+      Storage__AllowPrivateNetworks: "true" # compose-internal endpoints (api -> storage, filesystem provider)
+      Providers__FileSystem__RootPath: /var/lib/iphotos/objects
+      # S3-compatible (Wasabi/MinIO/B2/R2/AWS) example — uncomment and fill:
+      # Storage__DefaultProvider: s3
+      # Providers__S3__Endpoint: https://s3.eu-central-2.wasabisys.com
+      # Providers__S3__Region: eu-central-2
+      # Providers__S3__Bucket: iphotos
+      # Providers__S3__AccessKey: ...
+      # Providers__S3__SecretKey: ...
+      # Providers__S3__ForcePathStyle: "true"
+    volumes:
+      - storage-data:/var/lib/iphotos/objects
+    # Loopback-only: the storage service is an internal dependency of api/worker.
+    ports:
+      - "127.0.0.1:5206:8080"
+
+  api:
+    image: iphotos.api
+    build:
+      context: .
+      dockerfile: iPhotos.Core/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=iphotos;Username=iphotos;Password=iphotos
+      BlobStorage__Mode: Http
+      StorageService__BaseUrl: http://storage:8080
+      StorageService__ApiKey: ${IPHOTOS_STORAGE_API_KEY:-change-me-storage-api-key}
+      StorageService__AllowPrivateNetworks: "true"
+      Auth__Jwt__SigningKey: ${IPHOTOS_JWT_SIGNING_KEY:-change-me-in-production-32-bytes-minimum!!}
+    # No volume: blobs live in the storage service.
+    # Loopback-only: the backend is reachable from outside exclusively through
+    # the cloudflared tunnel below (TLS via Cloudflare edge). LAN clients and
+    # the host network can no longer hit the API directly on port 5205.
+    ports:
+      - "127.0.0.1:5205:8080"
+
+  worker:
+    image: iphotos.worker
+    build:
+      context: .
+      dockerfile: iPhotos.Worker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_started
+    environment:
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=iphotos;Username=iphotos;Password=iphotos
+      BlobStorage__Mode: Http
+      StorageService__BaseUrl: http://storage:8080
+      StorageService__ApiKey: ${IPHOTOS_STORAGE_API_KEY:-change-me-storage-api-key}
+      StorageService__AllowPrivateNetworks: "true"
+      Worker__PollIntervalSeconds: "2"
+    # No volume: blobs live in the storage service.
+
+  # Quick tunnel (no Cloudflare account needed): exposes the API on a public
+  # https://*.trycloudflare.com URL. WARNING: quick-tunnel URLs change every
+  # time the container restarts — the app bakes EXPO_PUBLIC_API_URL at build
+  # time, so a restart requires a new APK build. Switch to a named tunnel
+  # (cloudflared tunnel login + own domain) for a stable hostname.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://api:8080
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  storage-data:

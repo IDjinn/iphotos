@@ -207,7 +207,7 @@ Dividas técnicas conhecidas da implementação atual:
 | # | Decisão | Status |
 |---|---------|--------|
 | D1 | Documentos de plano em PT-BR; código/UI em inglês | ✔ Decidido |
-| D2 | Backend do modo Cloud: **premissa de trabalho = backend próprio enxuto + storage S3-compatible** (alternativa: BaaS) | ✔ **Implementado** (2026-08-18): backend próprio em `C:\dev\csharp\iPhotos` (.NET 10 + PostgreSQL); storage S3-compatible segue como follow-up (hoje filesystem) |
+| D2 | Backend do modo Cloud: **premissa de trabalho = backend próprio enxuto + storage S3-compatible** (alternativa: BaaS) | ✔ **Implementado** (2026-08-18): backend próprio em `C:\dev\csharp\iPhotos` (.NET 10 + PostgreSQL). **Storage S3 ✔** (2026-09-30): serviço standalone `iPhotos.Storage.Host` (payload → URL) com providers FileSystem/S3-compatible (AWS, Wasabi, MinIO, B2, R2)/WebDAV/Google Drive; api+worker passam a consumir via HTTP (`BlobStorage:Mode=Http`) |
 | D3 | Recuperação E2E: **recomendação = chave de recuperação** gerada no cadastro (padrão Proton); sem senha e sem chave = dados irrecuperáveis | Recomendação — decidir quando o modo E2E (03B–F, futuro) for implementado |
 | D4 | Classificação cloud: **inferência no servidor, opt-in, anônima** — a imagem é enviada durante o upload para classificação e o resultado volta cifrado ao cliente; servidor processa de forma efêmera, sem persistir a imagem e sem vínculo com a conta | ✔ Decidido pelo autor |
 | D5 | Billing: Play Billing vs Stripe (ou ambos) | 🟡 Recomendação no doc 10 (Play Billing v1 no Android + verificação no backend; Stripe como follow-up web/desktop) — confirmar antes de implementar |
@@ -218,6 +218,7 @@ Dividas técnicas conhecidas da implementação atual:
 | D10 | Labels v1 = heurísticas de pasta do MediaStore (sem ML), toggle "Smart search" default **on**, busca por texto livre consulta o índice | ✔ Implementado 2026-08-16 |
 | D11 | Auth do v1: **e-mail + senha + JWT (servidor confiável, estilo Immich)** — o servidor vê as fotos para gerar variantes e indexar EXIF; **supersede a premissa OPAQUE/zero-knowledge do 03 para o v1**. O modo zero-knowledge permanece como futuro: a tabela `users` do backend já reserva `wrapped_master_key`/`kdf_salt`/`kdf_params` | ✔ Decidido 2026-08-18 |
 | D12 | Stack do backend: .NET 10 + PostgreSQL + EF Core (migrations) + worker separado para variantes (fila `variant_jobs`, SKIP LOCKED) + ImageSharp 3.1 (fixado: a 4.0 exige chave de licença no build Docker); TDD com Testcontainers | ✔ Implementado 2026-08-18 |
+| D13 | Storage desacoplado em serviço próprio (`iPhotos.Storage` + `iPhotos.Storage.Host` na mesma solution, isolado da lógica principal): API simples "payload → URL" (PUT objeto → URL assinada/presigned), providers FileSystem, S3-compatible (AWS/Wasabi/MinIO/B2/R2 via endpoint+path-style), WebDAV e Google Drive (SA); auth `X-Api-Key`, URLs assinadas (HMAC ou SigV4), guard SSRF para endpoints privados; o backend consome via `IBlobStorage` Http (DB continua guardando keys) | ✔ Implementado 2026-09-30 |
 
 ## 7. Como usar estes documentos
 

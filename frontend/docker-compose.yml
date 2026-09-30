@@ -1,0 +1,25 @@
+services:
+  android:
+    build: .
+    image: iphotos-android-builder
+    init: true
+    working_dir: /workspace
+    environment:
+      # expo-constants warns when NODE_ENV is unset during createExpoConfig.
+      NODE_ENV: development
+    volumes:
+      # Project sources (run from a WSL-native path for fast I/O, see README notes).
+      - .:/workspace
+      # Shadow mount: dependencies live in a Docker volume so the C++/CMake build
+      # directories inside node_modules get native-filesystem speed instead of
+      # going through the slow Windows mount. The host node_modules is untouched.
+      - node_modules:/workspace/node_modules
+      # Persist Gradle dependency/transform caches across builds.
+      - gradle-cache:/root/.gradle
+    # Default: install deps (no-op when the volume already satisfies bun.lock) and
+    # build the debug APK. Override with: docker compose run --rm android <cmd>
+    command: bash -lc "bun install && cd android && bash ./gradlew assembleDebug"
+
+volumes:
+  node_modules:
+  gradle-cache:

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-iPhotos.Worker-07b393ae-a8bc-4db8-b9b3-579cc109a7fb</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\iPhotos.Application\iPhotos.Application.csproj" />
+    <ProjectReference Include="..\iPhotos.Infrastructure\iPhotos.Infrastructure.csproj" />
+    <ProjectReference Include="..\iPhotos.Imaging\iPhotos.Imaging.csproj" />
+  </ItemGroup>
+</Project>

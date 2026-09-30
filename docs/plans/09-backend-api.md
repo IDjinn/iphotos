@@ -1,7 +1,7 @@
 # 09 — Backend API: contrato de integração app ↔ servidor
 
 > **Status: ✅ backend implementado (2026-08-18)** — este doc é o contrato para
-> conectar o front. Repo: `C:\dev\csharp\iPhotos` (.NET 10 + PostgreSQL + worker de
+> conectar o front. Repo: `backend/` neste monorepo (antes em `C:\dev\csharp\iPhotos`; .NET 10 + PostgreSQL + worker de
 > variantes, 107 testes unitários/integração com Testcontainers).
 > Fase 3 · Depende de: 01 (telas de login/registro), 02 (modo cloud) · Alimenta: 03A (upload/dedup), 07 (conta/uso)
 > Objetivo: documentar **como o app consome o backend v1** — endpoints, auth, upload,

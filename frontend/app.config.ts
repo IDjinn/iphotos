@@ -6,7 +6,7 @@ import type { ExpoConfig } from 'expo/config';
 const apiUrl = process.env.EXPO_PUBLIC_API_URL;
 if (!apiUrl || !/^https?:\/\/.+/.test(apiUrl)) {
   throw new Error(
-    'EXPO_PUBLIC_API_URL is not set or invalid — configure the backend endpoint in .env (docs/plans/09-backend-api.md §2).'
+    'EXPO_PUBLIC_API_URL is not set or invalid — configure the backend endpoint in .env (../docs/plans/09-backend-api.md §2).'
   );
 }
 
