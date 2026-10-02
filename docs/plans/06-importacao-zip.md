@@ -5,6 +5,15 @@
 > contendo fotos/vídeos, com validação, extração segura, deduplicação, progresso
 > cancelável e relatório final.
 
+> **Revisão 2026-10-02 — abordagem server-side implementada.** A decisão do usuário
+> foi por extração no **backend** (não no dispositivo): o zip é enviado via
+> `POST /api/imports/zip` e processado pelo worker (contrato em 09 §3.4). HEIC é
+> transcrito no servidor (Magick.NET/libheif); vídeos e sidecars do Takeout são
+> ignorados e contados; dedupe idempotente por hash; sem álbuns. Este documento
+> descreve o fluxo **device-side** original, mantido como fase futura (útil p/
+> modo offline e para salvar vídeos na galeria) — as seções §3/§4 (validação,
+> zip-slip, ignorados) continuam como referência de regras.
+
 ## 1. Contexto atual
 
 - Library tab (`src/app/(tabs)/library.tsx`) já tem o padrão de "utility cards"

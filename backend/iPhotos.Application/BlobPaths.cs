@@ -11,6 +11,9 @@ public static class BlobPaths
 
     public static string Thumbnail(Guid ownerId, Guid photoId) => $"{ownerId}/{photoId}/thumb.jpg";
 
+    /// <summary>Staging blob for a zip import job; deleted once the worker finishes with it.</summary>
+    public static string Import(Guid ownerId, Guid jobId) => $"{ownerId}/imports/{jobId}.zip";
+
     public static string Preview(Guid ownerId, Guid photoId) => $"{ownerId}/{photoId}/preview.jpg";
 
     public static string FolderOf(string blobPath)

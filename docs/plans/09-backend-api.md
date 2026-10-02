@@ -120,6 +120,45 @@ converter no cliente com `expo-image-manipulator`); ≤ 200 MB; quota excedida �
 - Todas as datas em **UTC ISO 8601** (offset `+00:00`).
 - Ordenação da listagem: `takenAt DESC NULLS LAST`, depois `createdAt DESC`.
 
+### 3.4 Importação por ZIP — `/api/imports` (todos exigem Bearer)
+
+> Implementado 2026-10-02 (server-side). O zip (ex.: Google Takeout) é enviado por
+> upload multipart, o servidor extrai e ingera as fotos pelo mesmo pipeline de
+> `POST /api/photos` (dedupe por hash, variantes, quota). O dispositivo nunca abre
+> o arquivo. Regras de conteúdo e limites: doc 06 (revisão server-side).
+
+**`POST /api/imports/zip`** — multipart, campo `file` (obrigatório ser um ZIP real:
+validação por magic bytes `PK\x03\x04`). Query opcional `?fileName=<nome>` — o nome
+real do arquivo (uploaders nativos podem enviar um filename opaco no multipart).
+Payload máximo: `ZipImport:MaxZipBytes` (default 5 GiB; excedido → **413**).
+Resposta **202**: `{ "jobId": "<guid>" }`. O processamento é assíncrono (worker).
+
+**`GET /api/imports/{id}`** — status do job do próprio usuário (outro owner → **404**):
+
+```json
+{
+  "id": "…", "state": "Queued|Processing|Done|Failed",
+  "fileName": "takeout.zip", "sizeBytes": 123,
+  "totalEntries": 300, "processedEntries": 180,
+  "imported": 150, "duplicated": 20, "ignored": 10, "failed": 0,
+  "error": null, "createdAt": "…", "completedAt": null
+}
+```
+
+- `totalEntries`/contadores preenchem conforme o worker processa; poll a cada ~3 s
+  até `Done|Failed`.
+- Fotos suportadas no zip: `jpg/jpeg/png/webp/heic/heif` (HEIC/HEIF é transcrito para
+  JPEG no servidor, preservando EXIF). Vídeos, sidecars do Takeout (`json/html/csv`),
+  `__MACOSX/`, ocultos, `Thumbs.db` e zips aninhados são **ignorados** e contados.
+- Zip criptografado → job `Failed` com `"Protected/encrypted ZIPs are not supported."`;
+  quota estourada → `Failed` com mensagem clara. Falhas transitórias reenfileiram
+  (até 3 tentativas) — reprocessar é seguro porque o dedupe vira `duplicated`.
+- Falha no meio do caminho não reaproveita: cada job é independente e idempotente
+  (reenviar o mesmo zip → 100% `duplicated`).
+- **Nota de rede**: túneis Cloudflare (free/quick) limitam upload a ~100 MB — zips
+  grandes exigem acesso direto/LAN à API. O blob do zip é descartado do storage ao
+  fim do job.
+
 ## 4. Mapeamento para as seams do app
 
 | Seam existente | Como conecta |

@@ -10,6 +10,13 @@ if (!apiUrl || !/^https?:\/\/.+/.test(apiUrl)) {
   );
 }
 
+// The SDK 57 static typings no longer declare android.usesCleartextTraffic; the built
+// app still relies on the cleartext LAN flag, so widen the type locally instead of
+// dropping the property from the config.
+type ExpoConfigWithCleartextFlag = Omit<ExpoConfig, 'android'> & {
+  android?: ExpoConfig['android'] & { usesCleartextTraffic?: boolean };
+};
+
 export default {
   name: 'iPhotos',
   slug: 'iphotos',
@@ -85,4 +92,4 @@ export default {
     typedRoutes: true,
     reactCompiler: true,
   },
-} satisfies ExpoConfig;
+} satisfies ExpoConfigWithCleartextFlag;

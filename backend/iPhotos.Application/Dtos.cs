@@ -70,3 +70,34 @@ public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSi
 public sealed record UsageStats(long UsedBytes, int PhotoCount, int VariantCount);
 
 public sealed record UsageSummary(long UsedBytes, long QuotaBytes, int PhotoCount, int VariantCount);
+
+public sealed record ZipImportJobDto(
+    Guid Id,
+    JobState State,
+    string FileName,
+    long SizeBytes,
+    int TotalEntries,
+    int ProcessedEntries,
+    int Imported,
+    int Duplicated,
+    int Ignored,
+    int Failed,
+    string? Error,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? CompletedAt)
+{
+    public static ZipImportJobDto From(ZipImportJob job) => new(
+        job.Id,
+        job.State,
+        job.FileName,
+        job.SizeBytes,
+        job.TotalEntries,
+        job.ProcessedEntries,
+        job.Imported,
+        job.Duplicated,
+        job.Ignored,
+        job.Failed,
+        job.LastError,
+        job.CreatedAt,
+        job.ProcessedAt);
+}

@@ -28,4 +28,8 @@
     <ProjectReference Include="..\..\iPhotos.Worker\iPhotos.Worker.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\iPhotos.Imaging.UnitTests\TestAssets\heic-fixture.heic" Link="TestAssets\heic-fixture.heic" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

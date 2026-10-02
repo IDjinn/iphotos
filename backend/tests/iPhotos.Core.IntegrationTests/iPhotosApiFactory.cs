@@ -57,11 +57,14 @@ public sealed class iPhotosApiFactory : WebApplicationFactory<Program>, IAsyncLi
             ["Worker:PollIntervalSeconds"] = "1",
         }));
 
-        // The real worker pipeline, so uploads become Ready without manual intervention.
+        // The real worker pipelines, so uploads become Ready and zip imports
+        // complete without manual intervention.
         builder.ConfigureTestServices(services =>
         {
             services.AddVariantProcessing();
             services.AddHostedService<VariantProcessingWorker>();
+            services.AddZipImportProcessing();
+            services.AddHostedService<ZipImportWorker>();
         });
         builder.ConfigureLogging(logging =>
         {

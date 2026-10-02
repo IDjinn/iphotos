@@ -1,6 +1,7 @@
 using iPhotos.Application.Abstractions;
 using iPhotos.Application.Common;
 using iPhotos.Domain;
+using System.Text;
 
 namespace iPhotos.Application.UnitTests;
 
@@ -178,6 +179,65 @@ public sealed class InMemoryVariantJobRepository : IVariantJobRepository
         }
 
         return Task.FromResult(job);
+    }
+}
+
+public sealed class InMemoryZipImportRepository : IZipImportRepository
+{
+    public List<ZipImportJob> Jobs { get; } = [];
+
+    public Task<ZipImportJob> EnqueueAsync(ZipImportJob job, CancellationToken cancellationToken = default)
+    {
+        Jobs.Add(job);
+        return Task.FromResult(job);
+    }
+
+    public Task<ZipImportJob?> DequeueNextAsync(CancellationToken cancellationToken = default)
+    {
+        var job = Jobs.FirstOrDefault(j => j.State == JobState.Queued);
+        if (job is not null)
+        {
+            job.Start();
+        }
+
+        return Task.FromResult(job);
+    }
+
+    public Task<ZipImportJob?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default)
+        => Task.FromResult(Jobs.FirstOrDefault(j => j.Id == id && j.OwnerId == ownerId));
+
+    public Task<int> RequeueStuckAsync(CancellationToken cancellationToken = default)
+    {
+        var count = 0;
+        foreach (var job in Jobs.Where(j => j.State == JobState.Processing))
+        {
+            job.State = JobState.Queued;
+            count++;
+        }
+
+        return Task.FromResult(count);
+    }
+}
+
+public sealed class FakeHeifConverter : IHeifConverter
+{
+    private int _counter;
+
+    public bool Called { get; private set; }
+
+    public Exception? ThrowOnConvert { get; set; }
+
+    public Task<HeifConversionResult> ConvertToJpegAsync(Stream heif, CancellationToken cancellationToken = default)
+    {
+        Called = true;
+        if (ThrowOnConvert is not null)
+        {
+            throw ThrowOnConvert;
+        }
+
+        // Unique content per call — real conversions of distinct inputs never collide.
+        var bytes = Encoding.UTF8.GetBytes($"fake-jpeg-{++_counter}");
+        return Task.FromResult(new HeifConversionResult(new MemoryStream(bytes), 8, 8, bytes.Length));
     }
 }
 

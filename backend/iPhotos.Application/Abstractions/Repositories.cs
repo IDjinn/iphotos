@@ -56,3 +56,22 @@ public interface IVariantJobRepository
     /// </summary>
     Task<VariantJob?> DequeueNextAsync(CancellationToken cancellationToken = default);
 }
+
+public interface IZipImportRepository
+{
+    Task<ZipImportJob> EnqueueAsync(ZipImportJob job, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims the oldest queued job (FOR UPDATE SKIP LOCKED in PostgreSQL),
+    /// moving it to Processing. Returns null when the queue is empty.
+    /// </summary>
+    Task<ZipImportJob?> DequeueNextAsync(CancellationToken cancellationToken = default);
+
+    Task<ZipImportJob?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves jobs stranded in Processing (worker crash mid-import) back to Queued.
+    /// Safe by design: hash dedup turns already-imported entries into duplicates.
+    /// </summary>
+    Task<int> RequeueStuckAsync(CancellationToken cancellationToken = default);
+}

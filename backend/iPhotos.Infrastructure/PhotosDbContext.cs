@@ -15,6 +15,8 @@ public sealed class PhotosDbContext(DbContextOptions<PhotosDbContext> options) :
 
     public DbSet<VariantJob> VariantJobs => Set<VariantJob>();
 
+    public DbSet<ZipImportJob> ZipImportJobs => Set<ZipImportJob>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<User>(entity =>
@@ -93,6 +95,23 @@ public sealed class PhotosDbContext(DbContextOptions<PhotosDbContext> options) :
             entity.HasOne<Photo>()
                 .WithMany()
                 .HasForeignKey(j => j.PhotoId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ZipImportJob>(entity =>
+        {
+            entity.ToTable("zip_import_jobs");
+            entity.HasKey(j => j.Id);
+            entity.Property(j => j.FileName).HasMaxLength(512).IsRequired();
+            entity.Property(j => j.BlobPath).HasMaxLength(1024).IsRequired();
+            entity.Property(j => j.State).HasConversion<string>().HasMaxLength(20);
+            entity.Property(j => j.LastError).HasMaxLength(2000);
+            // Worker polling: oldest queued first.
+            entity.HasIndex(j => new { j.State, j.CreatedAt });
+
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(j => j.OwnerId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

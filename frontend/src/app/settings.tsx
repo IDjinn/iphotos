@@ -227,17 +227,35 @@ export default function SettingsScreen() {
               <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
             )}
           </Pressable>
-          <View style={[styles.row, { backgroundColor: colors.surface, marginTop: 8 }]}>
-            <Icon name="archive-outline" size={22} color={colors.iconInactive} />
+          <Pressable
+            style={({ pressed }) => [
+              styles.row,
+              { backgroundColor: colors.surface, marginTop: 8 },
+              account.mode !== 'cloud' && { opacity: 0.6 },
+              pressed && { opacity: 0.75 },
+            ]}
+            onPress={() => {
+              haptic('light');
+              router.push('/settings/import-zip');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Import from ZIP"
+          >
+            <Icon
+              name="archive-outline"
+              size={22}
+              color={account.mode === 'cloud' ? colors.accent : colors.iconInactive}
+            />
             <View style={styles.rowText}>
               <ThemedText variant="body" style={styles.rowLabel}>
                 Import from ZIP
               </ThemedText>
               <ThemedText variant="bodySmall" color="secondary">
-                Coming soon
+                {account.mode === 'cloud' ? 'Google Takeout & photo archives' : 'Requires Cloud mode'}
               </ThemedText>
             </View>
-          </View>
+            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+          </Pressable>
         </Section>
 
         <Section title="Appearance">

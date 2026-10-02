@@ -36,3 +36,17 @@ public sealed class ImagingOptions
 
     public int PreviewQuality { get; set; } = 80;
 }
+
+public sealed class ZipImportOptions
+{
+    public const string SectionName = "ZipImport";
+
+    /// <summary>Maximum accepted ZIP payload size (Google Takeout archives default to 2 GB parts).</summary>
+    public long MaxZipBytes { get; set; } = 5L * 1024 * 1024 * 1024; // 5 GiB
+
+    /// <summary>Fail fast when a ZIP declares more entries than this (Takeout zips carry JSON sidecars).</summary>
+    public int MaxEntries { get; set; } = 50_000;
+
+    /// <summary>Directory for extracted entries. Empty means the OS temp directory.</summary>
+    public string WorkDir { get; set; } = string.Empty;
+}

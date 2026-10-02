@@ -27,4 +27,19 @@ public static class DependencyInjection
         services.AddScoped<VariantProcessingHandler>();
         return services;
     }
+
+    /// <summary>
+    /// Registers the zip import pipeline (archive extraction + HEIC transcode + photo
+    /// ingestion). Used by the Worker host and by integration test hosts.
+    /// </summary>
+    public static IServiceCollection AddZipImportProcessing(this IServiceCollection services)
+    {
+        services.AddOptions<ZipImportOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(ZipImportOptions.SectionName).Bind(options));
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<ZipImportOptions>>().Value);
+
+        services.AddSingleton<IHeifConverter, MagickHeifConverter>();
+        services.AddScoped<ZipImportHandler>();
+        return services;
+    }
 }
