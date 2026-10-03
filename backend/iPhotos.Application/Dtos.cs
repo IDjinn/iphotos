@@ -53,6 +53,12 @@ public sealed record PhotoDto(
 
 public sealed record PhotoUploadResult(PhotoDto Photo, bool Duplicated);
 
+public sealed record UploadTicketRequest(string FileName, string ContentType, long SizeBytes, string ContentHash);
+
+/// <summary>Direct-upload ticket: reserve dedup/quota, then PUT the bytes straight to storage.
+/// <c>UploadUrl</c> is null for duplicates (nothing to upload).</summary>
+public sealed record UploadTicket(PhotoDto Photo, bool Duplicated, string? UploadUrl, DateTimeOffset? ExpiresAt);
+
 public sealed record PhotoFilter(
     Guid OwnerId,
     DateTimeOffset? From = null,

@@ -15,7 +15,7 @@ public sealed class VariantProcessingWorker(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var pollInterval = TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds));
+        var pollInterval = TimeSpan.FromSeconds(Math.Max(0.25, options.Value.PollIntervalSeconds));
         logger.LogInformation("Variant processing worker started (poll every {Seconds}s)", pollInterval.TotalSeconds);
 
         while (!stoppingToken.IsCancellationRequested)

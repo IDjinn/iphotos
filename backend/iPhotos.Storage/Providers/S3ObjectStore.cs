@@ -22,10 +22,15 @@ public sealed class S3ObjectStore : IObjectStore
         var config = new AmazonS3Config
         {
             RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(options.Region),
-            ServiceURL = string.IsNullOrWhiteSpace(options.Endpoint) ? null : options.Endpoint,
             ForcePathStyle = options.ForcePathStyle,
             AuthenticationRegion = options.Region,
         };
+        // AWSSDK v4: assigning ServiceURL (even null) invalidates RegionEndpoint, so it
+        // must only be set when a custom endpoint (Wasabi/MinIO/B2/R2) is configured.
+        if (!string.IsNullOrWhiteSpace(options.Endpoint))
+        {
+            config.ServiceURL = options.Endpoint;
+        }
         _isHttpEndpoint = options.Endpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
         // Endpoint validation (scheme + SSRF) before any request leaves the process.
         if (!string.IsNullOrWhiteSpace(options.Endpoint))
@@ -44,11 +49,25 @@ public sealed class S3ObjectStore : IObjectStore
 
     public async Task<ObjectWriteResult> PutAsync(string key, Stream content, string? contentType, CancellationToken cancellationToken = default)
     {
+        // AWSSDK v4 refuses uploads whose length it cannot determine. Seekable streams
+        // carry their length; HTTP request bodies do not, so spill those to a temp file.
+        Stream payload = content;
+        string? spillPath = null;
+        if (!content.CanSeek)
+        {
+            spillPath = Path.Combine(Path.GetTempPath(), $"iphotos-s3-{Guid.NewGuid():N}.part");
+            await using (var spill = File.Create(spillPath))
+            {
+                await content.CopyToAsync(spill, cancellationToken);
+            }
+            payload = File.OpenRead(spillPath);
+        }
+
         var request = new PutObjectRequest
         {
             BucketName = _bucket,
             Key = FullKey(key),
-            InputStream = content,
+            InputStream = payload,
             ContentType = contentType,
             AutoCloseStream = false,
             UseChunkEncoding = false,
@@ -57,11 +76,19 @@ public sealed class S3ObjectStore : IObjectStore
         try
         {
             var response = await _client.PutObjectAsync(request, cancellationToken);
-            return new ObjectWriteResult(response.ContentLength > 0 ? response.ContentLength : content.Length, response.ETag);
+            return new ObjectWriteResult(response.ContentLength > 0 ? response.ContentLength : payload.Length, response.ETag);
         }
         catch (AmazonS3Exception e)
         {
             throw new ProviderException($"S3 put failed ({e.ErrorCode}).", e);
+        }
+        finally
+        {
+            await payload.DisposeAsync();
+            if (spillPath is not null)
+            {
+                File.Delete(spillPath);
+            }
         }
     }
 
@@ -126,6 +153,25 @@ public sealed class S3ObjectStore : IObjectStore
         var url = _client.GetPreSignedURL(request);
         // SigV4 does not cover the scheme: force the endpoint's scheme so plain-http
         // deployments (MinIO/SeaweedFS on a LAN) get consumable presigned URLs.
+        if (_isHttpEndpoint && url.StartsWith("https://", StringComparison.Ordinal))
+        {
+            url = "http://" + url["https://".Length..];
+        }
+
+        return Task.FromResult<string?>(url);
+    }
+
+    public Task<string?> TryPresignPutAsync(string key, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default)
+    {
+        var request = new GetPreSignedUrlRequest
+        {
+            BucketName = _bucket,
+            Key = FullKey(key),
+            Verb = Amazon.S3.HttpVerb.PUT,
+            Expires = DateTime.UtcNow + expiry,
+            ContentType = contentType,
+        };
+        var url = _client.GetPreSignedURL(request);
         if (_isHttpEndpoint && url.StartsWith("https://", StringComparison.Ordinal))
         {
             url = "http://" + url["https://".Length..];

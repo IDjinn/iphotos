@@ -74,6 +74,26 @@ app.MapGet("/api/providers", (ObjectStoreFactory factory, Microsoft.Extensions.O
 
 app.MapObjectEndpoints();
 
+// One-line summary of where content will live — the storage service is otherwise
+// quiet, so this makes the active provider visible at a glance in the logs.
+var providers = new List<string>();
+foreach (var id in ObjectStoreFactory.KnownProviderIds)
+{
+    try
+    {
+        app.Services.GetRequiredService<ObjectStoreFactory>().Resolve(id);
+        providers.Add(id);
+    }
+    catch (ProviderNotConfiguredException)
+    {
+        // Not configured — not active.
+    }
+}
+app.Logger.LogInformation(
+    "Storage host started — default provider: {Default}, active: {Providers}",
+    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageServiceOptions>>().Value.DefaultProvider,
+    string.Join(", ", providers));
+
 app.Run();
 
 /// <summary>Exposed for WebApplicationFactory in integration tests.</summary>

@@ -104,7 +104,8 @@ public static class ImportEndpoints
         var reader = new MultipartReader(boundary, context.Request.Body);
         while (await reader.ReadNextSectionAsync(cancellationToken) is { } section)
         {
-            if (section.Headers is not IHeaderDictionary headers
+            // MultipartSection.Headers is a plain Dictionary<string, StringValues>.
+            if (section.Headers is not { } headers
                 || !headers.TryGetValue("Content-Disposition", out var dispositionValues)
                 || dispositionValues.Count == 0)
             {

@@ -10,6 +10,7 @@ builder.Services.AddVariantProcessing();
 builder.Services.AddZipImportProcessing();
 builder.Services.AddHostedService<VariantProcessingWorker>();
 builder.Services.AddHostedService<ZipImportWorker>();
+builder.Services.AddHostedService<OrphanUploadSweeper>();
 
 var host = builder.Build();
 await host.Services.MigrateDatabaseAsync();

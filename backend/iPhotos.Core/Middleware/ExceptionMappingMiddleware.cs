@@ -17,6 +17,7 @@ public sealed class ExceptionMappingMiddleware(RequestDelegate next, ILogger<Exc
             var (status, message) = ex switch
             {
                 ValidationException e => (StatusCodes.Status400BadRequest, e.Message),
+                NotSupportedException e => (StatusCodes.Status501NotImplemented, e.Message),
                 EmailAlreadyExistsException e => (StatusCodes.Status409Conflict, e.Message),
                 UnauthorizedException e => (StatusCodes.Status401Unauthorized, e.Message),
                 NotFoundException e => (StatusCodes.Status404NotFound, e.Message),

@@ -37,12 +37,17 @@ public sealed class VariantProcessingHandler(
         photo.MarkProcessing(dateTime.UtcNow);
         try
         {
-            var metadata = await ExtractMetadataAsync(photo, cancellationToken);
+            // One download serves every consumer: the blob layer returns a seekable
+            // stream (delete-on-close temp file), so EXIF, preview and thumbnail
+            // reuse it instead of re-fetching the original from storage.
+            await using var original = await blobStorage.OpenReadAsync(photo.OriginalBlobPath, cancellationToken);
+            var metadata = await exifExtractor.ExtractAsync(original, cancellationToken);
             await variants.DeleteByPhotoAsync(photo.Id, cancellationToken);
 
             foreach (var kind in new[] { VariantKind.Original, VariantKind.Preview, VariantKind.Thumbnail })
             {
-                await StoreVariantAsync(photo, kind, metadata, cancellationToken);
+                original.Position = 0;
+                await StoreVariantAsync(photo, kind, metadata, original, cancellationToken);
             }
 
             photo.MarkReady(metadata, dateTime.UtcNow);
@@ -57,13 +62,12 @@ public sealed class VariantProcessingHandler(
         await unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<PhotoMetadata> ExtractMetadataAsync(Photo photo, CancellationToken cancellationToken)
-    {
-        await using var original = await blobStorage.OpenReadAsync(photo.OriginalBlobPath, cancellationToken);
-        return await exifExtractor.ExtractAsync(original, cancellationToken);
-    }
-
-    private async Task StoreVariantAsync(Photo photo, VariantKind kind, PhotoMetadata metadata, CancellationToken cancellationToken)
+    private async Task StoreVariantAsync(
+        Photo photo,
+        VariantKind kind,
+        PhotoMetadata metadata,
+        Stream original,
+        CancellationToken cancellationToken)
     {
         if (kind == VariantKind.Original)
         {
@@ -76,7 +80,6 @@ public sealed class VariantProcessingHandler(
             return;
         }
 
-        await using var original = await blobStorage.OpenReadAsync(photo.OriginalBlobPath, cancellationToken);
         var output = await generator.GenerateAsync(original, kind, cancellationToken);
         var blobPath = kind == VariantKind.Preview
             ? BlobPaths.Preview(photo.OwnerId, photo.Id)

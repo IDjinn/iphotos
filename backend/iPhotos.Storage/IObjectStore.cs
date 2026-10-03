@@ -41,4 +41,10 @@ public interface IObjectStore
 
     /// <summary>A presigned GET URL when <see cref="CanPresign"/>, otherwise null.</summary>
     Task<string?> TryPresignGetAsync(string key, TimeSpan expiry, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// A presigned PUT URL for direct client uploads when <see cref="CanPresign"/>, otherwise null.
+    /// When <paramref name="contentType"/> is non-null the client must send the same Content-Type.
+    /// </summary>
+    Task<string?> TryPresignPutAsync(string key, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default);
 }

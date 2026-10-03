@@ -151,6 +151,7 @@ AVD recém-criado tem a galeria **vazia** — "No photos yet" com permissão con
 
 - Projeto é CNG: `android/` é gerado pelo prebuild e está no `.gitignore`. Se mudar permissões/plugins no `app.json`, regenerar antes do build: `cd ~/build/iphotos && bunx expo prebuild -p android --clean --no-install` (o `--clean` descarta o `android/` atual e regenera do zero).
 - Primeiro build ~8–20 min (baixa dependências, compila tudo). Seguintes reusam Gradle daemon + caches (`~/.gradle` e `android/*/build` preservados pelo rsync) — uma mudança de ABI/kotlin vira build de poucos minutos.
+- **`EXPO_PUBLIC_*` do `.env` é assado no bundle release** — mas o Gradle não enxerga `.env` como input e reusa o bundle `UP-TO-DATE` com o valor antigo. O script guarda um hash dos `.env*` (`~/build/.iphotos-env-hash`) e força re-bundle quando mudam; sem isso, mudar a URL do backend e rebuildar sai APK velho com URL velha (silenciosamente).
 - Edite o código no Windows (`C:\dev\react-native\iphotos`); o script leva a mudança pro build com o rsync. O `~/build/iphotos` é descartável — pode apagar e recriar.
 - Se o build morrer no meio **sem mensagem de erro** (log termina abrupto, exit 1), é OOM: conferir o `.wslconfig` (pré-requisito 1) e `dmesg | grep -i oom` dentro do WSL.
 - Sem EAS no caminho: não precisa de login, `eas.json` nem projectId. Se um dia precisar de build na nuvem, o caminho é o mesmo do `BUILD_WSL.md` do milenio-quiz (`eas build --local` exige login mesmo rodando local).

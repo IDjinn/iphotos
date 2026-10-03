@@ -116,4 +116,47 @@ public class PhotoTests
         photo.State.ShouldBe(PhotoState.Failed);
         photo.LastError.ShouldBe("corrupt image");
     }
+
+    // ── Direct-upload lifecycle (PendingUpload) ─────────────────────────────
+
+    [Fact]
+    public void CreatePendingUpload_StartsInPendingUpload()
+    {
+        var photo = Photo.CreatePendingUpload(Guid.NewGuid(), "abc123", "photo.jpg", "image/jpeg", 2048, Now);
+
+        photo.State.ShouldBe(PhotoState.PendingUpload);
+        photo.SizeBytes.ShouldBe(2048);
+        photo.OriginalBlobPath.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void MarkUploadedForProcessing_FromPendingUpload_MovesToPendingProcessing()
+    {
+        var photo = Photo.CreatePendingUpload(Guid.NewGuid(), "abc123", "photo.jpg", "image/jpeg", 1024, Now);
+
+        photo.MarkUploadedForProcessing(Now.AddSeconds(3));
+
+        photo.State.ShouldBe(PhotoState.PendingProcessing);
+    }
+
+    [Fact]
+    public void MarkUploadedForProcessing_FromOtherStates_Throws()
+    {
+        var photo = NewPhoto();
+
+        Should.Throw<InvalidOperationException>(() => photo.MarkUploadedForProcessing(Now));
+
+        photo.MarkProcessing(Now);
+        Should.Throw<InvalidOperationException>(() => photo.MarkUploadedForProcessing(Now));
+    }
+
+    [Fact]
+    public void PendingUpload_PhotoRejectsWorkerTransitions_UntilConfirmed()
+    {
+        var photo = Photo.CreatePendingUpload(Guid.NewGuid(), "abc123", "photo.jpg", "image/jpeg", 1024, Now);
+
+        Should.Throw<InvalidOperationException>(() => photo.MarkProcessing(Now));
+        Should.Throw<InvalidOperationException>(
+            () => photo.MarkReady(new PhotoMetadata(1, 1, null, null, null, null, null), Now));
+    }
 }

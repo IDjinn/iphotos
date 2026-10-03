@@ -33,6 +33,9 @@ public interface IPhotoRepository
 
     Task DeleteAsync(Photo photo, CancellationToken cancellationToken = default);
 
+    /// <summary>Photos with an upload ticket older than <paramref name="cutoff"/> that never completed.</summary>
+    Task<IReadOnlyList<Photo>> ListStalePendingUploadsAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default);
+
     /// <summary>Raw usage for the owner: total bytes (originals + variants) plus asset counts.</summary>
     Task<UsageStats> GetUsageAsync(Guid ownerId, CancellationToken cancellationToken = default);
 }

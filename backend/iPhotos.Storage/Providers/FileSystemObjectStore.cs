@@ -82,6 +82,9 @@ public sealed class FileSystemObjectStore : IObjectStore
     public Task<string?> TryPresignGetAsync(string key, TimeSpan expiry, CancellationToken cancellationToken = default) =>
         Task.FromResult<string?>(null);
 
+    public Task<string?> TryPresignPutAsync(string key, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default) =>
+        Task.FromResult<string?>(null);
+
     private string FullPath(string normalizedKey)
     {
         var full = Path.GetFullPath(Path.Combine(_root, normalizedKey));

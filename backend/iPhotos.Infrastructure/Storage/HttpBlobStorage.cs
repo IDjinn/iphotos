@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using iPhotos.Application;
 using iPhotos.Application.Common;
@@ -128,6 +129,34 @@ public sealed class HttpBlobStorage : IBlobStorage, IDisposable
             _ => throw Error("head", response),
         };
     }
+
+    public async Task<BlobUploadUrl?> TryCreateUploadUrlAsync(
+        string path, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default)
+    {
+        var query = $"key={Uri.EscapeDataString(ObjectKey.Normalize(path))}{_providerQuery}"
+            + $"&expirySeconds={(long)expiry.TotalSeconds}";
+        if (!string.IsNullOrEmpty(contentType))
+        {
+            query += $"&contentType={Uri.EscapeDataString(contentType)}";
+        }
+
+        using var response = await _http.PostAsync($"api/objects/upload-url?{query}", content: null, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotImplemented)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Error("presign", response);
+        }
+
+        var body = await response.Content
+            .ReadFromJsonAsync<UploadUrlResponse>(cancellationToken: cancellationToken);
+        return body is null ? null : new BlobUploadUrl(body.Url, body.ExpiresAt);
+    }
+
+    private sealed record UploadUrlResponse(string Url, DateTimeOffset ExpiresAt);
 
     private string ObjectUrl(string path)
     {

@@ -146,6 +146,9 @@ public sealed class GoogleDriveObjectStore : IObjectStore
     public Task<string?> TryPresignGetAsync(string key, TimeSpan expiry, CancellationToken cancellationToken = default) =>
         Task.FromResult<string?>(null);
 
+    public Task<string?> TryPresignPutAsync(string key, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default) =>
+        Task.FromResult<string?>(null);
+
     private async Task<string> ResolveFileIdAsync(string key, CancellationToken cancellationToken)
     {
         var fileId = await TryResolveFileIdAsync(ObjectKey.Normalize(key), cancellationToken);

@@ -57,6 +57,10 @@ public sealed class FilesystemBlobStorage : IBlobStorage
     public Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default) =>
         Task.FromResult(File.Exists(SafeFullPath(path)));
 
+    public Task<BlobUploadUrl?> TryCreateUploadUrlAsync(string path, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default) =>
+        // Local files have no client-reachable URL; direct upload is S3-only.
+        Task.FromResult<BlobUploadUrl?>(null);
+
     private string SafeFullPath(string path)
     {
         var normalized = path.Replace('\\', '/');

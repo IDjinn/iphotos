@@ -18,6 +18,8 @@ public static class DependencyInjection
     {
         services.AddOptions<WorkerOptions>().Configure<IConfiguration>(
             (options, configuration) => configuration.GetSection(WorkerOptions.SectionName).Bind(options));
+        services.AddOptions<OrphanSweepOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(OrphanSweepOptions.SectionName).Bind(options));
         services.AddOptions<ImagingOptions>().Configure<IConfiguration>(
             (options, configuration) => configuration.GetSection(ImagingOptions.SectionName).Bind(options));
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<ImagingOptions>>().Value);
@@ -30,7 +32,8 @@ public static class DependencyInjection
 
     /// <summary>
     /// Registers the zip import pipeline (archive extraction + HEIC transcode + photo
-    /// ingestion). Used by the Worker host and by integration test hosts.
+    /// ingestion). The handler ingests through PhotoService, so its dependencies
+    /// (content hasher included) are registered here as well.
     /// </summary>
     public static IServiceCollection AddZipImportProcessing(this IServiceCollection services)
     {
@@ -39,6 +42,8 @@ public static class DependencyInjection
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<ZipImportOptions>>().Value);
 
         services.AddSingleton<IHeifConverter, MagickHeifConverter>();
+        services.AddSingleton<IContentHasher, Sha256ContentHasher>();
+        services.AddScoped<PhotoService>();
         services.AddScoped<ZipImportHandler>();
         return services;
     }

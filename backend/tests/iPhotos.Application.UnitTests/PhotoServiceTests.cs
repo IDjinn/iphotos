@@ -243,4 +243,153 @@ public class PhotoServiceTests
         usage.QuotaBytes.ShouldBe(5_000);
         usage.PhotoCount.ShouldBe(2);
     }
+
+    // ── Upload tickets (direct-to-storage flow) ─────────────────────────────
+
+    [Fact]
+    public async Task CreateUploadTicket_NewContent_PersistsPendingUploadAndReturnsPresignedUrl()
+    {
+        var owner = NewUser();
+
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "vacation.jpg", "image/jpeg", 300, "hash-1");
+
+        var photo = _photos.Photos.Single();
+        ticket.Duplicated.ShouldBeFalse();
+        ticket.Photo.State.ShouldBe(PhotoState.PendingUpload);
+        ticket.Photo.Id.ShouldBe(photo.Id);
+        ticket.UploadUrl.ShouldNotBeNull();
+        ticket.UploadUrl.ShouldContain(Uri.EscapeDataString(photo.OriginalBlobPath));
+        ticket.ExpiresAt.ShouldNotBeNull();
+
+        photo.State.ShouldBe(PhotoState.PendingUpload);
+        photo.OriginalBlobPath.ShouldBe($"{owner.Id}/{photo.Id}/original.jpg");
+        _blobs.PresignRequests.ShouldHaveSingleItem();
+        _blobs.Blobs.ShouldBeEmpty(); // no bytes ever touch the backend on this path
+        _jobs.Jobs.ShouldBeEmpty();   // processing is only enqueued on complete
+        _uow.SaveCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task CreateUploadTicket_KnownHash_ReturnsExistingPhotoWithoutPresign()
+    {
+        var owner = NewUser();
+        await UploadAsync(owner, JpegBytes(100)); // server-side hash = Sha256Of(bytes)
+
+        var hash = Sha256Of(((MemoryStream)JpegBytes(100)).ToArray());
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "copy.jpg", "image/jpeg", 100, hash);
+
+        ticket.Duplicated.ShouldBeTrue();
+        ticket.UploadUrl.ShouldBeNull();
+        _photos.Photos.ShouldHaveSingleItem();
+        _blobs.PresignRequests.ShouldBeEmpty();
+        _jobs.Jobs.ShouldHaveSingleItem(); // only the one from the original upload
+    }
+
+    [Fact]
+    public async Task CreateUploadTicket_PendingUploadsReserveQuota()
+    {
+        var owner = NewUser(quota: 1_000);
+
+        await NewService().CreateUploadTicketAsync(owner.Id, "one.jpg", "image/jpeg", 600, "hash-1");
+
+        await Should.ThrowAsync<QuotaExceededException>(
+            () => NewService().CreateUploadTicketAsync(owner.Id, "two.jpg", "image/jpeg", 500, "hash-2"));
+    }
+
+    [Theory]
+    [InlineData("application/pdf")]
+    [InlineData("image/heic")]
+    public async Task CreateUploadTicket_UnsupportedContentType_Throws(string contentType)
+    {
+        var owner = NewUser();
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().CreateUploadTicketAsync(owner.Id, "file", contentType, 100, "hash-1"));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task CreateUploadTicket_NonPositiveSize_Throws(long sizeBytes)
+    {
+        var owner = NewUser();
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().CreateUploadTicketAsync(owner.Id, "x.jpg", "image/jpeg", sizeBytes, "hash-1"));
+    }
+
+    [Fact]
+    public async Task CreateUploadTicket_MissingHash_Throws()
+    {
+        var owner = NewUser();
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().CreateUploadTicketAsync(owner.Id, "x.jpg", "image/jpeg", 100, " "));
+    }
+
+    [Fact]
+    public async Task CreateUploadTicket_StorageCannotPresign_ThrowsWithoutPersisting()
+    {
+        var owner = NewUser();
+        _blobs.UploadUrl = null;
+
+        await Should.ThrowAsync<NotSupportedException>(
+            () => NewService().CreateUploadTicketAsync(owner.Id, "x.jpg", "image/jpeg", 100, "hash-1"));
+
+        _photos.Photos.ShouldBeEmpty();
+        _uow.SaveCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task CompleteUpload_BytesInStorage_MovesToPendingProcessingAndEnqueuesJob()
+    {
+        var owner = NewUser();
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "vacation.jpg", "image/jpeg", 300, "hash-1");
+        _blobs.Blobs[_photos.Photos.Single().OriginalBlobPath] = [1, 2, 3]; // simulates the client's presigned PUT
+
+        var dto = await NewService().CompleteUploadAsync(owner.Id, ticket.Photo.Id);
+
+        dto.State.ShouldBe(PhotoState.PendingProcessing);
+        _photos.Photos.Single().State.ShouldBe(PhotoState.PendingProcessing);
+        _jobs.Jobs.ShouldHaveSingleItem();
+        _jobs.Jobs.Single().PhotoId.ShouldBe(ticket.Photo.Id);
+    }
+
+    [Fact]
+    public async Task CompleteUpload_BeforeAnyUpload_ThrowsNotFound()
+    {
+        var owner = NewUser();
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "vacation.jpg", "image/jpeg", 300, "hash-1");
+
+        await Should.ThrowAsync<NotFoundException>(
+            () => NewService().CompleteUploadAsync(owner.Id, ticket.Photo.Id));
+
+        // Still pending — the client may retry the PUT and complete later.
+        _photos.Photos.Single().State.ShouldBe(PhotoState.PendingUpload);
+        _jobs.Jobs.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CompleteUpload_Twice_ThrowsValidation()
+    {
+        var owner = NewUser();
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "vacation.jpg", "image/jpeg", 300, "hash-1");
+        _blobs.Blobs[_photos.Photos.Single().OriginalBlobPath] = [1, 2, 3];
+        await NewService().CompleteUploadAsync(owner.Id, ticket.Photo.Id);
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().CompleteUploadAsync(owner.Id, ticket.Photo.Id));
+    }
+
+    [Fact]
+    public async Task CompleteUpload_FromAnotherOwner_ThrowsNotFound()
+    {
+        var owner = NewUser();
+        var intruder = NewUser();
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "vacation.jpg", "image/jpeg", 300, "hash-1");
+        _blobs.Blobs[_photos.Photos.Single().OriginalBlobPath] = [1, 2, 3];
+
+        await Should.ThrowAsync<NotFoundException>(
+            () => NewService().CompleteUploadAsync(intruder.Id, ticket.Photo.Id));
+    }
 }

@@ -1,0 +1,13 @@
+# Named Cloudflare tunnel "iphotos" — public ingress for the API.
+# The tunnel credentials JSON is mounted from the host at runtime
+# (see IPHOTOS_CLOUDFLARED_CREDENTIALS in backend/.env); never commit it.
+tunnel: 0bcab70c-6b39-4695-84ab-b6f0f329fbe4
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # Public API hostname -> API service inside the compose network.
+  # Note: Cloudflare's free proxy caps request bodies at 100 MB (uploads).
+  - hostname: api.lucas-romero.com
+    service: http://api:8080
+  # Everything else is rejected at the tunnel.
+  - service: http_status:404

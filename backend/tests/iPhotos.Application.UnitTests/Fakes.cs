@@ -132,6 +132,10 @@ public sealed class InMemoryPhotoRepository : IPhotoRepository
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<Photo>> ListStalePendingUploadsAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Photo>>(
+            Photos.Where(p => p.State == PhotoState.PendingUpload && p.CreatedAt <= cutoff).ToList());
+
     public Task<UsageStats> GetUsageAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         var owned = Photos.Where(p => p.OwnerId == ownerId).ToList();
@@ -245,6 +249,12 @@ public sealed class FakeBlobStorage : IBlobStorage
 {
     public Dictionary<string, byte[]> Blobs { get; } = [];
 
+    /// <summary>Upload URL handed out by <see cref="TryCreateUploadUrlAsync"/>; null simulates a
+    /// storage backend that cannot presign direct uploads.</summary>
+    public string? UploadUrl { get; set; } = "https://storage.test/presigned-put";
+
+    public List<string> PresignRequests { get; } = [];
+
     public Task PutAsync(string path, Stream content, CancellationToken cancellationToken = default)
     {
         using var buffer = new MemoryStream();
@@ -266,6 +276,14 @@ public sealed class FakeBlobStorage : IBlobStorage
 
     public Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default)
         => Task.FromResult(Blobs.ContainsKey(path));
+
+    public Task<BlobUploadUrl?> TryCreateUploadUrlAsync(
+        string path, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default)
+    {
+        PresignRequests.Add(path);
+        return Task.FromResult<BlobUploadUrl?>(
+            UploadUrl is null ? null : new BlobUploadUrl($"{UploadUrl}?key={Uri.EscapeDataString(path)}", DateTimeOffset.UtcNow + expiry));
+    }
 }
 
 public sealed class FakeUnitOfWork : IUnitOfWork

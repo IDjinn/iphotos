@@ -18,6 +18,9 @@ public sealed class StorageServiceOptions
     /// <summary>Expiry for URLs returned on upload and by the url endpoint.</summary>
     public TimeSpan UrlExpiry { get; set; } = TimeSpan.FromDays(7);
 
+    /// <summary>Expiry for presigned PUT URLs handed to clients for direct uploads.</summary>
+    public TimeSpan UploadUrlExpiry { get; set; } = TimeSpan.FromMinutes(15);
+
     /// <summary>Allow loopback/private provider endpoints (on-prem MinIO, compose, tests).</summary>
     public bool AllowPrivateNetworks { get; set; }
 

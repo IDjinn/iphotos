@@ -139,6 +139,24 @@ public sealed class PhotosFlowTests : IClassFixture<iPhotosApiFactory>
     }
 
     [Fact]
+    public async Task UploadTicket_FileystemBlobStorage_CannotPresign_Returns501()
+    {
+        using var client = await NewAuthorizedClientAsync();
+
+        var response = await client.PostAsJsonAsync("/api/photos/upload-ticket", new
+        {
+            fileName = "vacation.jpg",
+            contentType = "image/jpeg",
+            sizeBytes = 123,
+            contentHash = "hash-1",
+        }, JsonOptions.Web);
+
+        // Filesystem blob storage has no client-reachable upload URL; clients fall
+        // back to the multipart endpoint when they see 501.
+        response.StatusCode.ShouldBe(HttpStatusCode.NotImplemented);
+    }
+
+    [Fact]
     public async Task List_ReturnsPhotosForOwner()
     {
         using var client = await NewAuthorizedClientAsync();

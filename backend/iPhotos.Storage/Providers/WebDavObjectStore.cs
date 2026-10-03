@@ -132,6 +132,9 @@ public sealed class WebDavObjectStore : IObjectStore
     public Task<string?> TryPresignGetAsync(string key, TimeSpan expiry, CancellationToken cancellationToken = default) =>
         Task.FromResult<string?>(null);
 
+    public Task<string?> TryPresignPutAsync(string key, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default) =>
+        Task.FromResult<string?>(null);
+
     private string ObjectUrl(string key)
     {
         var normalized = ObjectKey.Normalize(key);

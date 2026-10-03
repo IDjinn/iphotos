@@ -29,6 +29,32 @@ public static class PhotoEndpoints
         .DisableAntiforgery()
         .WithName("UploadPhoto");
 
+        // Direct-upload flow: reserve dedup/quota, then the client PUTs the bytes
+        // straight to storage and confirms here. 501 = storage cannot presign;
+        // the client falls back to the multipart endpoint above.
+        group.MapPost("/upload-ticket", async (
+            ClaimsPrincipal principal,
+            UploadTicketRequest request,
+            PhotoService photos,
+            CancellationToken cancellationToken) =>
+        {
+            var ticket = await photos.CreateUploadTicketAsync(
+                principal.GetUserId(), request.FileName, request.ContentType, request.SizeBytes, request.ContentHash, cancellationToken);
+            return ticket.Duplicated
+                ? Results.Ok(ticket)
+                : Results.Created($"/api/photos/{ticket.Photo.Id}", ticket);
+        })
+        .DisableAntiforgery()
+        .WithName("CreateUploadTicket");
+
+        group.MapPost("/{id:guid}/complete", async (
+            Guid id,
+            ClaimsPrincipal principal,
+            PhotoService photos,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await photos.CompleteUploadAsync(principal.GetUserId(), id, cancellationToken)))
+        .WithName("CompleteUpload");
+
         group.MapGet("/", async (
             ClaimsPrincipal principal,
             PhotoService photos,

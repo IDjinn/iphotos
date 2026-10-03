@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using iPhotos.Storage;
 
 namespace iPhotos.Storage.Host;
@@ -13,12 +14,15 @@ public static class ObjectEndpoints
         group.MapMethods("/{**key}", ["HEAD"], GetAsync);
         group.MapDelete("/{**key}", DeleteAsync);
 
-        // Catch-all routes must end the template, so the url endpoint hangs off /api/objects
-        // directly: POST /api/objects/url?key=...&provider=...&expirySeconds=...
+        // Catch-all routes must end the template, so the url endpoints hang off /api/objects
+        // directly: POST /api/objects/url?key=...&provider=...&expirySeconds=... (GET URL) and
+        // POST /api/objects/upload-url?key=...&provider=...&contentType=... (presigned PUT URL).
         app.MapPost("/api/objects/url", CreateUrlAsync);
+        app.MapPost("/api/objects/upload-url", CreateUploadUrlAsync);
     }
 
-    private static async Task<IResult> PutAsync(HttpContext context, string key, string? provider, IObjectStoreFactoryAccessor accessor)
+    private static async Task<IResult> PutAsync(
+        HttpContext context, string key, string? provider, IObjectStoreFactoryAccessor accessor, ILogger<Program> logger)
     {
         if (!accessor.IsApiKeyValid(context))
         {
@@ -27,8 +31,12 @@ public static class ObjectEndpoints
 
         var store = accessor.Resolve(provider);
         var normalized = ObjectKey.Normalize(key);
+        var started = Stopwatch.GetTimestamp();
         await using var body = context.Request.Body;
         var result = await store.PutAsync(normalized, body, context.Request.ContentType, context.RequestAborted);
+        logger.LogInformation(
+            "PUT  {Provider}:{Key} {Size} ({Elapsed}ms)",
+            store.Id, normalized, ByteSize.Format(result.SizeBytes), Stopwatch.GetElapsedTime(started).TotalMilliseconds);
 
         var expiresAt = accessor.Now + accessor.Options.UrlExpiry;
         var url = await BuildGetUrlAsync(context, accessor, store, normalized, expiresAt);
@@ -37,7 +45,9 @@ public static class ObjectEndpoints
             statusCode: StatusCodes.Status201Created);
     }
 
-    private static async Task<IResult> GetAsync(HttpContext context, string key, string? provider, long? exp, string? sig, IObjectStoreFactoryAccessor accessor)
+    private static async Task<IResult> GetAsync(
+        HttpContext context, string key, string? provider, long? exp, string? sig,
+        IObjectStoreFactoryAccessor accessor, ILogger<Program> logger)
     {
         var store = accessor.Resolve(provider);
         var normalized = ObjectKey.Normalize(key);
@@ -50,6 +60,8 @@ public static class ObjectEndpoints
             return Unauthorized();
         }
 
+        var started = Stopwatch.GetTimestamp();
+
         // HEAD short-circuits before opening any stream.
         if (HttpMethods.IsHead(context.Request.Method))
         {
@@ -61,6 +73,9 @@ public static class ObjectEndpoints
                 context.Response.Headers.ETag = head.ETag;
             }
 
+            logger.LogInformation(
+                "HEAD {Provider}:{Key} {Size} ({Elapsed}ms)",
+                store.Id, normalized, ByteSize.Format(head.SizeBytes ?? 0), Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return Results.Empty;
         }
 
@@ -69,15 +84,23 @@ public static class ObjectEndpoints
             var presigned = await store.TryPresignGetAsync(normalized, accessor.Options.UrlExpiry, context.RequestAborted);
             if (presigned is not null)
             {
+                logger.LogInformation(
+                    "GET  {Provider}:{Key} → presigned redirect ({Elapsed}ms)",
+                    store.Id, normalized, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 return Results.Redirect(presigned, permanent: false, preserveMethod: false);
             }
         }
 
         var read = await store.OpenReadAsync(normalized, context.RequestAborted);
+        logger.LogInformation(
+            "GET  {Provider}:{Key} {ContentType} ({Elapsed}ms)",
+            store.Id, normalized, read.ContentType ?? "application/octet-stream",
+            Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         return Results.Stream(read.Content, read.ContentType ?? "application/octet-stream", enableRangeProcessing: true);
     }
 
-    private static async Task<IResult> DeleteAsync(HttpContext context, string key, string? provider, IObjectStoreFactoryAccessor accessor)
+    private static async Task<IResult> DeleteAsync(
+        HttpContext context, string key, string? provider, IObjectStoreFactoryAccessor accessor, ILogger<Program> logger)
     {
         if (!accessor.IsApiKeyValid(context))
         {
@@ -85,7 +108,9 @@ public static class ObjectEndpoints
         }
 
         var store = accessor.Resolve(provider);
-        await store.DeleteAsync(ObjectKey.Normalize(key), context.RequestAborted);
+        var normalized = ObjectKey.Normalize(key);
+        await store.DeleteAsync(normalized, context.RequestAborted);
+        logger.LogInformation("DELETE {Provider}:{Key}", store.Id, normalized);
         return Results.NoContent();
     }
 
@@ -112,6 +137,48 @@ public static class ObjectEndpoints
         var expiresAt = accessor.Now + expiry;
         var url = await BuildGetUrlAsync(context, accessor, store, normalized, expiresAt);
         return Results.Ok(new ObjectUrlResponse(url, normalized, store.Id, null, null, expiresAt));
+    }
+
+    private static async Task<IResult> CreateUploadUrlAsync(
+        HttpContext context,
+        string? key,
+        string? provider,
+        string? contentType,
+        long? expirySeconds,
+        IObjectStoreFactoryAccessor accessor,
+        ILogger<Program> logger)
+    {
+        if (!accessor.IsApiKeyValid(context))
+        {
+            return Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return Results.Json(new { error = "Query parameter 'key' is required." }, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var store = accessor.Resolve(provider);
+        var normalized = ObjectKey.Normalize(key);
+        var maxExpiry = (long)TimeSpan.FromDays(365).TotalSeconds;
+        var expiry = expirySeconds is > 0 && expirySeconds <= maxExpiry
+            ? TimeSpan.FromSeconds(expirySeconds.Value)
+            : accessor.Options.UploadUrlExpiry;
+        var expiresAt = accessor.Now + expiry;
+        var url = store.CanPresign
+            ? await store.TryPresignPutAsync(normalized, expiry, contentType, context.RequestAborted)
+            : null;
+        if (url is null)
+        {
+            return Results.Json(
+                new { error = $"Provider '{store.Id}' cannot presign direct uploads." },
+                statusCode: StatusCodes.Status501NotImplemented);
+        }
+
+        logger.LogInformation(
+            "PRESIGN PUT {Provider}:{Key} (expires {ExpiresAt:O})",
+            store.Id, normalized, expiresAt);
+        return Results.Ok(new ObjectUrlResponse(url, normalized, store.Id, null, contentType, expiresAt));
     }
 
     private static async Task<string> BuildGetUrlAsync(

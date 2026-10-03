@@ -68,7 +68,9 @@
 
 | Endpoint | Descrição |
 |---|---|
-| `POST /api/photos` | Upload **multipart/form-data, campo `file`** (nome do arquivo preservado). → **201** `{ photo, duplicated: false }` ou **200** `{ photo, duplicated: true }` (mesmo SHA-256 já enviado por esta conta) |
+| `POST /api/photos` | Upload **multipart/form-data, campo `file`** (nome do arquivo preservado). → **201** `{ photo, duplicated: false }` ou **200** `{ photo, duplicated: true }` (mesmo SHA-256 já enviado por esta conta). Fallback do fluxo direto |
+| `POST /api/photos/upload-ticket` | Upload **direto ao storage**: body JSON `{ fileName, contentType, sizeBytes, contentHash }`. Valida mime, dedup (hash) e quota **antes** dos bytes existirem; cria a foto em `state: "PendingUpload"` (reserva de quota) e → **201** `{ photo, duplicated: false, uploadUrl, expiresAt }` (PUT presigned, default 15 min) ou **200** `{ photo, duplicated: true }` sem URL. **501** quando o storage configurado não presigna (ex.: filesystem) → cliente cai no multipart |
+| `POST /api/photos/{id}/complete` | Confirma o PUT presigned: verifica existência do blob, move `PendingUpload → PendingProcessing`, enfileira o processamento → **200** PhotoDto. **404** se os bytes ainda não chegaram (cliente pode reenviar e completar depois) |
 | `GET /api/photos` | Listagem paginada com filtros: `from`, `to`, `fileName` (contains, case-insensitive), `camera`, `page` (≥1), `pageSize` (1–100, default 20) |
 | `GET /api/photos/{id}` | Metadados completos + `variants[]` |
 | `DELETE /api/photos/{id}` | **204** — hard delete v1 (tombstones/GC são futuro, doc 03 §8) |
@@ -92,7 +94,7 @@
   "takenAt": "2025-12-25T10:30:00+00:00",  // EXIF, UTC; null se não houver
   "cameraMake": "Google", "cameraModel": "Pixel 9",
   "gpsLatitude": -22.9, "gpsLongitude": -43.2,
-  "state": "PendingProcessing",  // PendingProcessing|Processing|Ready|Failed
+  "state": "PendingProcessing",  // PendingUpload|PendingProcessing|Processing|Ready|Failed
   "lastError": null,             // preenchido quando state=Failed
   "contentHash": "939298ea...",  // SHA-256 hex (igual ao do inventário 03A)
   "createdAt": "2026-08-18T19:18:11.56+00:00",
@@ -105,9 +107,15 @@
 ```
 
 **Ciclo do upload (async):** `201` com `state: "PendingProcessing"` → worker processa
-(poll padrão 2 s) → `Ready` (metadados indexados + 3 variantes) ou `Failed`
+(poll padrão 0,5 s) → `Ready` (metadados indexados + 3 variantes) ou `Failed`
 (`lastError`). O app faz **poll** de `GET /api/photos/{id}` até `Ready|Failed`.
 Variantes nunca upscale e respeitam orientação EXIF.
+
+**Fluxo direto (preferido quando o app tem o hash):** `upload-ticket` → **PUT presigned
+direto ao S3** (bytes não passam pela API/túnel; sem o cap de ~100 MB do Cloudflare) →
+`complete` → mesmo ciclo async acima. O hash do ticket é o mesmo SHA-256 do inventário
+03A (confiança no cliente, decisão D11); órfãos (`PendingUpload` sem `complete`) são
+varridos pelo worker após `OrphanSweep:MaxAgeHours` (default 24 h).
 
 **Restrições do upload:** mime `image/jpeg` | `image/png` | `image/webp` (HEIC não —
 converter no cliente com `expo-image-manipulator`); ≤ 200 MB; quota excedida → **413**.

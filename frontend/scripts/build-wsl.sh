@@ -33,6 +33,21 @@ rsync -a --delete \
   --exclude android/local.properties \
   "$PROJECT_SRC/" "$BUILD_DIR/"
 
+# EXPO_PUBLIC_* vars are baked into the release JS bundle at bundle time, but
+# Gradle doesn't track .env as a task input — a changed .env alone leaves the
+# bundle UP-TO-DATE with stale values. Force a re-bundle when .env* changes.
+ENV_STAMP="$HOME/build/.iphotos-env-hash"
+ENV_HASH=$(cat "$PROJECT_SRC"/.env* 2>/dev/null | sort | sha256sum | cut -d' ' -f1)
+if [ "$(cat "$ENV_STAMP" 2>/dev/null || true)" != "$ENV_HASH" ]; then
+  echo "==> .env changed: forcing JS re-bundle (EXPO_PUBLIC_* baked into release bundle)"
+  rm -rf "$BUILD_DIR/android/app/build/generated/assets/react" \
+         "$BUILD_DIR/android/app/build/generated/assets/createBundleReleaseJsAndAssets" \
+         "$BUILD_DIR/android/app/build/generated/res/react" \
+         "$BUILD_DIR/android/app/build/generated/res/createBundleReleaseJsAndAssets"
+  find "$BUILD_DIR/android/app/build/intermediates" -name "index.android.bundle*" -delete 2>/dev/null || true
+  echo "$ENV_HASH" > "$ENV_STAMP"
+fi
+
 echo "==> [2/4] Installing dependencies (bun)"
 (cd "$BUILD_DIR" && bun install)
 

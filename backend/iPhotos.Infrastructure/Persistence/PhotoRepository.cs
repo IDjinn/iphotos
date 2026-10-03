@@ -72,6 +72,11 @@ public sealed class PhotoRepository(PhotosDbContext db) : IPhotoRepository
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Photo>> ListStalePendingUploadsAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default) =>
+        await db.Photos
+            .Where(p => p.State == PhotoState.PendingUpload && p.CreatedAt <= cutoff)
+            .ToListAsync(cancellationToken);
+
     public async Task<UsageStats> GetUsageAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         var photos = db.Photos.Where(p => p.OwnerId == ownerId);

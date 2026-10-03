@@ -26,6 +26,91 @@ public sealed class PhotoService(
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime)
 {
+    /// <summary>Lifetime of presigned PUT URLs handed out by upload tickets.</summary>
+    private static readonly TimeSpan UploadUrlLifetime = TimeSpan.FromMinutes(15);
+
+    public async Task<UploadTicket> CreateUploadTicketAsync(
+        Guid ownerId,
+        string fileName,
+        string contentType,
+        long sizeBytes,
+        string contentHash,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            throw new ValidationException("File name is required.");
+        }
+
+        if (!SupportedImageTypes.MimeTypes.Contains(contentType))
+        {
+            throw new ValidationException(
+                $"Unsupported content type '{contentType}'. Supported: image/jpeg, image/png, image/webp.");
+        }
+
+        if (sizeBytes <= 0)
+        {
+            throw new ValidationException("File size must be greater than zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(contentHash))
+        {
+            throw new ValidationException("Content hash is required.");
+        }
+
+        var existing = await photos.FindByContentHashAsync(ownerId, contentHash, cancellationToken);
+        if (existing is not null)
+        {
+            return new UploadTicket(ToDto(existing, []), Duplicated: true, UploadUrl: null, ExpiresAt: null);
+        }
+
+        var user = await users.GetByIdAsync(ownerId, cancellationToken)
+            ?? throw new NotFoundException($"User '{ownerId}' was not found.");
+
+        var usage = await photos.GetUsageAsync(ownerId, cancellationToken);
+        if (usage.UsedBytes + sizeBytes > user.StorageQuotaBytes)
+        {
+            throw new QuotaExceededException(
+                $"Upload of {sizeBytes} bytes would exceed the storage quota of {user.StorageQuotaBytes} bytes.");
+        }
+
+        var photo = Photo.CreatePendingUpload(ownerId, contentHash, fileName, contentType, sizeBytes, dateTime.UtcNow);
+        photo.OriginalBlobPath = BlobPaths.Original(ownerId, photo.Id, fileName);
+
+        // The ticket reserves the quota by persisting the PendingUpload row; the presigned
+        // PUT lets the client place the bytes in storage without proxying them through here.
+        var uploadUrl = await blobStorage.TryCreateUploadUrlAsync(
+                photo.OriginalBlobPath, UploadUrlLifetime, contentType, cancellationToken)
+            ?? throw new NotSupportedException("Direct upload is not supported by the configured blob storage.");
+
+        await photos.AddAsync(photo, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new UploadTicket(ToDto(photo, []), Duplicated: false, uploadUrl.Url, uploadUrl.ExpiresAt);
+    }
+
+    public async Task<PhotoDto> CompleteUploadAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
+    {
+        var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
+
+        if (photo.State != PhotoState.PendingUpload)
+        {
+            throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.");
+        }
+
+        if (!await blobStorage.ExistsAsync(photo.OriginalBlobPath, cancellationToken))
+        {
+            throw new NotFoundException($"The file for photo '{photoId}' has not been uploaded yet.");
+        }
+
+        photo.MarkUploadedForProcessing(dateTime.UtcNow);
+        await jobs.EnqueueAsync(photo.Id, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return ToDto(photo, []);
+    }
+
     public async Task<PhotoUploadResult> UploadAsync(
         Guid ownerId,
         string fileName,

@@ -1,3 +1,5 @@
+import { File } from 'expo-file-system';
+
 import { ApiError } from '@/data/api-client';
 import {
   listAllContentHashes,
@@ -28,6 +30,8 @@ import type { PhotoAsset } from '@/data/types';
  */
 
 const UPLOAD_BATCH = 100;
+/** Parallel upload lanes — bounded so mobile networks and the API stay healthy. */
+const UPLOAD_CONCURRENCY = 3;
 
 export interface BackupProgress {
   phase: 'inventory' | 'hashing' | 'uploading' | 'done' | 'error';
@@ -43,6 +47,15 @@ export interface BackupProgress {
 async function confirmProcessed(photo: CloudPhoto): Promise<void> {
   // The worker picks jobs up within ~2s; a timeout is not an upload failure.
   await pollUntilDone(photo.id, { timeoutMs: 60_000, intervalMs: 2_500 }).catch(() => undefined);
+}
+
+/** Byte size of a prepared file (feeds the upload ticket's quota reservation). */
+function fileSizeOf(uri: string): number {
+  try {
+    return new File(uri).size ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -89,68 +102,101 @@ export async function runBackup(onProgress: (progress: BackupProgress) => void):
   const queue = getQueuedRows();
   report({ phase: 'uploading', total: queue.length, processed: 0 });
   let consecutiveFailures = 0;
+  // Set when a lane hits a fatal condition (circuit breaker, quota, auth) —
+  // every lane drains its current file and then stops.
+  let fatal: string | null = null;
+  // Worker-confirmation polls run off the upload critical path: lanes keep
+  // uploading while already-sent photos are processed server-side.
+  const confirmations: Promise<void>[] = [];
 
-  for (let i = 0; i < queue.length; i += UPLOAD_BATCH) {
+  /** Runs one queued row to completion; returns true when the backup must stop. */
+  const processRow = async (
+    row: { asset_id: string; content_hash: string | null },
+    byId: Map<string, PhotoAsset>,
+  ): Promise<boolean> => {
+    if (consecutiveFailures >= 5) {
+      fatal = 'Too many failures in a row — backup stopped. Try again later.';
+      return true;
+    }
+    const asset = byId.get(row.asset_id);
+    if (!asset) {
+      // Deleted between scan and upload — the next scan prunes the row.
+      markExcluded(row.asset_id, null);
+      report({ skipped: progress.skipped + 1, processed: progress.processed + 1 });
+      return false;
+    }
+    report({ current: asset.filename, processed: progress.processed + 1 });
+
+    if (row.content_hash && uploadedHashes.has(row.content_hash)) {
+      markUploaded(row.asset_id, row.content_hash, null);
+      report({ skipped: progress.skipped + 1 });
+      return false;
+    }
+
+    const prepared = await prepareForUpload(asset);
+    if (!prepared) {
+      markExcluded(row.asset_id, 'unsupported format');
+      report({ skipped: progress.skipped + 1 });
+      consecutiveFailures = 0;
+      return false;
+    }
+
+    try {
+      markUploadStarted(row.asset_id);
+      const outcome = await uploadPhoto(prepared.uri, {
+        fileName: prepared.fileName,
+        mimeType: prepared.mimeType,
+        contentHash: row.content_hash ?? undefined,
+        sizeBytes: fileSizeOf(prepared.uri),
+      });
+      if (outcome.photo.contentHash) uploadedHashes.add(outcome.photo.contentHash);
+      confirmations.push(confirmProcessed(outcome.photo));
+      markUploaded(row.asset_id, outcome.photo.contentHash ?? row.content_hash, outcome.photo.id);
+      if (outcome.duplicated) {
+        report({ skipped: progress.skipped + 1 });
+      } else {
+        report({ uploaded: progress.uploaded + 1 });
+      }
+      consecutiveFailures = 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upload failed.';
+      markFailed(row.asset_id, message);
+      if (error instanceof ApiError && (error.status === 413 || error.status === 401)) {
+        fatal = error.message;
+        report({ failed: progress.failed + 1 });
+        return true;
+      }
+      report({ failed: progress.failed + 1 });
+      consecutiveFailures += 1;
+    }
+    return false;
+  };
+
+  for (let i = 0; i < queue.length && !fatal; i += UPLOAD_BATCH) {
     const batch = queue.slice(i, i + UPLOAD_BATCH);
     const assets = await fetchAssetsByIds(batch.map((row) => row.asset_id));
     const byId = new Map<string, PhotoAsset>(assets.map((asset) => [asset.id, asset]));
 
-    for (const row of batch) {
-      if (consecutiveFailures >= 5) {
-        report({ phase: 'error', error: 'Too many failures in a row — backup stopped. Try again later.' });
-        return progress;
+    // Shared-cursor pool: each lane pulls the next row until the batch or a
+    // fatal condition ends the run.
+    let cursor = 0;
+    const runLane = async (): Promise<void> => {
+      while (!fatal) {
+        const index = cursor;
+        if (index >= batch.length) return;
+        cursor += 1;
+        if (await processRow(batch[index], byId)) return;
       }
-      const asset = byId.get(row.asset_id);
-      if (!asset) {
-        // Deleted between scan and upload — the next scan prunes the row.
-        markExcluded(row.asset_id, null);
-        report({ skipped: progress.skipped + 1, processed: progress.processed + 1 });
-        continue;
-      }
-      report({ current: asset.filename, processed: progress.processed + 1 });
-
-      if (row.content_hash && uploadedHashes.has(row.content_hash)) {
-        markUploaded(row.asset_id, row.content_hash, null);
-        report({ skipped: progress.skipped + 1 });
-        continue;
-      }
-
-      const prepared = await prepareForUpload(asset);
-      if (!prepared) {
-        markExcluded(row.asset_id, 'unsupported format');
-        report({ skipped: progress.skipped + 1 });
-        consecutiveFailures = 0;
-        continue;
-      }
-
-      try {
-        markUploadStarted(row.asset_id);
-        const outcome = await uploadPhoto(prepared.uri, {
-          fileName: prepared.fileName,
-          mimeType: prepared.mimeType,
-        });
-        if (outcome.photo.contentHash) uploadedHashes.add(outcome.photo.contentHash);
-        await confirmProcessed(outcome.photo);
-        markUploaded(row.asset_id, outcome.photo.contentHash ?? row.content_hash, outcome.photo.id);
-        if (outcome.duplicated) {
-          report({ skipped: progress.skipped + 1 });
-        } else {
-          report({ uploaded: progress.uploaded + 1 });
-        }
-        consecutiveFailures = 0;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Upload failed.';
-        markFailed(row.asset_id, message);
-        if (error instanceof ApiError && (error.status === 413 || error.status === 401)) {
-          report({ phase: 'error', failed: progress.failed + 1, error: error.message });
-          return progress;
-        }
-        report({ failed: progress.failed + 1 });
-        consecutiveFailures += 1;
-      }
-    }
+    };
+    await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, runLane));
   }
 
+  if (fatal) {
+    report({ phase: 'error', error: fatal });
+    return progress;
+  }
+
+  await Promise.all(confirmations);
   report({ phase: 'done', current: undefined });
   return progress;
 }

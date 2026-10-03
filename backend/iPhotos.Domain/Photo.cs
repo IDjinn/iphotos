@@ -6,6 +6,9 @@ public enum PhotoState
     Processing,
     Ready,
     Failed,
+
+    /// <summary>Created by an upload ticket; bytes not yet uploaded by the client.</summary>
+    PendingUpload,
 }
 
 public enum VariantKind
@@ -63,6 +66,40 @@ public sealed class Photo
         CreatedAt = now,
         UpdatedAt = now,
     };
+
+    /// <summary>
+    /// Direct-upload flow: the row exists (dedup + quota reserved) before the client
+    /// has uploaded any bytes; <see cref="MarkUploadedForProcessing"/> completes it.
+    /// </summary>
+    public static Photo CreatePendingUpload(
+        Guid ownerId,
+        string contentHash,
+        string fileName,
+        string mimeType,
+        long sizeBytes,
+        DateTimeOffset now) => new()
+    {
+        Id = Guid.NewGuid(),
+        OwnerId = ownerId,
+        ContentHash = contentHash,
+        FileName = fileName,
+        MimeType = mimeType,
+        SizeBytes = sizeBytes,
+        State = PhotoState.PendingUpload,
+        CreatedAt = now,
+        UpdatedAt = now,
+    };
+
+    public void MarkUploadedForProcessing(DateTimeOffset now)
+    {
+        if (State != PhotoState.PendingUpload)
+        {
+            throw new InvalidOperationException($"Cannot confirm upload for a photo in state {State}.");
+        }
+
+        State = PhotoState.PendingProcessing;
+        Touch(now);
+    }
 
     public void MarkProcessing(DateTimeOffset now)
     {

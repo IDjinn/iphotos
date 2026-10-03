@@ -5,7 +5,7 @@ import { API_URL, ApiError, apiJson, authHeaders, getAccessToken } from '@/data/
  * All file endpoints require the Bearer token (URLs are never public).
  */
 
-export type PhotoState = 'PendingProcessing' | 'Processing' | 'Ready' | 'Failed';
+export type PhotoState = 'PendingUpload' | 'PendingProcessing' | 'Processing' | 'Ready' | 'Failed';
 export type VariantKind = 'original' | 'preview' | 'thumbnail';
 
 export interface CloudVariant {
@@ -104,11 +104,99 @@ export async function getUsage(): Promise<CloudUsage> {
 export interface UploadOptions {
   fileName: string;
   mimeType: string;
+  /** SHA-256 of the exact bytes being uploaded — enables the direct-to-storage path. */
+  contentHash?: string;
+  /** Byte size of the file being uploaded — reserved against quota by the ticket. */
+  sizeBytes?: number;
   onProgress?: (fraction: number) => void;
 }
 
-/** Uploads a local file (multipart, field `file`) with dedup handled server-side. */
+interface UploadTicketResponse {
+  photo: CloudPhoto;
+  duplicated: boolean;
+  uploadUrl?: string;
+  expiresAt?: string;
+}
+
+/**
+ * Uploads a local photo. Preferred path: upload ticket → presigned PUT straight
+ * to storage → complete (bytes never cross the backend). Requires the content
+ * hash; otherwise — or when the backend cannot presign (501/404) or the direct
+ * PUT fails — falls back to the proxied multipart upload.
+ */
 export async function uploadPhoto(fileUri: string, options: UploadOptions): Promise<UploadOutcome> {
+  if (options.contentHash && options.sizeBytes) {
+    try {
+      return await uploadDirect(fileUri, options);
+    } catch (error) {
+      // Quota and session failures must abort the backup, not retry via multipart.
+      if (error instanceof ApiError && (error.status === 401 || error.status === 413)) throw error;
+      console.warn(
+        `[upload] direct upload unavailable (${error instanceof Error ? error.message : String(error)}) — falling back to multipart`
+      );
+    }
+  } else {
+    console.warn('[upload] direct upload skipped — missing content hash or size');
+  }
+  return uploadMultipart(fileUri, options);
+}
+
+/** Ticket → presigned PUT → complete. Throws ApiError; caller decides on fallback. */
+async function uploadDirect(fileUri: string, options: UploadOptions): Promise<UploadOutcome> {
+  const ticket = await apiJson<UploadTicketResponse>('/api/photos/upload-ticket', {
+    method: 'POST',
+    body: {
+      fileName: options.fileName,
+      contentType: options.mimeType,
+      sizeBytes: options.sizeBytes,
+      contentHash: options.contentHash,
+    },
+  });
+  if (ticket.duplicated) {
+    options.onProgress?.(1);
+    return { photo: ticket.photo, duplicated: true };
+  }
+  if (!ticket.uploadUrl) {
+    throw new ApiError(501, 'Direct upload is not available.');
+  }
+
+  await putToPresignedUrl(fileUri, ticket.uploadUrl, options);
+  const photo = await completeUpload(ticket.photo.id);
+  options.onProgress?.(1);
+  return { photo, duplicated: false };
+}
+
+/** PUTs the raw file bytes to a presigned storage URL, reporting byte progress. */
+async function putToPresignedUrl(fileUri: string, uploadUrl: string, options: UploadOptions): Promise<void> {
+  const { createUploadTask, FileSystemUploadType } = await import('expo-file-system/legacy');
+  const task = createUploadTask(
+    uploadUrl,
+    fileUri,
+    {
+      uploadType: FileSystemUploadType.BINARY_CONTENT,
+      httpMethod: 'PUT',
+      headers: { 'Content-Type': options.mimeType },
+    },
+    (progress) => {
+      const total = progress.totalBytesExpectedToSend ?? 0;
+      if (total > 0) options.onProgress?.(progress.totalBytesSent / total);
+    },
+  );
+  const result = await task.uploadAsync().catch(() => {
+    throw new ApiError(0, 'Upload failed — check your connection and try again.');
+  });
+  if (!result || result.status < 200 || result.status >= 300) {
+    throw new ApiError(result?.status ?? 0, `Direct upload failed (${result?.status ?? 'no response'}).`);
+  }
+}
+
+/** Confirms the bytes landed in storage; the API then enqueues variant processing. */
+export async function completeUpload(photoId: string): Promise<CloudPhoto> {
+  return apiJson<CloudPhoto>(`/api/photos/${photoId}/complete`, { method: 'POST' });
+}
+
+/** Legacy proxied upload (multipart, field `file`) with dedup handled server-side. */
+async function uploadMultipart(fileUri: string, options: UploadOptions): Promise<UploadOutcome> {
   const { uploadAsync, FileSystemUploadType } = await import('expo-file-system/legacy');
   const { forceRefreshAccessToken } = await import('@/data/api-client');
 
