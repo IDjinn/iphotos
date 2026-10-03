@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import type { BackupProgress } from '@/data/backup-engine';
 import { useAccountStore } from '@/stores/account';
 import { useBackupStore } from '@/stores/backup';
 import { useTheme } from '@/theme/context';
@@ -18,6 +19,62 @@ function formatBytes(bytes: number): string {
 
 function formatCount(count: number): string {
   return count.toLocaleString('en-US');
+}
+
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `~${Math.max(1, Math.round(seconds))}s left`;
+  if (seconds < 3600) return `~${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s left`;
+  return `~${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m left`;
+}
+
+/**
+ * Estimates remaining upload time from observed throughput: a short recent
+ * window when steady progress is flowing, falling back to the overall
+ * average. Re-renders once per second so the estimate ages visibly.
+ */
+function useBackupEta(progress: BackupProgress | null, running: boolean): string | null {
+  const startedAtRef = useRef<number | null>(null);
+  const samplesRef = useRef<{ t: number; processed: number }[]>([]);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!running) {
+      startedAtRef.current = null;
+      samplesRef.current = [];
+      return;
+    }
+    if (startedAtRef.current === null) startedAtRef.current = Date.now();
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  useEffect(() => {
+    if (running && progress?.phase === 'uploading') {
+      samplesRef.current.push({ t: Date.now(), processed: progress.processed });
+    }
+  }, [running, progress]);
+
+  if (!running || !progress || progress.phase !== 'uploading' || progress.total === 0) return null;
+  const done = Math.max(0, progress.processed - progress.failed);
+  const remaining = progress.total - done;
+  if (remaining <= 0) return null;
+
+  const now = Date.now();
+  const recent = samplesRef.current.filter((s) => s.t >= now - 30_000);
+  const window = recent.length >= 2 ? recent : samplesRef.current;
+  let etaSeconds: number | null = null;
+  if (window.length >= 2) {
+    const first = window[0];
+    const last = window[window.length - 1];
+    const dt = (last.t - first.t) / 1000;
+    const dp = last.processed - first.processed;
+    if (dt > 0 && dp > 0) etaSeconds = remaining / (dp / dt);
+  }
+  if (etaSeconds === null && startedAtRef.current !== null && done > 0) {
+    etaSeconds = ((now - startedAtRef.current) / 1000 / done) * remaining;
+  }
+  if (etaSeconds === null || !Number.isFinite(etaSeconds)) return null;
+  return formatEta(etaSeconds);
 }
 
 export default function BackupSettingsScreen() {
@@ -41,7 +98,9 @@ export default function BackupSettingsScreen() {
   const stats = backup.stats;
   const busy = backup.running || backup.scanning;
   const progress = backup.progress;
-  const caption = backup.scanning
+  const eta = useBackupEta(progress, backup.running);
+
+  const scanCaption = backup.scanning
     ? backup.scanProgress
       ? backup.scanProgress.total > 0
         ? `${
@@ -53,18 +112,33 @@ export default function BackupSettingsScreen() {
           ? 'Scanning your library…'
           : 'Hashing your photos…'
       : 'Starting…'
-    : backup.running
-      ? progress
-        ? progress.phase === 'inventory'
-          ? 'Scanning your library…'
-          : progress.phase === 'hashing'
-            ? `Hashing ${formatCount(progress.processed)} of ${formatCount(progress.total)}…`
-            : progress.total > 0
-              ? `Backing up ${formatCount(Math.min(progress.processed, progress.total))} of ${formatCount(
-                  progress.total
-                )}${progress.failed > 0 ? ` · ${formatCount(progress.failed)} failed` : ''}`
-              : 'Backing up…'
-        : 'Starting…'
+    : null;
+
+  const backupCaption = backup.running
+    ? progress
+      ? progress.phase === 'inventory'
+        ? 'Scanning your library…'
+        : progress.phase === 'hashing'
+          ? `Hashing ${formatCount(progress.processed)} of ${formatCount(progress.total)}…`
+          : progress.total > 0
+            ? `Backing up ${formatCount(Math.min(progress.processed, progress.total))} of ${formatCount(
+                progress.total
+              )}${progress.failed > 0 ? ` · ${formatCount(progress.failed)} failed` : ''}`
+            : 'Backing up…'
+      : 'Starting…'
+    : null;
+
+  const scanBar = backup.scanning && backup.scanProgress && backup.scanProgress.total > 0
+    ? Math.min(1, backup.scanProgress.processed / backup.scanProgress.total)
+    : null;
+  const backupBar =
+    backup.running && progress && progress.total > 0 && progress.phase !== 'inventory'
+      ? Math.min(
+          1,
+          progress.phase === 'uploading'
+            ? Math.max(0, progress.processed - progress.failed) / progress.total
+            : progress.processed / progress.total
+        )
       : null;
 
   const breakdown: { label: string; count: number; bytes: number | null }[] = stats
@@ -130,34 +204,6 @@ export default function BackupSettingsScreen() {
           )}
         </View>
 
-        {caption ? (
-          <View style={[styles.cardColumn, { backgroundColor: colors.surface }]}>
-            <View style={styles.loadingRow}>
-              <ActivityIndicator size="small" color={colors.accent} />
-              <ThemedText variant="bodySmall" color="secondary">
-                {caption}
-              </ThemedText>
-            </View>
-            {backup.running && progress && progress.phase === 'uploading' && progress.total > 0 ? (
-              <View style={[styles.usageBar, { backgroundColor: colors.outline }]}>
-                <View
-                  style={[
-                    styles.usageFill,
-                    {
-                      backgroundColor: colors.accent,
-                      flex: Math.max(
-                        0.02,
-                        (progress.processed - progress.failed) / Math.max(1, progress.total)
-                      ),
-                    },
-                  ]}
-                />
-                <View style={{ flex: 1 - Math.min(1, progress.processed / Math.max(1, progress.total)) }} />
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-
         {backup.lastError ? (
           <ThemedText variant="bodySmall" color="danger" style={styles.error}>
             {backup.lastError}
@@ -178,18 +224,26 @@ export default function BackupSettingsScreen() {
           disabled={busy}
           accessibilityLabel="Scan your library"
         >
-          <Icon name="refresh-outline" size={22} color={colors.icon} />
-          <View style={styles.cardText}>
-            <ThemedText variant="body">Scan now</ThemedText>
-            <ThemedText variant="bodySmall" color="secondary">
-              Index your photos and find what changed — works offline
-            </ThemedText>
+          <View style={styles.cardRow}>
+            <Icon name="refresh-outline" size={22} color={colors.icon} />
+            <View style={styles.cardText}>
+              <ThemedText variant="body">Scan now</ThemedText>
+              <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                {scanCaption ?? 'Index your photos and find what changed — works offline'}
+              </ThemedText>
+            </View>
+            {backup.scanning ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+            )}
           </View>
-          {backup.scanning ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : (
-            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          )}
+          {scanBar !== null ? (
+            <View style={[styles.usageBar, { backgroundColor: colors.outline }]}>
+              <View style={[styles.usageFill, { backgroundColor: colors.accent, flex: Math.max(0.02, scanBar) }]} />
+              <View style={{ flex: 1 - scanBar }} />
+            </View>
+          ) : null}
         </Pressable>
 
         <Pressable
@@ -206,20 +260,36 @@ export default function BackupSettingsScreen() {
           disabled={busy || mode !== 'cloud'}
           accessibilityLabel="Back up photos"
         >
-          <Icon name="cloud-upload-outline" size={22} color={mode === 'cloud' ? colors.accent : colors.iconInactive} />
-          <View style={styles.cardText}>
-            <ThemedText variant="body">Back up now</ThemedText>
-            <ThemedText variant="bodySmall" color="secondary">
-              {mode === 'cloud'
-                ? 'Upload everything new to the cloud'
-                : 'Requires Cloud mode — log in to back up your photos'}
-            </ThemedText>
+          <View style={styles.cardRow}>
+            <Icon
+              name="cloud-upload-outline"
+              size={22}
+              color={mode === 'cloud' ? colors.accent : colors.iconInactive}
+            />
+            <View style={styles.cardText}>
+              <ThemedText variant="body">Back up now</ThemedText>
+              <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                {backupCaption
+                  ? eta
+                    ? `${backupCaption} · ${eta}`
+                    : backupCaption
+                  : mode === 'cloud'
+                    ? 'Upload everything new to the cloud'
+                    : 'Requires Cloud mode — log in to back up your photos'}
+              </ThemedText>
+            </View>
+            {backup.running ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+            )}
           </View>
-          {backup.running ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : (
-            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          )}
+          {backupBar !== null ? (
+            <View style={[styles.usageBar, { backgroundColor: colors.outline }]}>
+              <View style={[styles.usageFill, { backgroundColor: colors.accent, flex: Math.max(0.02, backupBar) }]} />
+              <View style={{ flex: 1 - backupBar }} />
+            </View>
+          ) : null}
         </Pressable>
 
         <ThemedText variant="bodySmall" color="secondary" style={styles.note}>
@@ -236,21 +306,14 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
   headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
   body: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
+  card: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, gap: 12 },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   cardText: { flex: 1, gap: 2 },
   cardColumn: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, gap: 10 },
   usageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   usageBar: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden' },
   usageFill: { borderRadius: 4 },
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  loadingRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   error: { lineHeight: 18 },
   note: { lineHeight: 18, textAlign: 'center', marginTop: 8 },
 });
