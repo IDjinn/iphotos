@@ -50,3 +50,47 @@ public sealed class ZipImportOptions
     /// <summary>Directory for extracted entries. Empty means the OS temp directory.</summary>
     public string WorkDir { get; set; } = string.Empty;
 }
+
+public sealed class BillingProductOptions
+{
+    public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>Presentation-only price label; real prices live in the store, not in the backend.</summary>
+    public string DisplayPrice { get; set; } = string.Empty;
+
+    public long QuotaBytes { get; set; }
+}
+
+public sealed class BillingOptions
+{
+    public const string SectionName = "Billing";
+
+    /// <summary>Which IBillingProvider implementation verifies purchases ("test" for now; "google_play"/"stripe" later).</summary>
+    public string Provider { get; set; } = "test";
+
+    /// <summary>True when purchases are simulated (no real money) — the app may surface a sandbox flow.</summary>
+    public bool Sandbox { get; set; }
+
+    /// <summary>Days past ExpiresAt before a subscription is treated as lapsed.</summary>
+    public int GracePeriodDays { get; set; } = 3;
+
+    /// <summary>How often the expiry sweep runs (hours).</summary>
+    public int SweepIntervalHours { get; set; } = 24;
+
+    /// <summary>Product catalog: store product id (SKU) → granted tier. Extra tiers drop in without migrations.</summary>
+    public Dictionary<string, BillingProductOptions> Products { get; set; } = new(StringComparer.Ordinal);
+
+    public BillingProductOptions? FindProduct(string productId) =>
+        Products.TryGetValue(productId, out var product) ? product : null;
+}
+
+public sealed class TestBillingOptions
+{
+    public const string SectionName = "Billing:Test";
+
+    /// <summary>Only tokens starting with this prefix are considered valid.</summary>
+    public string TokenPrefix { get; set; } = "test_";
+
+    /// <summary>Subscription length granted for a valid test token.</summary>
+    public int DurationDays { get; set; } = 30;
+}

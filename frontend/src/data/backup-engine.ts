@@ -42,6 +42,8 @@ export interface BackupProgress {
   failed: number;
   current?: string;
   error?: string;
+  /** Set when the run stopped because the account's storage plan is full. */
+  quotaExceeded?: boolean;
 }
 
 async function confirmProcessed(photo: CloudPhoto): Promise<void> {
@@ -162,8 +164,11 @@ export async function runBackup(onProgress: (progress: BackupProgress) => void):
       const message = error instanceof Error ? error.message : 'Upload failed.';
       markFailed(row.asset_id, message);
       if (error instanceof ApiError && (error.status === 413 || error.status === 401)) {
-        fatal = error.message;
-        report({ failed: progress.failed + 1 });
+        fatal =
+          error.status === 413
+            ? 'Cloud storage is full — upgrade your plan to keep backing up.'
+            : 'Sign in again to continue your backup.';
+        report({ failed: progress.failed + 1, quotaExceeded: error.status === 413 });
         return true;
       }
       report({ failed: progress.failed + 1 });

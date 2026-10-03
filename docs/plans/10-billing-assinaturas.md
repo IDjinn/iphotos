@@ -33,6 +33,13 @@ consumidos no app), com a verificação de compra feita no backend via Google Pl
 Developer API. Desenhar o backend com uma abstração `IBillingProvider` para
 acrescentar Stripe depois como segundo provider (web checkout) sem mudar o domínio.
 
+> **Resolvido (2026-10-03, D5/D15):** a abstração `IBillingProvider` foi
+> implementada primeiro com um provider **sandbox** (`test`) — toda a
+> infraestrutura (verify/status/restore, expiração, paywall) já funciona ponta a
+> ponta sem contas externas. O `GooglePlayBillingProvider` (ou Stripe) entra
+> depois como nova implementação, sem tocar domínio, endpoints ou app. Catálogo
+> por config no backend — o preço nunca é regra do frontend.
+
 ## 3. Planos (matriz inicial)
 
 | | Free (modo Offline) | Cloud (assinatura) |
@@ -43,9 +50,12 @@ acrescentar Stripe depois como segundo provider (web checkout) sem mudar o domí
 | Timeline remota / restore | ✖ | ✔ |
 | Classificação cloud (05B, futuro) | ✖ | ✔ |
 
-- Produtos Play Billing: `iphotos.cloud.monthly` e `iphotos.cloud.yearly`
-  (assinaturas). Quota inicial única de 15 GiB [ABERTO: tiers].
-- Preço/testes: conta de licença de teste no Play Console para sandbox.
+- Produtos: catálogo por config no backend (`Billing:Products`) — v1 lançado com
+  um único SKU mensal `iphotos.cloud.1tb.monthly` (1 TB = 2^40 bytes, US$ 15/mês);
+  novos tiers (2/4/8 TB, anual) entram como entradas de config, sem migração.
+- Preço/testes: provider sandbox (`test`) aceita tokens com o prefixo configurado
+  e concede a duração de `Billing:Test:DurationDays` — conta de licença de teste
+  no Play Console passa a ser necessária só com o provider real.
 
 ## 4. Fluxo de compra e verificação
 
@@ -97,18 +107,18 @@ App usa `expo-in_app_expense`? **Não** — `react-native-iap` (maduro, dev buil
 ## 7. Tarefas
 
 ### 10A — Backend
-- [ ] 10.1 `IBillingProvider` + `GooglePlayBillingProvider` (credentials via config)
-- [ ] 10.2 Tabela `billing_purchases(userId, productId, purchaseToken, purchaseState, expiresAt, updatedAt)` única por purchaseToken
-- [ ] 10.3 `POST /api/billing/verify` (idempotente; valida no Google; atualiza `users.plan`/quota)
-- [ ] 10.4 `GET /api/billing/status` + `POST /api/billing/restore`
-- [ ] 10.5 Job diário de expiração (grace 3 dias) + testes TDD (happy, token inválido, já expirado, reembolso)
+- [x] 10.1 `IBillingProvider` + `TestBillingProvider` (sandbox, config `Billing:Test`) — `GooglePlayBillingProvider` entra como follow-up da D5/D15
+- [x] 10.2 Tabela `billing_purchases(userId, provider, productId, purchaseToken, state, quotaBytes, expiresAt, …)` única por purchaseToken (migração `AddBillingPurchases`)
+- [x] 10.3 `POST /api/billing/verify` (idempotente; valida no provider; atualiza `users.plan`/quota; token de outra conta → 400)
+- [x] 10.4 `GET /api/billing/status` + `POST /api/billing/restore` (+ `GET /api/billing/products` com catálogo/sandbox)
+- [x] 10.5 Worker de expiração (`BillingExpiryWorker`, sweep diário configurável; grace 3 dias) + testes TDD (happy, token inválido, reusado, expirado, reembolso, downgrade)
 
 ### 10B — App
-- [ ] 10.6 Lib de IAP no app (D5/escolha acima) + wrapper `src/data/billing.ts`
-- [ ] 10.7 Tela de paywall + gatilhos (413, primeira config de backup)
-- [ ] 10.8 Seção do plano em `/settings/account` (estado, gerenciar, restore)
-- [ ] 10.9 account store reflete `plan` (matriz do doc 02) e bloqueia upload acima da quota com copy clara
-- [ ] 10.10 Testes: fluxo sandbox completa assinatura → quota aplicada; expiração → downgrade sem perder fotos
+- [x] 10.6 Contrato `src/data/billing.ts` (products/status/verify/restore; token de compra persistido localmente p/ restore) — IAP nativo (`expo-iap`/`react-native-iap`) entra com o provider real
+- [x] 10.7 Tela `/settings/subscription` (paywall + status) e gatilho 413 no backup (`quotaExceeded` → "Upgrade storage"); demais gatilhos (1ª config de backup, restore em device limpo) com o provider real
+- [x] 10.8 Seção do plano em `/settings/account` (estado, renovação) + row "iPhotos Cloud" nas Settings
+- [x] 10.9 account store reflete `plan` (`refreshPlan` a partir de `GET /api/billing/status`; upload acima da quota continua bloqueado pelo backend com 413 e copy clara)
+- [x] 10.10 Testes: 19 unit (BillingService/expiry) + 5 integração (fluxo sandbox completo: verify → quota 1 TB → expiração → downgrade sem perder fotos)
 
 ## 8. Critérios de aceite
 

@@ -11,12 +11,7 @@ import { useAccountStore } from '@/stores/account';
 import { useImportZipStore } from '@/stores/import-zip';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
-  return `${Math.max(0, Math.round(bytes / 1024))} KB`;
-}
+import { formatBytes } from '@/utils/format';
 
 const RULES: { icon: IconName; text: string }[] = [
   { icon: 'image-outline', text: 'Photos import as jpg, png, webp or heic (converted to jpeg).' },

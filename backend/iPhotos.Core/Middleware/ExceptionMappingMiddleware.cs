@@ -22,6 +22,7 @@ public sealed class ExceptionMappingMiddleware(RequestDelegate next, ILogger<Exc
                 UnauthorizedException e => (StatusCodes.Status401Unauthorized, e.Message),
                 NotFoundException e => (StatusCodes.Status404NotFound, e.Message),
                 QuotaExceededException e => (StatusCodes.Status413RequestEntityTooLarge, e.Message),
+                InvalidPurchaseException e => (StatusCodes.Status400BadRequest, e.Message),
                 SecurityTokenException e => (StatusCodes.Status401Unauthorized, e.Message),
                 OperationCanceledException when context.RequestAborted.IsCancellationRequested =>
                     (499, "Client closed request."),

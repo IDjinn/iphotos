@@ -14,6 +14,8 @@ interface BackupState {
   running: boolean;
   progress: BackupProgress | null;
   lastError: string | null;
+  /** The last run stopped because the storage plan is full — offers the upgrade. */
+  quotaExceeded: boolean;
   lastFinishedAt: number | null;
   /** Offline-capable inventory job (scan + hashing, no upload). */
   scanning: boolean;
@@ -30,6 +32,7 @@ export const useBackupStore = create<BackupState>()((set) => ({
   running: false,
   progress: null,
   lastError: null,
+  quotaExceeded: false,
   lastFinishedAt: null,
   scanning: false,
   scanProgress: null,
@@ -41,6 +44,7 @@ export const useBackupStore = create<BackupState>()((set) => ({
     set({
       running: true,
       lastError: null,
+      quotaExceeded: false,
       progress: { phase: 'inventory', total: 0, processed: 0, uploaded: 0, skipped: 0, failed: 0 },
     });
     try {
@@ -54,8 +58,11 @@ export const useBackupStore = create<BackupState>()((set) => ({
           set({ stats: getInventoryStats() });
         }
       });
-      if (final.phase === 'error' && final.error) set({ lastError: final.error });
-      else set({ lastFinishedAt: Date.now() });
+      if (final.phase === 'error' && final.error) {
+        set({ lastError: final.error, quotaExceeded: final.quotaExceeded === true });
+      } else {
+        set({ lastFinishedAt: Date.now() });
+      }
     } catch (error) {
       set({ lastError: error instanceof Error ? error.message : 'Backup failed.' });
     } finally {

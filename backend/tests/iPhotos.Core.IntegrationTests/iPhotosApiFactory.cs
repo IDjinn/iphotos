@@ -58,13 +58,15 @@ public sealed class iPhotosApiFactory : WebApplicationFactory<Program>, IAsyncLi
         }));
 
         // The real worker pipelines, so uploads become Ready and zip imports
-        // complete without manual intervention.
+        // complete without manual intervention. Billing maintenance registers the
+        // expiry handler so tests can run the sweep the Worker host would run.
         builder.ConfigureTestServices(services =>
         {
             services.AddVariantProcessing();
             services.AddHostedService<VariantProcessingWorker>();
             services.AddZipImportProcessing();
             services.AddHostedService<ZipImportWorker>();
+            services.AddBillingMaintenance();
         });
         builder.ConfigureLogging(logging =>
         {

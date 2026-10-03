@@ -47,4 +47,20 @@ public static class DependencyInjection
         services.AddScoped<ZipImportHandler>();
         return services;
     }
+
+    /// <summary>
+    /// Registers the billing expiry sweep (grace period handling + free-tier downgrade).
+    /// </summary>
+    public static IServiceCollection AddBillingMaintenance(this IServiceCollection services)
+    {
+        services.AddOptions<BillingOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(BillingOptions.SectionName).Bind(options));
+        services.AddOptions<StorageOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(StorageOptions.SectionName).Bind(options));
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<BillingOptions>>().Value);
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<StorageOptions>>().Value);
+
+        services.AddScoped<BillingExpiryHandler>();
+        return services;
+    }
 }

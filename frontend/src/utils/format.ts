@@ -14,3 +14,11 @@ export function formatCount(n: number, singular = 'item', plural = 'items'): str
   const label = n === 1 ? singular : plural;
   return `${n.toLocaleString('en-US')} ${label}`;
 }
+
+/** Human byte size with the largest fitting unit — "1.0 TB", "15.0 GB", "320 MB", "4 KB". */
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 4) return `${(bytes / 1024 ** 4).toFixed(1)} TB`;
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+  return `${Math.max(0, Math.round(bytes / 1024))} KB`;
+}

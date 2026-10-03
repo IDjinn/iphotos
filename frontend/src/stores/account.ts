@@ -33,6 +33,8 @@ interface AccountState {
   resetSession: () => void;
   /** Validates the persisted refresh token on boot; resolves sessionResolved. */
   resolveSession: () => Promise<void>;
+  /** Syncs the persisted plan with the billing contract (no-op outside cloud mode). */
+  refreshPlan: () => Promise<void>;
 }
 
 const USER_KEY = 'account.user.v1';
@@ -87,6 +89,31 @@ export const useAccountStore = create<AccountState>()(
           set({ mode: 'offline', user: null });
         }
         set({ sessionResolved: true });
+      },
+      refreshPlan: async () => {
+        const { mode } = get();
+        if (mode !== 'cloud') return;
+        try {
+          const billing = await import('@/data/billing');
+          const [status, catalog] = await Promise.all([
+            billing.getBillingStatus(),
+            billing.getBillingCatalog(),
+          ]);
+          if (status.state !== 'Active' && status.state !== 'Grace') {
+            set({ plan: null });
+            return;
+          }
+          const product = catalog.products.find((p) => p.productId === status.plan);
+          set({
+            plan: {
+              id: status.plan,
+              label: product?.displayName ?? status.plan,
+              renewsAt: status.expiresAt ? Date.parse(status.expiresAt) : undefined,
+            },
+          });
+        } catch {
+          // Contract unreachable — keep the last known plan; screens show their own errors.
+        }
       },
     }),
     {

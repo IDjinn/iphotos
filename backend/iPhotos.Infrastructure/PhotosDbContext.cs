@@ -17,6 +17,8 @@ public sealed class PhotosDbContext(DbContextOptions<PhotosDbContext> options) :
 
     public DbSet<ZipImportJob> ZipImportJobs => Set<ZipImportJob>();
 
+    public DbSet<BillingPurchase> BillingPurchases => Set<BillingPurchase>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<User>(entity =>
@@ -112,6 +114,24 @@ public sealed class PhotosDbContext(DbContextOptions<PhotosDbContext> options) :
             entity.HasOne<User>()
                 .WithMany()
                 .HasForeignKey(j => j.OwnerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BillingPurchase>(entity =>
+        {
+            entity.ToTable("billing_purchases");
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.Provider).HasMaxLength(50).IsRequired();
+            entity.Property(p => p.ProductId).HasMaxLength(200).IsRequired();
+            entity.Property(p => p.PurchaseToken).HasMaxLength(512).IsRequired();
+            entity.Property(p => p.State).HasConversion<string>().HasMaxLength(20);
+            // One row per store purchase token (idempotent verification).
+            entity.HasIndex(p => p.PurchaseToken).IsUnique();
+            entity.HasIndex(p => new { p.UserId, p.State });
+
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

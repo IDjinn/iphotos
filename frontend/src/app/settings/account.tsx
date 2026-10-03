@@ -10,12 +10,7 @@ import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
-  return `${Math.max(0, Math.round(bytes / 1024))} KB`;
-}
+import { formatBytes } from '@/utils/format';
 
 function hostOf(url: string): string {
   try {
@@ -25,11 +20,18 @@ function hostOf(url: string): string {
   }
 }
 
+function renewDateLabel(epoch?: number): string {
+  if (!epoch) return '—';
+  return new Date(epoch).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export default function AccountSettingsScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const user = useAccountStore((s) => s.user);
+  const plan = useAccountStore((s) => s.plan);
+  const refreshPlan = useAccountStore((s) => s.refreshPlan);
   const signOut = useAccountStore((s) => s.signOut);
   const [usage, setUsage] = useState<CloudUsage | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
@@ -39,10 +41,11 @@ export default function AccountSettingsScreen() {
     getUsage()
       .then((value) => !cancelled && setUsage(value))
       .catch(() => !cancelled && setUsageError('Could not load usage — try again later.'));
+    void refreshPlan();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshPlan]);
 
   const confirmSignOut = () => {
     haptic('medium');
@@ -121,6 +124,30 @@ export default function AccountSettingsScreen() {
             </View>
           )}
         </View>
+
+        <Pressable
+          style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+          onPress={() => {
+            haptic('light');
+            router.push('/settings/subscription');
+          }}
+          accessibilityLabel="iPhotos Cloud subscription"
+        >
+          <Icon
+            name={plan ? 'cloud-done-outline' : 'cloud-circle-outline'}
+            size={22}
+            color={plan ? colors.accent : colors.icon}
+          />
+          <View style={styles.cardText}>
+            <ThemedText variant="body">{plan ? plan.label : 'iPhotos Cloud'}</ThemedText>
+            <ThemedText variant="bodySmall" color="secondary">
+              {plan
+                ? `Active · renews ${renewDateLabel(plan.renewsAt)}`
+                : 'Add more cloud storage'}
+            </ThemedText>
+          </View>
+          <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+        </Pressable>
 
         <Pressable
           style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}

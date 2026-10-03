@@ -78,3 +78,18 @@ public interface IZipImportRepository
     /// </summary>
     Task<int> RequeueStuckAsync(CancellationToken cancellationToken = default);
 }
+
+public interface IBillingPurchaseRepository
+{
+    Task<BillingPurchase> AddAsync(BillingPurchase purchase, CancellationToken cancellationToken = default);
+
+    Task<BillingPurchase?> FindByTokenAsync(string purchaseToken, CancellationToken cancellationToken = default);
+
+    /// <summary>The user's most recent purchase in any state (newest expiry first) — drives the visible subscription status.</summary>
+    Task<BillingPurchase?> GetNewestForUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<bool> HasActiveForUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Active purchases whose grace period ended before <paramref name="cutoff"/>.</summary>
+    Task<IReadOnlyList<BillingPurchase>> ListLapsedActiveAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default);
+}

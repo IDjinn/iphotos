@@ -12,12 +12,7 @@ import { useAccountStore } from '@/stores/account';
 import { useBackupStore } from '@/stores/backup';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
-  return `${Math.max(0, Math.round(bytes / 1024))} KB`;
-}
+import { formatBytes } from '@/utils/format';
 
 function formatCount(count: number): string {
   return count.toLocaleString('en-US');
@@ -280,6 +275,29 @@ export default function BackupSettingsScreen() {
           <ThemedText variant="bodySmall" color="danger" style={styles.error}>
             {backup.lastError}
           </ThemedText>
+        ) : null}
+        {backup.quotaExceeded ? (
+          <Pressable
+            style={({ pressed }) => [styles.card, { backgroundColor: colors.accentSoft }, pressed && { opacity: 0.75 }]}
+            onPress={() => {
+              haptic('light');
+              router.push('/settings/subscription');
+            }}
+            accessibilityLabel="Upgrade storage"
+          >
+            <View style={styles.cardRow}>
+              <Icon name="cloud-circle-outline" size={22} color={colors.accent} />
+              <View style={styles.cardText}>
+                <ThemedText variant="body" color="accent">
+                  Upgrade storage
+                </ThemedText>
+                <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                  See cloud plans and keep backing up
+                </ThemedText>
+              </View>
+              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+            </View>
+          </Pressable>
         ) : null}
         {backup.scanError ? (
           <ThemedText variant="bodySmall" color="danger" style={styles.error}>

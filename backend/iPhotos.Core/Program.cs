@@ -31,12 +31,15 @@ builder.Services.AddOptions<StorageOptions>().Configure<IConfiguration>((o, c) =
 builder.Services.AddOptions<ImagingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(ImagingOptions.SectionName).Bind(o));
 builder.Services.AddOptions<Argon2HasherOptions>().Configure<IConfiguration>((o, c) => c.GetSection(Argon2HasherOptions.SectionName).Bind(o));
 builder.Services.AddOptions<ZipImportOptions>().Configure<IConfiguration>((o, c) => c.GetSection(ZipImportOptions.SectionName).Bind(o));
+builder.Services.AddOptions<BillingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(BillingOptions.SectionName).Bind(o));
+builder.Services.AddOptions<TestBillingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(TestBillingOptions.SectionName).Bind(o));
 
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<JwtOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<Argon2HasherOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<ImagingOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<StorageOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<ZipImportOptions>>().Value);
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<BillingOptions>>().Value);
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -64,9 +67,23 @@ builder.Services.AddInfrastructure();
 builder.Services.AddSingleton<IPasswordHasher, Argon2PasswordHasher>();
 builder.Services.AddSingleton<ITokenService, JwtTokenService>();
 builder.Services.AddSingleton<IHeifConverter, MagickHeifConverter>();
+// Purchase verification provider is picked at resolution time (late binding, like the
+// blob storage): "test" simulates purchases for dev/sandbox; real stores plug in here.
+builder.Services.AddSingleton<IBillingProvider>(sp =>
+{
+    var billing = sp.GetRequiredService<IOptions<BillingOptions>>().Value;
+    return billing.Provider?.ToLowerInvariant() switch
+    {
+        "test" => new TestBillingProvider(
+            sp.GetRequiredService<IOptions<TestBillingOptions>>(),
+            sp.GetRequiredService<IDateTimeProvider>()),
+        _ => throw new InvalidOperationException($"Unknown billing provider '{billing.Provider}'."),
+    };
+});
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PhotoService>();
 builder.Services.AddScoped<ZipImportHandler>();
+builder.Services.AddScoped<BillingService>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -101,6 +118,7 @@ if (app.Environment.IsDevelopment())
 app.MapAuthEndpoints();
 app.MapPhotoEndpoints();
 app.MapImportEndpoints();
+app.MapBillingEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", utcNow = DateTimeOffset.UtcNow }));
 
 await app.Services.MigrateDatabaseAsync();

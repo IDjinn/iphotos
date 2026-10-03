@@ -37,6 +37,7 @@ public static class DependencyInjection
         services.AddScoped<IVariantRepository, VariantRepository>();
         services.AddScoped<IVariantJobRepository, VariantJobRepository>();
         services.AddScoped<IZipImportRepository, ZipImportRepository>();
+        services.AddScoped<IBillingPurchaseRepository, BillingPurchaseRepository>();
         // Blob storage backend is picked at resolution time (late binding keeps
         // WebApplicationFactory overrides effective): local filesystem by default,
         // or the standalone storage service when BlobStorage:Mode is 'Http'.

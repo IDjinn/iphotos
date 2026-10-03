@@ -107,3 +107,33 @@ public sealed record ZipImportJobDto(
         job.CreatedAt,
         job.ProcessedAt);
 }
+
+public sealed record BillingProductDto(string ProductId, string DisplayName, string DisplayPrice, long QuotaBytes);
+
+public sealed record BillingProductsResponse(bool Sandbox, IReadOnlyList<BillingProductDto> Products);
+
+public sealed record VerifyPurchaseRequest(string ProductId, string PurchaseToken);
+
+public sealed record RestorePurchaseRequest(string PurchaseToken);
+
+/// <summary>Computed (not persisted) subscription state for the API contract.</summary>
+public enum BillingSubscriptionState
+{
+    /// <summary>No purchase associated with the account.</summary>
+    Free,
+
+    /// <summary>The subscription term is running.</summary>
+    Active,
+
+    /// <summary>The term ended but the grace period is still running.</summary>
+    Grace,
+
+    /// <summary>The grace period ended; uploads are gated by the free quota again.</summary>
+    Expired,
+}
+
+public sealed record BillingStatusDto(
+    string Plan,
+    BillingSubscriptionState State,
+    long QuotaBytes,
+    DateTimeOffset? ExpiresAt);

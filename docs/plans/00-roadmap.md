@@ -105,6 +105,7 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
 | 07 Configurações da conta | 1–3 | 🟡 **Fase 1 implementada**: seções Account, Backup & sync e Smart search; `/settings/account` conectada ao backend (usage, logout real — 2026-08-18); `/settings/backup` completa nas fases 2–3 |
 | 08 Pasta Segura (cofre cifrado) | — | 🟡 **Implementado** (2026-08-16): itens movidos para a Pasta Segura são cifrados com AES-256-GCM em storage privado e removidos da galeria do sistema; migração dos itens hide-only antigos; ver doc `08-pasta-segura-cofre.md` |
 | 09 Backend API | 3 | ✅ **Implementado** (2026-08-18): backend .NET 10 + PostgreSQL em `C:\dev\csharp\iPhotos` — auth e-mail+senha+JWT (Argon2id, refresh rotativo), upload multipart com dedup SHA-256 e quota, variantes thumb/preview/original via worker separado, indexação EXIF (data/câmera/GPS/dimensões), listagem com filtros, usage; 107 testes (TDD) + compose. **Integração front ✅** (2026-08-18, commit `e547c82`): `api-client.ts` (refresh single-flight em 401), login/registro/logout reais, backup-engine v1, timeline remota `/cloud-photos` com thumbs autenticadas, `GET /api/usage` na conta |
+| 10 Billing & assinaturas | 5 | ✅ **Implementado** (2026-10-03): abstração `IBillingProvider` + provider sandbox (`test`) conforme decisão D5; produto único `iphotos.cloud.1tb.monthly` (1 TB = US$ 15/mês, catálogo por config), tabela `billing_purchases`, endpoints `/api/billing/products|verify|status|restore`, worker de expiração com grace de 3 dias, paywall `/settings/subscription`, plano em Settings/Account e gatilho 413 no backup. 19 testes unit + 5 integração. **Follow-up**: `GooglePlayBillingProvider`/Stripe + RTDN/webhooks (doc 10 §8) |
 | 13 IA off + previews + modo encriptado | — | ✅ **Implementado** (2026-08-20): master switch "Artificial intelligence" nas Settings (desliga CLIP local, labeling cloud, indexação automática e esconde labels/entradas de IA, sem apagar dados); pipeline local de thumbnails ~512px (`src/data/thumbnails.ts`, tabela `thumbnails`, `PhotoCell` usa preview com fallback); modo encriptado offline (`docs/plans/13-encrypted-mode.md`) — fotos cifradas AES-256-GCM com chave derivada de senha (PBKDF2 200k), removidas da galeria do sistema, galeria interna com previews descriptografados sob demanda, original decriptado ao abrir, cache de sessão purge no lock/background, disable decripta tudo de volta |
 
 > Atualizar esta tabela ao concluir cada estágio.
@@ -184,6 +185,26 @@ Adições de 2026-08-22 (estágio 03A — inventário local de backup):
   agora navega (visível também offline, com resumo do inventário); store
   `backup.ts` expõe `stats`/`scan()`.
 
+Adições de 2026-10-03 (billing & assinaturas — doc 10, decisões D5/D15):
+
+- **Backend**: entidade `BillingPurchase` + tabela `billing_purchases` (unique por
+  purchase_token, migração `AddBillingPurchases`); `BillingService` com verify
+  idempotente (token reusado de outra conta → 400), status computado
+  (`Free|Active|Grace|Expired`) e restore; `TestBillingProvider` (sandbox, prefixo
+  `test_`); `BillingExpiryHandler` + worker diário no iPhotos.Worker — expiração
+  com grace de 3 dias rebaixa o usuário para free/15 GiB sem apagar fotos.
+  Catálogo por config (`Billing:Products`, hoje só `iphotos.cloud.1tb.monthly` =
+  1 TB, US$ 15/mês); endpoints `GET /api/billing/products`, `POST /verify`,
+  `GET /status`, `POST /restore`. 19 testes unit + 5 integração (fluxo completo
+  com expiração simulada).
+- **App**: `src/data/billing.ts` (contrato, sem detalhes de backend); account
+  store populariza `plan` (antes sempre null); tela `/settings/subscription`
+  (paywall + status + restore, botão sandbox só quando `catalog.sandbox`); row
+  "iPhotos Cloud" nas Settings e seção do plano em `/settings/account`; gatilho
+  413 no backup (`quotaExceeded` no engine/store → "Upgrade storage"); cleanup:
+  `formatBytes` compartilhada em `src/utils/format.ts` (com tier TB) — removida
+  de 4 telas.
+
 ## 5.2 Próximas etapas (pós-implementação, em ordem recomendada)
 
 1. **09 — Integração front↔backend** ✅ (2026-08-18): `api-client.ts` + tokens em
@@ -193,7 +214,7 @@ Adições de 2026-08-22 (estágio 03A — inventário local de backup):
 3. **04 — Pastas sincronizadas/ignoradas**: `sync_rules`, tela `settings/backup/folders`, reconciliação com o scan (reusa `listDeviceFolders`).
 4. **06 — Importação por ZIP**: ✅ **server-side implementado** (2026-10-02) — upload multipart → worker extrai e ingera pelo pipeline de fotos (dedupe por hash, HEIC transcrito no servidor). Follow-up futuro: fluxo device-side deste doc (offline / vídeos na galeria).
 5. **05A-ML — Modelo local de verdade**: `onnxruntime-react-native` (dev build), CLIP ViT-B/32 int8 baixado sob demanda, tabela `asset_embeddings`, indexação via `expo-task-manager` em background (substituindo a indexação na abertura), provider semântico na busca. A interface atual (labels + `source`) já acomoda o novo modelo sem migração de dados, e a escolha do modelo já vem de `model-registry`/tela `/settings/ai-model`.
-6. **02/D5 — Billing**: plano detalhado no **doc 10** (recomendação Play Billing v1 + Stripe como follow-up); sincronização de `plan` (o backend já expõe `plan`/quota no `users`).
+6. **02/D5 — Billing**: ✅ **implementado** (2026-10-03) — infraestrutura completa com `IBillingProvider` + provider sandbox (decisão D5 resolvida: abstração agora, Play Billing/Stripe depois), produto único 1 TB a US$ 15/mês, verificação server-side, expiração com grace e paywall no app. Detalhes no doc 10 §7 e §5.1.
 7. **Futuro — E2E zero-knowledge (03B–F)**: plano detalhado no **doc 11** (cripto de cliente, chave de recuperação D3, sobre os campos reservados no backend); **Futuro — Hosting custom**: plano detalhado no **doc 12** (`s3StorageProvider`/`webdavStorageProvider` + licença vitalícia).
 
 Dividas técnicas conhecidas da implementação atual:
@@ -220,6 +241,7 @@ Dividas técnicas conhecidas da implementação atual:
 | D12 | Stack do backend: .NET 10 + PostgreSQL + EF Core (migrations) + worker separado para variantes (fila `variant_jobs`, SKIP LOCKED) + ImageSharp 3.1 (fixado: a 4.0 exige chave de licença no build Docker); TDD com Testcontainers | ✔ Implementado 2026-08-18 |
 | D13 | Storage desacoplado em serviço próprio (`iPhotos.Storage` + `iPhotos.Storage.Host` na mesma solution, isolado da lógica principal): API simples "payload → URL" (PUT objeto → URL assinada/presigned), providers FileSystem, S3-compatible (AWS/Wasabi/MinIO/B2/R2 via endpoint+path-style), WebDAV e Google Drive (SA); auth `X-Api-Key`, URLs assinadas (HMAC ou SigV4), guard SSRF para endpoints privados; o backend consome via `IBlobStorage` Http (DB continua guardando keys) | ✔ Implementado 2026-09-30 |
 | D14 | Upload de fotos **direto ao storage com URL presigned** (`upload-ticket` → PUT SigV4 direto do app ao S3 → `complete`), encerrando o proxy api→storage que atravessava túnel+rede 2× por foto. Dedup por hash do cliente (mesma confiança D11), quota reservada no ticket, estado `PendingUpload` + sweeper de órfãos (24 h) no worker; multipart `/api/photos` permanece como fallback (storages sem presign → 501). Otimizações no mesmo pacote: worker baixa o original 1× (antes 3×), poll 2 s → 0,5 s, backup com 3 uploads paralelos no app | ✔ Implementado 2026-10-03 |
+| D15 | Billing: **abstração `IBillingProvider` + provider sandbox (`test`) no v1** — toda a infraestrutura (verificação server-side idempotente por token, tabela `billing_purchases`, expiração com grace, paywall) independe da loja; `GooglePlayBillingProvider`/Stripe entram depois sem tocar domínio/endpoints/app. Catálogo de produtos por config (preço nunca é regra do backend); produto v1: `iphotos.cloud.1tb.monthly` (1 TB, US$ 15/mês), mensal | ✔ Implementado 2026-10-03 |
 
 ## 7. Como usar estes documentos
 

@@ -10,3 +10,6 @@ public class UnauthorizedException(string message = "Invalid credentials.") : Ex
 public class NotFoundException(string message) : Exception(message);
 
 public class QuotaExceededException(string message) : Exception(message);
+
+/// <summary>The store rejected the purchase (forged, reused, expired or refunded token).</summary>
+public class InvalidPurchaseException(string message) : Exception(message);

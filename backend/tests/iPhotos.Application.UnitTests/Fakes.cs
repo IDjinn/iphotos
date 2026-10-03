@@ -223,6 +223,52 @@ public sealed class InMemoryZipImportRepository : IZipImportRepository
     }
 }
 
+public sealed class InMemoryBillingPurchaseRepository : IBillingPurchaseRepository
+{
+    public List<BillingPurchase> Purchases { get; } = [];
+
+    public Task<BillingPurchase> AddAsync(BillingPurchase purchase, CancellationToken cancellationToken = default)
+    {
+        Purchases.Add(purchase);
+        return Task.FromResult(purchase);
+    }
+
+    public Task<BillingPurchase?> FindByTokenAsync(string purchaseToken, CancellationToken cancellationToken = default)
+        => Task.FromResult(Purchases.FirstOrDefault(p => p.PurchaseToken == purchaseToken));
+
+    public Task<BillingPurchase?> GetNewestForUserAsync(Guid userId, CancellationToken cancellationToken = default)
+        => Task.FromResult(Purchases
+            .Where(p => p.UserId == userId)
+            .OrderByDescending(p => p.ExpiresAt)
+            .ThenByDescending(p => p.CreatedAt)
+            .FirstOrDefault());
+
+    public Task<bool> HasActiveForUserAsync(Guid userId, CancellationToken cancellationToken = default)
+        => Task.FromResult(Purchases.Any(p => p.UserId == userId && p.State == BillingPurchaseState.Active));
+
+    public Task<IReadOnlyList<BillingPurchase>> ListLapsedActiveAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<BillingPurchase>>(Purchases
+            .Where(p => p.State == BillingPurchaseState.Active && p.ExpiresAt <= cutoff)
+            .OrderBy(p => p.ExpiresAt)
+            .ToList());
+}
+
+public sealed class FakeBillingProvider : IBillingProvider
+{
+    public string Name { get; set; } = "fake";
+
+    public BillingValidation Result { get; set; } = new(BillingValidationState.Invalid, null);
+
+    public int ValidationCount { get; private set; }
+
+    public Task<BillingValidation> ValidatePurchaseAsync(
+        string productId, string purchaseToken, CancellationToken cancellationToken = default)
+    {
+        ValidationCount++;
+        return Task.FromResult(Result);
+    }
+}
+
 public sealed class FakeHeifConverter : IHeifConverter
 {
     private int _counter;

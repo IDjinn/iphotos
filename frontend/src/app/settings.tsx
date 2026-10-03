@@ -19,6 +19,7 @@ import { useThumbnailsStore } from '@/stores/thumbnails';
 import type { ThemeMode } from '@/theme/context';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
+import { formatBytes } from '@/utils/format';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -41,10 +42,9 @@ function formatCount(count: number): string {
   return count.toLocaleString('en-US');
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
-  return `${Math.max(0, Math.round(bytes / 1024))} KB`;
+function renewDateLabel(epoch?: number): string {
+  if (!epoch) return '—';
+  return new Date(epoch).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 /** Just the host of the configured endpoint (never the key or full path). */
@@ -65,6 +65,8 @@ export default function SettingsScreen() {
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
   const account = useAccountStore();
+  const plan = useAccountStore((s) => s.plan);
+  const refreshPlan = useAccountStore((s) => s.refreshPlan);
   const backup = useBackupStore();
   const thumbnails = useThumbnailsStore();
   const encryptedMode = useEncryptedModeStore();
@@ -91,11 +93,12 @@ export default function SettingsScreen() {
       if ((!state.running && prev.running) || (!state.scanning && prev.scanning)) state.refreshStats();
     });
     useBackupStore.getState().refreshStats();
+    if (account.mode === 'cloud') void refreshPlan();
     return () => {
       unsubscribe();
       unsubscribeBackup();
     };
-  }, []);
+  }, [account.mode, refreshPlan]);
 
   const searchCaption = !localSearchEnabled
     ? 'Off'
@@ -177,6 +180,39 @@ export default function SettingsScreen() {
               <ThemedText variant="body">{account.user ? account.user.email : 'Local mode'}</ThemedText>
               <ThemedText variant="bodySmall" color="secondary">
                 {account.user ? 'Cloud · manage account' : 'No account · set up cloud backup'}
+              </ThemedText>
+            </View>
+            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.row,
+              { backgroundColor: colors.surface, marginTop: 8 },
+              account.mode !== 'cloud' && { opacity: 0.6 },
+              pressed && { opacity: 0.75 },
+            ]}
+            onPress={() => {
+              haptic('light');
+              router.push('/settings/subscription');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="iPhotos Cloud subscription"
+          >
+            <Icon
+              name="cloud-circle-outline"
+              size={22}
+              color={plan ? colors.accent : colors.icon}
+            />
+            <View style={styles.rowText}>
+              <ThemedText variant="body" style={styles.rowLabel}>
+                iPhotos Cloud
+              </ThemedText>
+              <ThemedText variant="bodySmall" color="secondary">
+                {plan
+                  ? `${plan.label} · renews ${renewDateLabel(plan.renewsAt)}`
+                  : account.mode === 'cloud'
+                    ? 'Add more cloud storage'
+                    : 'Requires Cloud mode'}
               </ThemedText>
             </View>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
