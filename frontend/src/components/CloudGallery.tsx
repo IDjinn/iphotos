@@ -143,6 +143,20 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
         <ThemedText variant="bodySmall" color="danger">
           {state.message}
         </ThemedText>
+        <Pressable
+          onPress={() => {
+            setState({ status: 'loading' });
+            void load(1);
+          }}
+          accessibilityLabel="Try again"
+          accessibilityRole="button"
+        >
+          <View style={[styles.retryButton, { borderColor: colors.accent }]}>
+            <ThemedText variant="bodySmall" color="accent">
+              Try again
+            </ThemedText>
+          </View>
+        </Pressable>
       </View>
     );
   }
@@ -178,6 +192,9 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
             style={styles.cellImage}
             contentFit="cover"
             recyclingKey={item.id}
+            onError={(event) => {
+              if (__DEV__) console.warn(`[gallery] thumbnail failed for ${item.id}: ${event.error}`);
+            }}
           />
           {item.state !== 'Ready' ? (
             <View style={[styles.stateBadge, { backgroundColor: colors.background }]}>
@@ -196,6 +213,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
+  retryButton: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
   emptyText: { textAlign: 'center' },
   cell: { flex: 1 / 3, aspectRatio: 1, padding: 1 },
   cellImage: { flex: 1, borderRadius: 4, backgroundColor: 'rgba(128,128,128,0.15)' },

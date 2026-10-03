@@ -128,11 +128,36 @@ async function forceSignOut(): Promise<void> {
   useAccountStore.getState().resetSession();
 }
 
+/** Dev-console telemetry for every failed request — never surfaced to the UI. */
+function logRequestFailure(error: AxiosError): void {
+  const { response, config } = error;
+  const target = `${config?.method?.toUpperCase() ?? 'GET'} ${config?.baseURL ?? ''}${config?.url ?? ''}`;
+  if (!response) {
+    // No response at all: offline, DNS failure, TLS, timeout.
+    console.warn(`[api] ${target} -> no response (${error.code ?? 'unknown'}): ${error.message}`);
+    return;
+  }
+  const rawBody = response.data;
+  const body =
+    typeof rawBody === 'string'
+      ? rawBody.slice(0, 300)
+      : rawBody == null
+        ? '<empty>'
+        : JSON.stringify(rawBody).slice(0, 300);
+  const contentType = String(response.headers?.['content-type'] ?? '');
+  console.warn(`[api] ${target} -> ${response.status} ${contentType} body: ${body}`);
+}
+
 function toApiError(error: AxiosError): ApiError {
+  if (__DEV__) logRequestFailure(error);
   const { response } = error;
   if (!response) {
     // Axios rejects without a response on network-level failures (offline, DNS, timeout).
     return new ApiError(0, 'Network error — check your connection and try again.');
+  }
+  if (response.status >= 500) {
+    // 5xx bodies may be non-JSON (tunnel/CDN error pages) and carry nothing actionable.
+    return new ApiError(response.status, 'The server is temporarily unavailable — try again in a moment.');
   }
   const data = response.data as { error?: unknown } | undefined;
   const message =
