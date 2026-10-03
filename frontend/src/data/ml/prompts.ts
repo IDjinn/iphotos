@@ -1,4 +1,4 @@
-import { Buffer } from 'react-native-quick-crypto';
+import { Buffer } from 'buffer';
 
 import promptsJson from '@/assets/ml/prompts.json';
 

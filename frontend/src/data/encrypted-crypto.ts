@@ -1,14 +1,8 @@
+import { Buffer } from 'buffer';
 import * as SecureStore from 'expo-secure-store';
 import { Directory, File, Paths } from 'expo-file-system';
-import {
-  Buffer,
-  createCipheriv,
-  createDecipheriv,
-  install as installQuickCrypto,
-  pbkdf2Sync,
-  randomBytes,
-} from 'react-native-quick-crypto';
 
+import { isNativeCryptoAvailable, requireNativeCrypto } from './native-crypto';
 import { purgeDirectory } from './vault-crypto';
 
 /**
@@ -20,9 +14,9 @@ import { purgeDirectory } from './vault-crypto';
  * PBKDF2-SHA256 (200k iterations), so nothing on disk can be decrypted
  * without the password. The unwrapped key lives in memory only, for the
  * duration of an unlocked session.
+ *
+ * Requires the native crypto module — unavailable in Expo Go.
  */
-
-installQuickCrypto();
 
 const CONFIG_KEY = 'encryptedMode.key.v1';
 const PBKDF2_ITERATIONS = 200_000;
@@ -37,26 +31,34 @@ interface WrappedKeyConfig {
 
 let sessionKey: Buffer | null = null;
 
-function deriveKek(password: string, salt: Buffer): Buffer {
+function deriveKek(password: string, salt: Uint8Array): Buffer {
+  const { pbkdf2Sync } = requireNativeCrypto();
   return Buffer.from(pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 32, 'sha256'));
 }
 
-function wrapDataKey(dataKey: Buffer, kek: Buffer): WrappedKeyConfig {
+function wrapDataKey(dataKey: Uint8Array, kek: Uint8Array): WrappedKeyConfig {
+  const { randomBytes, createCipheriv } = requireNativeCrypto();
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv('aes-256-gcm', kek, iv);
   const wrapped = Buffer.concat([cipher.update(dataKey), cipher.final(), cipher.getAuthTag()]);
-  return { salt: '', iv: iv.toString('base64'), wrapped: wrapped.toString('base64') };
+  return { salt: '', iv: Buffer.from(iv).toString('base64'), wrapped: wrapped.toString('base64') };
+}
+
+/** Whether encrypted mode can run here (native crypto present). */
+export function isEncryptedModeSupported(): boolean {
+  return isNativeCryptoAvailable();
 }
 
 /** Creates (or replaces) the password-protected data key. */
 export async function setupPassword(password: string): Promise<void> {
+  const { randomBytes } = requireNativeCrypto();
   const salt = randomBytes(16);
   const kek = deriveKek(password, salt);
   const dataKey = randomBytes(32);
   const config = wrapDataKey(dataKey, kek);
-  config.salt = salt.toString('base64');
+  config.salt = Buffer.from(salt).toString('base64');
   await SecureStore.setItemAsync(CONFIG_KEY, JSON.stringify(config));
-  sessionKey = dataKey;
+  sessionKey = Buffer.from(dataKey);
 }
 
 export async function readKeyConfig(): Promise<WrappedKeyConfig | null> {
@@ -81,6 +83,7 @@ export async function isEncryptedModeConfigured(): Promise<boolean> {
 export async function unlockWithPassword(password: string): Promise<boolean> {
   const config = await readKeyConfig();
   if (!config) return false;
+  const { createDecipheriv } = requireNativeCrypto();
   try {
     const kek = deriveKek(password, Buffer.from(config.salt, 'base64'));
     const raw = Buffer.from(config.wrapped, 'base64');
@@ -89,7 +92,10 @@ export async function unlockWithPassword(password: string): Promise<boolean> {
     const tag = raw.subarray(raw.length - TAG_LENGTH);
     const decipher = createDecipheriv('aes-256-gcm', kek, iv);
     decipher.setAuthTag(tag);
-    sessionKey = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    sessionKey = Buffer.concat([
+      Buffer.from(decipher.update(ciphertext)),
+      Buffer.from(decipher.final()),
+    ]);
     return true;
   } catch {
     return false;

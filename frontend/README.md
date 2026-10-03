@@ -42,11 +42,36 @@ Prerequisites: Node 20+, [Bun](https://bun.sh), and an Android SDK (or use the D
 
 ```bash
 bun install
-bun start          # Metro dev server
-bun run android    # build & run on a device/emulator
+bun start          # Metro dev server — scan the QR with Expo Go, hot reload, no build
+bun run android    # native dev build (expo run:android)
 bun run lint       # ESLint
 bun run typecheck  # tsc --noEmit
 ```
+
+> The backend endpoint must be set in `.env` (`EXPO_PUBLIC_API_URL`) before either workflow starts.
+
+### Expo Go vs native build
+
+The app boots and hot-reloads in **Expo Go** with plain `bun start` — no compile step. The **ZIP
+import** (file picker → multipart upload → job polling), cloud photo browsing and search all work
+fully. On Android 13+, Expo Go cannot hold media-library permissions at all, so the Photos tab
+falls back to rendering the cloud-backed library instead of the device gallery.
+
+Features that rely on custom native modules degrade gracefully with an in-app notice:
+
+| Feature | Expo Go | Native build (`bun run android`) |
+| --- | --- | --- |
+| ZIP import, cloud photos, search, settings | ✅ | ✅ |
+| Photos tab | ✅ renders cloud photos (`CloudGallery`) | ✅ device timeline |
+| Backup from the device gallery | ❌ (needs media library) | ✅ |
+| File hashing (backup dedup) | ✅ pure-JS SHA-256 fallback (`@noble/hashes`) | ✅ native (quick-crypto, faster) |
+| Locked Folder / encrypted mode | ❌ notice on screen | ✅ AES-256-GCM via quick-crypto |
+| On-device AI labeling | ❌ readable error on run | ✅ ONNX Runtime |
+
+The gates live in `src/data/native-crypto.ts` (native crypto/ORT are never evaluated in Expo Go —
+Metro turns missing-binding module-scope throws into fatal crashes) and `src/data/media-repository.ts`
+(media-library rejections become the typed `MediaLibraryUnavailableError` and a denied permission
+response; `use-gallery-feed` branches on `isExpoGo` for the gate).
 
 > Gallery permissions (`expo-media-library`) require a development build — they don't work in Expo Go.
 

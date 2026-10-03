@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getPermissionStatus, onLibraryChange, queryAssets, requestPermission } from '@/data/media-repository';
+import { isExpoGo } from '@/data/native-crypto';
 import type { PhotoAsset } from '@/data/types';
 import { useLibraryStore } from '@/stores/library';
 
-type PermissionState = 'unknown' | 'granted' | 'limited' | 'denied';
+type PermissionState = 'unknown' | 'granted' | 'limited' | 'denied' | 'unavailable';
+
+/** Expo Go rejects media-library access outright — its own gate copy applies. */
+function toPermissionState(response: Awaited<ReturnType<typeof getPermissionStatus>>): PermissionState {
+  const privileges = response.accessPrivileges ?? (response.granted ? 'all' : 'none');
+  if (response.granted) return privileges === 'limited' ? 'limited' : 'granted';
+  return isExpoGo ? 'unavailable' : 'denied';
+}
 
 /**
  * Paginated newest-first gallery feed for the Photos tab.
@@ -22,12 +30,7 @@ export function useGalleryFeed() {
 
   const checkPermission = useCallback(async () => {
     const response = await getPermissionStatus();
-    const privileges = response.accessPrivileges ?? (response.granted ? 'all' : 'none');
-    const next: PermissionState = response.granted
-      ? privileges === 'limited'
-        ? 'limited'
-        : 'granted'
-      : 'denied';
+    const next = toPermissionState(response);
     setPermission(next);
     return next;
   }, []);
@@ -94,12 +97,7 @@ export function useGalleryFeed() {
 
   const askPermission = useCallback(async () => {
     const response = await requestPermission();
-    const privileges = response.accessPrivileges ?? (response.granted ? 'all' : 'none');
-    const next: PermissionState = response.granted
-      ? privileges === 'limited'
-        ? 'limited'
-        : 'granted'
-      : 'denied';
+    const next = toPermissionState(response);
     setPermission(next);
     if (next === 'granted' || next === 'limited') await loadFirstPage();
   }, [loadFirstPage]);

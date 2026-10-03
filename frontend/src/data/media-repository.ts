@@ -6,11 +6,45 @@
  */
 import * as MediaLibrary from 'expo-media-library/legacy';
 
+import { isExpoGo } from './native-crypto';
 import type { AssetQuery, GalleryPage, PhotoAsset } from './types';
 
 const DEFAULT_PAGE_SIZE = 120;
 /** Upper bound of internal fetches per call while filtering exclusions. */
 const MAX_INTERNAL_FETCHES = 6;
+
+/**
+ * Expo Go on Android 13+ rejects media-library calls outright instead of
+ * granting partial access — the host app cannot hold full media permissions.
+ * Queries surface this typed error so the UI shows guidance instead of a raw
+ * CodedError; permission checks report plain denial and the feed branches on
+ * `isExpoGo` for the right gate copy.
+ */
+export class MediaLibraryUnavailableError extends Error {
+  constructor() {
+    super(
+      'Device photos are unavailable in the Expo Go preview — import a ZIP instead or run a development build.'
+    );
+    this.name = 'MediaLibraryUnavailableError';
+  }
+}
+
+async function callLibrary<T>(op: () => Promise<T>): Promise<T> {
+  try {
+    return await op();
+  } catch (error) {
+    if (isExpoGo) throw new MediaLibraryUnavailableError();
+    throw error;
+  }
+}
+
+/** Permission shape reported when the runtime rejects the call entirely. */
+const REJECTED_PERMISSIONS = {
+  granted: false,
+  canAskAgain: false,
+  status: MediaLibrary.PermissionStatus.DENIED,
+  accessPrivileges: 'none',
+} as MediaLibrary.PermissionResponse;
 
 export function mapAsset(a: MediaLibrary.Asset): PhotoAsset {
   const type =
@@ -34,16 +68,24 @@ export function mapAsset(a: MediaLibrary.Asset): PhotoAsset {
   };
 }
 
-export function getPermissionStatus(): Promise<MediaLibrary.PermissionResponse> {
-  // Same granular scope as requestPermission(): without it this checks
-  // photo+video+audio and rejects in Expo Go (no READ_MEDIA_AUDIO declared).
-  return MediaLibrary.getPermissionsAsync(false, ['photo', 'video']);
+export async function getPermissionStatus(): Promise<MediaLibrary.PermissionResponse> {
+  try {
+    // Same granular scope as requestPermission(): without it this checks
+    // photo+video+audio and rejects in Expo Go (no READ_MEDIA_AUDIO declared).
+    return await MediaLibrary.getPermissionsAsync(false, ['photo', 'video']);
+  } catch {
+    return REJECTED_PERMISSIONS;
+  }
 }
 
-export function requestPermission(): Promise<MediaLibrary.PermissionResponse> {
-  // Granular photo+video only: requesting 'audio' fails in Expo Go, whose
-  // manifest doesn't declare READ_MEDIA_AUDIO.
-  return MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
+export async function requestPermission(): Promise<MediaLibrary.PermissionResponse> {
+  try {
+    // Granular photo+video only: requesting 'audio' fails in Expo Go, whose
+    // manifest doesn't declare READ_MEDIA_AUDIO.
+    return await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
+  } catch {
+    return REJECTED_PERMISSIONS;
+  }
 }
 
 /** Subscribes to system media library changes (inserts, deletes, updates). */
@@ -85,14 +127,16 @@ export async function queryAssets(query: AssetQuery = {}): Promise<GalleryPage> 
 
   while (collected.length < limit && hasNextPage && fetches < MAX_INTERNAL_FETCHES) {
     fetches++;
-    const page = await MediaLibrary.getAssetsAsync({
-      first: limit,
-      after: cursor,
-      sortBy: [['creationTime', false]],
-      mediaType: mediaTypeFilters(query.mediaTypes),
-      createdAfter: query.createdAfter,
-      createdBefore: query.createdBefore,
-    });
+    const page = await callLibrary(() =>
+      MediaLibrary.getAssetsAsync({
+        first: limit,
+        after: cursor,
+        sortBy: [['creationTime', false]],
+        mediaType: mediaTypeFilters(query.mediaTypes),
+        createdAfter: query.createdAfter,
+        createdBefore: query.createdBefore,
+      })
+    );
     const mapped = page.assets.map(mapAsset);
     const kept = exclude ? mapped.filter((a) => !exclude.has(a.id)) : mapped;
     collected.push(...kept);
@@ -147,7 +191,7 @@ export interface DeviceFolder {
 
 /** Lists device folders with at least one asset. */
 export async function listDeviceFolders(): Promise<DeviceFolder[]> {
-  const albums = await MediaLibrary.getAlbumsAsync({ includeSmartAlbums: true });
+  const albums = await callLibrary(() => MediaLibrary.getAlbumsAsync({ includeSmartAlbums: true }));
   return albums
     .filter((a) => a.assetCount > 0 && a.title.trim().length > 0)
     .map((a) => ({ id: a.id, title: a.title, assetCount: a.assetCount }));
@@ -165,12 +209,14 @@ export async function forEachFolderAsset(
   let cursor: string | undefined;
   let hasNextPage = true;
   while (hasNextPage) {
-    const page = await MediaLibrary.getAssetsAsync({
-      first: pageSize,
-      after: cursor,
-      album: folderId,
-      sortBy: [['creationTime', false]],
-    });
+    const page = await callLibrary(() =>
+      MediaLibrary.getAssetsAsync({
+        first: pageSize,
+        after: cursor,
+        album: folderId,
+        sortBy: [['creationTime', false]],
+      })
+    );
     if (page.assets.length > 0) {
       const proceed = await handle(page.assets.map(mapAsset));
       if (proceed === false) return;
@@ -192,12 +238,14 @@ export async function forEachLibraryPhoto(
   let cursor: string | undefined;
   let hasNextPage = true;
   while (hasNextPage) {
-    const page = await MediaLibrary.getAssetsAsync({
-      first: pageSize,
-      after: cursor,
-      sortBy: [['creationTime', false]],
-      mediaType: [MediaLibrary.MediaType.photo],
-    });
+    const page = await callLibrary(() =>
+      MediaLibrary.getAssetsAsync({
+        first: pageSize,
+        after: cursor,
+        sortBy: [['creationTime', false]],
+        mediaType: [MediaLibrary.MediaType.photo],
+      })
+    );
     if (page.assets.length > 0) {
       const proceed = await handle(page.assets.map(mapAsset), page.totalCount);
       if (proceed === false) return;

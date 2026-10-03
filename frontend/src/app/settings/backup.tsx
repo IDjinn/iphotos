@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import { getUsage, type CloudUsage } from '@/data/cloud-photos-repository';
+import { isExpoGo } from '@/data/native-crypto';
 import type { BackupProgress } from '@/data/backup-engine';
 import { useAccountStore } from '@/stores/account';
 import { useBackupStore } from '@/stores/backup';
@@ -86,14 +88,29 @@ export default function BackupSettingsScreen() {
   const refreshStats = useBackupStore((s) => s.refreshStats);
   const startBackup = useBackupStore((s) => s.start);
   const startScan = useBackupStore((s) => s.scan);
+  // Expo Go cannot see the device gallery, so the whole inventory/scan/upload
+  // flow is meaningless there — the screen turns into a cloud-only view.
+  const cloudOnly = isExpoGo;
+  const [usage, setUsage] = useState<CloudUsage | null>(null);
 
   useEffect(() => {
+    if (cloudOnly) return;
     refreshStats();
     const unsubscribe = useBackupStore.subscribe((state, prev) => {
       if ((!state.scanning && prev.scanning) || (!state.running && prev.running)) state.refreshStats();
     });
     return unsubscribe;
-  }, [refreshStats]);
+  }, [refreshStats, cloudOnly]);
+
+  // Refresh cloud usage on focus, so a finished ZIP import shows up at once.
+  useFocusEffect(
+    useCallback(() => {
+      if (!cloudOnly) return;
+      void getUsage()
+        .then(setUsage)
+        .catch(() => setUsage(null));
+    }, [cloudOnly])
+  );
 
   const stats = backup.stats;
   const busy = backup.running || backup.scanning;
@@ -170,6 +187,61 @@ export default function BackupSettingsScreen() {
       </View>
 
       <View style={styles.body}>
+        {cloudOnly ? (
+          <>
+            <View style={[styles.cardColumn, { backgroundColor: colors.surface }]}>
+              <View style={styles.usageHeader}>
+                <ThemedText variant="body">Cloud storage</ThemedText>
+                <ThemedText variant="bodySmall" color="secondary">
+                  {usage ? `${formatBytes(usage.usedBytes)} of ${formatBytes(usage.quotaBytes)}` : ' '}
+                </ThemedText>
+              </View>
+              {usage && usage.quotaBytes > 0 ? (
+                <View style={[styles.usageBar, { backgroundColor: colors.outline }]}>
+                  <View
+                    style={[
+                      styles.usageFill,
+                      { backgroundColor: colors.accent, flex: Math.max(0.02, Math.min(1, usage.usedBytes / usage.quotaBytes)) },
+                    ]}
+                  />
+                  <View style={{ flex: Math.max(0, 1 - Math.min(1, usage.usedBytes / usage.quotaBytes)) }} />
+                </View>
+              ) : null}
+              <ThemedText variant="bodySmall" color="secondary">
+                {usage
+                  ? `${formatCount(usage.photoCount)} photo${usage.photoCount === 1 ? '' : 's'} stored in your account`
+                  : 'Could not reach the backend — sign in and try again.'}
+              </ThemedText>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+              onPress={() => {
+                haptic('light');
+                router.push('/settings/import-zip');
+              }}
+              accessibilityLabel="Add photos via ZIP import"
+            >
+              <View style={styles.cardRow}>
+                <Icon name="archive-outline" size={22} color={colors.accent} />
+                <View style={styles.cardText}>
+                  <ThemedText variant="body">Add photos via ZIP import</ThemedText>
+                  <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                    Upload a ZIP (Google Takeout style) — processed on the server
+                  </ThemedText>
+                </View>
+                <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+              </View>
+            </Pressable>
+
+            <ThemedText variant="bodySmall" color="secondary" style={styles.note}>
+              Scanning and uploading this phone&apos;s gallery needs the native build — the Expo Go preview client
+              cannot access the device media library. Photos you import via ZIP appear in the cloud and on the
+              Photos tab normally.
+            </ThemedText>
+          </>
+        ) : (
+          <>
         <View style={[styles.cardColumn, { backgroundColor: colors.surface }]}>
           {stats && stats.totalItems > 0 ? (
             <>
@@ -297,6 +369,8 @@ export default function BackupSettingsScreen() {
           are never re-hashed or re-uploaded. Items in the Locked Folder and the Safe Folder never enter the
           backup.
         </ThemedText>
+          </>
+        )}
       </View>
     </ScrollView>
   );

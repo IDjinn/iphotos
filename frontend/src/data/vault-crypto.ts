@@ -1,12 +1,8 @@
+import { Buffer } from 'buffer';
 import * as SecureStore from 'expo-secure-store';
 import { Directory, File, FileMode, Paths } from 'expo-file-system';
-import {
-  Buffer,
-  createCipheriv,
-  createDecipheriv,
-  install as installQuickCrypto,
-  randomBytes,
-} from 'react-native-quick-crypto';
+
+import { isNativeCryptoAvailable, requireNativeCrypto } from './native-crypto';
 
 /**
  * AES-256-GCM file encryption for the Locked Folder vault.
@@ -15,9 +11,9 @@ import {
  * The key is a random 256-bit data key stored in SecureStore (hardware-backed
  * keystore); the PIN/biometric gate in the Locked Folder UI controls access.
  * Future hardening (out of scope now): wrap the data key with PBKDF2(PIN).
+ *
+ * Requires the native crypto module — unavailable in Expo Go.
  */
-
-installQuickCrypto();
 
 const KEY_STORAGE = 'vault.key.v1';
 const IV_LENGTH = 12;
@@ -26,14 +22,20 @@ const CHUNK_SIZE = 1024 * 1024;
 
 let cachedKey: Buffer | null = null;
 
+/** Whether the vault can run here (native crypto present). */
+export function isVaultSupported(): boolean {
+  return isNativeCryptoAvailable();
+}
+
 /** Random 256-bit data key, created once and kept in SecureStore. */
 export async function getVaultKey(): Promise<Buffer> {
+  const { randomBytes } = requireNativeCrypto();
   if (cachedKey) return cachedKey;
   const stored = await SecureStore.getItemAsync(KEY_STORAGE).catch(() => null);
   if (stored) {
     cachedKey = Buffer.from(stored, 'base64');
   } else {
-    const key = randomBytes(32);
+    const key = Buffer.from(randomBytes(32));
     await SecureStore.setItemAsync(KEY_STORAGE, key.toString('base64'));
     cachedKey = key;
   }
@@ -60,6 +62,7 @@ export function ensureVaultDirectories(): void {
 
 /** Encrypts the file at `srcUri` into `dest` using a fresh per-file IV. */
 export async function encryptFile(srcUri: string, dest: File, explicitKey?: Buffer): Promise<void> {
+  const { randomBytes, createCipheriv } = requireNativeCrypto();
   const key = explicitKey ?? (await getVaultKey());
   const src = new File(srcUri);
   const iv = randomBytes(IV_LENGTH);
@@ -96,6 +99,7 @@ export async function encryptFile(srcUri: string, dest: File, explicitKey?: Buff
  * not match (wrong key or corrupted file).
  */
 export async function decryptFile(src: File, dest: File, explicitKey?: Buffer): Promise<void> {
+  const { createDecipheriv } = requireNativeCrypto();
   const key = explicitKey ?? (await getVaultKey());
   const total = src.size;
   if (total <= IV_LENGTH + TAG_LENGTH) throw new Error('vault: file too short');

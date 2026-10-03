@@ -1,7 +1,8 @@
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import UPNG from 'upng-js';
-import { Buffer } from 'react-native-quick-crypto';
+
+import { Buffer } from 'buffer';
 
 import type { PhotoAsset } from '../types';
 

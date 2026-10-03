@@ -5,6 +5,7 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 
 import { EmptyState } from '@/components/EmptyState';
+import { CloudGallery } from '@/components/CloudGallery';
 import { Icon } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
 import { PermissionGate } from '@/components/PermissionGate';
@@ -74,6 +75,34 @@ export default function PhotosScreen() {
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={colors.accent} />
       </View>
+    );
+  }
+
+  if (permission === 'unavailable') {
+    return (
+      <TabSwipe tab="/">
+        <View style={[styles.container, { paddingTop: insets.top }]}>
+          <View style={styles.header}>
+            <ThemedText variant="display">iPhotos</ThemedText>
+            <Pressable hitSlop={12} onPress={() => router.push('/settings')} accessibilityLabel="Settings">
+              <Icon name="settings-outline" size={22} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+          <Pressable
+            onPress={() => router.push('/settings/import-zip')}
+            accessibilityLabel="Import photos via ZIP"
+          >
+            <View style={[styles.expoGoBanner, { backgroundColor: colors.surface }]}>
+              <Icon name="cloud-outline" size={16} color={colors.accent} />
+              <ThemedText variant="bodySmall" color="secondary" style={styles.expoGoBannerText}>
+                Expo Go: showing your cloud photos. Tap to import more via ZIP.
+              </ThemedText>
+              <Icon name="chevron-forward" size={16} color={colors.textSecondary} />
+            </View>
+          </Pressable>
+          <CloudGallery contentContainerStyle={{ paddingBottom: insets.bottom + 24 }} />
+        </View>
+      </TabSwipe>
     );
   }
 
@@ -181,4 +210,15 @@ const styles = StyleSheet.create({
     height: 52,
   },
   headerTitle: { fontWeight: '600' },
+  expoGoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  expoGoBannerText: { flex: 1 },
 });

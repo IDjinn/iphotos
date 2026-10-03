@@ -15,6 +15,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import { fetchAssetsByIds } from '@/data/media-repository';
 import { getLockedIdList, readLockedConfig, setupLockedFolder, verifyPin, type LockedFolderConfig } from '@/data/locked-repository';
+import { isVaultSupported } from '@/data/vault-crypto';
 import { loadVaultGridAssets, migrateLegacyLocked } from '@/data/vault-repository';
 import type { PhotoAsset } from '@/data/types';
 import { useBulkActions } from '@/hooks/use-bulk-actions';
@@ -44,6 +45,7 @@ export default function LockedScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const supported = isVaultSupported();
 
   const [stage, setStage] = useState<Stage>('loading');
   const [config, setConfig] = useState<LockedFolderConfig | null>(null);
@@ -229,6 +231,23 @@ export default function LockedScreen() {
       <MiniToast message={toast} onDismissed={() => setToast(null)} />
     </View>
   );
+
+  if (!supported) {
+    return shell(
+      <Animated.View entering={FadeInDown.springify().dampingRatio(0.85)} style={styles.flow}>
+        <View style={styles.lockIconWrap}>
+          <Icon name="lock-closed-outline" size={34} color={colors.textDisabled} />
+        </View>
+        <ThemedText variant="title" style={styles.flowTitle}>
+          Not available here
+        </ThemedText>
+        <ThemedText variant="body" color="secondary" style={styles.flowText}>
+          The Locked Folder needs the native crypto module, which the Expo Go preview client does not
+          include. Run a development build (expo run:android) to use it.
+        </ThemedText>
+      </Animated.View>
+    );
+  }
 
   if (stage === 'loading') {
     return (

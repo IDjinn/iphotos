@@ -8,6 +8,7 @@ import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import { loadEncryptedGridAssets, resolveEncryptedOriginal } from '@/data/encrypted-mode-repository';
+import { isEncryptedModeSupported } from '@/data/encrypted-crypto';
 import type { PhotoAsset } from '@/data/types';
 import { useEncryptedModeStore } from '@/stores/encrypted-mode';
 import { useViewerStore } from '@/stores/viewer';
@@ -23,6 +24,7 @@ export default function EncryptedModeScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const supported = isEncryptedModeSupported();
   const enabled = useEncryptedModeStore((s) => s.enabled);
   const unlocked = useEncryptedModeStore((s) => s.unlocked);
   const migrating = useEncryptedModeStore((s) => s.migrating);
@@ -157,7 +159,20 @@ export default function EncryptedModeScreen() {
         </View>
       </View>
 
-      {mode.migrating || busy ? (
+      {!supported ? (
+        <ScrollView contentContainerStyle={styles.body}>
+          <Animated.View entering={FadeInDown.duration(200)} style={styles.intro}>
+            <Icon name="lock-closed-outline" size={28} color={colors.textDisabled} />
+            <ThemedText variant="body" style={styles.introTitle}>
+              Not available here
+            </ThemedText>
+            <ThemedText variant="bodySmall" color="secondary" style={styles.introText}>
+              Encrypted mode needs the native crypto module, which the Expo Go preview client does
+              not include. Run a development build (expo run:android) to use it.
+            </ThemedText>
+          </Animated.View>
+        </ScrollView>
+      ) : mode.migrating || busy ? (
         <ScrollView contentContainerStyle={styles.body}>
           <ActivityIndicator size="large" color={colors.accent} />
           <ThemedText variant="body" style={styles.statusTitle}>
