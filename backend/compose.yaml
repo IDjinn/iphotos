@@ -66,11 +66,11 @@ services:
       StorageService__AllowPrivateNetworks: "true"
       Auth__Jwt__SigningKey: ${IPHOTOS_JWT_SIGNING_KEY:-change-me-in-production-32-bytes-minimum!!}
     # No volume: blobs live in the storage service.
-    # Loopback-only: the backend is reachable from outside exclusively through
-    # the cloudflared tunnel below (TLS via Cloudflare edge). LAN clients and
-    # the host network can no longer hit the API directly on port 5205.
+    # Reachable on the LAN (large zip imports bypass the Cloudflare 100 MB body
+    # cap via the LAN address); remote traffic keeps flowing through the
+    # cloudflared tunnel below (TLS via Cloudflare edge).
     ports:
-      - "127.0.0.1:5205:8080"
+      - "5205:8080"
 
   worker:
     image: iphotos.worker

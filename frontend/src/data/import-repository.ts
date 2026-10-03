@@ -34,19 +34,41 @@ export interface PickedZip {
   sizeBytes: number | null;
 }
 
+/**
+ * Picks a zip and stages it as a readable cache file. Two-step on purpose:
+ * `File.pickFileAsync` returns a SAF-backed `content://` reference the legacy
+ * uploader cannot read, and copying inside the picker (`copyToCacheDirectory`)
+ * freezes/crashes the app on multi-GB archives. The native stream copy below is
+ * async and checked against free disk space first.
+ */
 export async function pickZipFile(): Promise<PickedZip | null> {
-  const { getDocumentAsync } = await import('expo-document-picker');
-  const result = await getDocumentAsync({
-    type: ['application/zip', 'application/x-zip-compressed', 'application/octet-stream'],
-    copyToCacheDirectory: false,
-    multiple: false,
-  });
-  if (result.canceled || result.assets.length === 0) return null;
-  const asset = result.assets[0];
+  const { File, Paths } = await import('expo-file-system');
+  const { getFreeDiskStorageAsync } = await import('expo-file-system/legacy');
+
+  const picked = await File.pickFileAsync({ mimeTypes: ['*/*'] });
+  if (picked.canceled) return null;
+  const pickedFile = picked.result;
+  const name = pickedFile.name;
+
+  const looksLikeZip = /\.zip$/i.test(name) || pickedFile.type.includes('zip');
+  if (!looksLikeZip) {
+    throw new Error('The selected file is not a zip archive. Choose a .zip file.');
+  }
+
+  const size = pickedFile.size;
+  if (size > 0 && size + 512 * 1024 * 1024 > (await getFreeDiskStorageAsync())) {
+    throw new Error(
+      'Not enough free space to stage this archive for upload. Free up space and try again.',
+    );
+  }
+
+  const staged = new File(Paths.cache, `zip-import-${Date.now()}-${name}`);
+  await pickedFile.copy(staged, { overwrite: true });
+
   return {
-    uri: asset.uri,
-    fileName: asset.name ?? 'photos.zip',
-    sizeBytes: asset.size ?? null,
+    uri: staged.uri,
+    fileName: name || 'photos.zip',
+    sizeBytes: size > 0 ? size : null,
   };
 }
 
@@ -104,7 +126,12 @@ export function createZipImportUpload(
       );
       task = upload as unknown as UploadTaskLike;
 
-      const result = await upload.uploadAsync().catch(() => {
+      const result = await upload.uploadAsync().catch((e: unknown) => {
+        if (__DEV__) {
+          console.warn(
+            `[import] upload failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`,
+          );
+        }
         throw new ApiError(0, 'Upload failed — check your connection and try again.');
       });
       if (!result) {

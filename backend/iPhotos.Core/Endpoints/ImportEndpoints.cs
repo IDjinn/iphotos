@@ -237,7 +237,7 @@ public static class ImportEndpoints
                 if (BytesRead > limit)
                 {
                     throw new QuotaExceededException(
-                        $"ZIP exceeds the maximum accepted size of {limit} bytes.");
+                        $"ZIP exceeds the maximum accepted size of {limit / (double)(1L << 30):0.#} GiB.");
                 }
             }
 

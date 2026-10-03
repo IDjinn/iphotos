@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -37,14 +38,20 @@ export default function ImportZipScreen() {
     cancel,
     reset,
   } = useImportZipStore();
+  const [pickError, setPickError] = useState<string | null>(null);
 
   const busy = phase === 'uploading' || phase === 'processing';
 
   const chooseZip = () => {
     haptic('light');
-    void pickZipFile().then((zip) => {
-      if (zip) void start(zip);
-    });
+    setPickError(null);
+    void pickZipFile()
+      .then((zip) => {
+        if (zip) void start(zip);
+      })
+      .catch((e: unknown) => {
+        setPickError(e instanceof Error ? e.message : 'Could not open the file picker.');
+      });
   };
 
   const finish = () => {
@@ -135,6 +142,12 @@ export default function ImportZipScreen() {
             {error ? (
               <ThemedText variant="bodySmall" color="danger" style={styles.error}>
                 {error}
+              </ThemedText>
+            ) : null}
+
+            {pickError ? (
+              <ThemedText variant="bodySmall" color="danger" style={styles.error}>
+                {pickError}
               </ThemedText>
             ) : null}
 

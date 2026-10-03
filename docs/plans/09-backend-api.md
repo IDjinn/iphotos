@@ -138,8 +138,14 @@ converter no cliente com `expo-image-manipulator`); ≤ 200 MB; quota excedida �
 **`POST /api/imports/zip`** — multipart, campo `file` (obrigatório ser um ZIP real:
 validação por magic bytes `PK\x03\x04`). Query opcional `?fileName=<nome>` — o nome
 real do arquivo (uploaders nativos podem enviar um filename opaco no multipart).
-Payload máximo: `ZipImport:MaxZipBytes` (default 5 GiB; excedido → **413**).
+Payload máximo: `ZipImport:MaxZipBytes` (default 10 GiB; excedido → **413**).
 Resposta **202**: `{ "jobId": "<guid>" }`. O processamento é assíncrono (worker).
+
+> **Ingresso (revisão 2026-10-03)** — o túnel Cloudflare (`api.lucas-romero.com`)
+> limita o corpo de requisição a 100 MB, então uploads grandes (zip multi-GB, fotos)
+> devem usar o endereço LAN do servidor (`http://<ip-local>:5205`, porta exposta no
+> compose). Um experimento de upload chunked via túnel foi implementado e revertido
+> no mesmo dia — não funcionou como esperado.
 
 **`GET /api/imports/{id}`** — status do job do próprio usuário (outro owner → **404**):
 
