@@ -111,15 +111,140 @@ public class ZipImportHandlerTests
         job.State.ShouldBe(JobState.Done);
         job.TotalEntries.ShouldBe(12);
         job.Imported.ShouldBe(3);
-        job.Ignored.ShouldBe(9);
+        job.VideosIgnored.ShouldBe(1);
+        job.Ignored.ShouldBe(8);
         job.Duplicated.ShouldBe(0);
         job.Failed.ShouldBe(0);
         _photos.Photos.Count.ShouldBe(3);
         _photos.Photos.Select(p => p.FileName).ShouldBe(["one.jpg", "two.png", "three.webp"], ignoreOrder: true);
         _photos.Photos.ShouldAllBe(p => p.OwnerId == _owner.Id);
 
+        // Sidecars seed catalog metadata on the photo they sit next to.
+        var one = _photos.Photos.Single(p => p.FileName == "one.jpg");
+        one.Title.ShouldBe("one");
+
         // The staged zip blob is cleaned up after success.
         _blobs.Blobs.ContainsKey(job.BlobPath).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Process_SupplementalSidecar_SeedsTakenAtGpsTitleAndDescription()
+    {
+        const string sidecar = """
+            {
+              "title": "IMG_3069.JPG",
+              "description": "Beach day",
+              "creationTime": { "timestamp": "1737841732" },
+              "photoTakenTime": { "timestamp": "1737838060" },
+              "geoData": { "latitude": 0.0, "longitude": 0.0 },
+              "geoDataExif": { "latitude": -23.2217, "longitude": -44.7309 }
+            }
+            """;
+        var zip = BuildZip(
+            ("Takeout/Google Fotos/Fotos de 2025/IMG_3069.JPG", Bytes("jpeg-3069")),
+            ("Takeout/Google Fotos/Fotos de 2025/IMG_3069.JPG.supplemental-metadata.json", Bytes(sidecar)));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        job.Imported.ShouldBe(1);
+        job.Ignored.ShouldBe(1);
+        var photo = _photos.Photos.Single();
+        photo.TakenAt.ShouldBe(DateTimeOffset.FromUnixTimeSeconds(1737838060));
+        photo.GpsLatitude.ShouldBe(-23.2217);
+        photo.GpsLongitude.ShouldBe(-44.7309);
+        photo.Title.ShouldBe("IMG_3069.JPG");
+        photo.Description.ShouldBe("Beach day");
+    }
+
+    [Fact]
+    public async Task Process_LegacySidecarOnlyWithCreationTime_SeedsTakenAtFromCreationTime()
+    {
+        var zip = BuildZip(
+            ("a.jpg", Bytes("jpeg-a")),
+            ("a.jpg.json", Bytes("{\"creationTime\": { \"timestamp\": \"1700000000\" }}")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        var photo = _photos.Photos.Single();
+        photo.TakenAt.ShouldBe(DateTimeOffset.FromUnixTimeSeconds(1700000000));
+        photo.GpsLatitude.ShouldBeNull();
+        photo.Title.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Process_FullDateFolder_SeedsTakenAtWhenNoSidecar()
+    {
+        var zip = BuildZip(("Takeout/Google Photos/2024-03-25/sunny.jpg", Bytes("jpeg-sunny")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        var photo = _photos.Photos.Single();
+        photo.TakenAt.ShouldBe(new DateTimeOffset(2024, 3, 25, 0, 0, 0, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public async Task Process_YearOnlyFolder_DoesNotSeedTakenAt()
+    {
+        var zip = BuildZip(("Takeout/Google Fotos/Fotos de 2025/unsure.jpg", Bytes("jpeg-unsure")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        // A wrong-but-present date would block the (possibly absent) EXIF date from
+        // filling in later, so year-only folders seed nothing.
+        _photos.Photos.Single().TakenAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Process_SidecarWithZeroCoordinates_SeedsNoGps()
+    {
+        var zip = BuildZip(
+            ("a.jpg", Bytes("jpeg-a")),
+            ("a.jpg.json", Bytes("{\"photoTakenTime\": {\"timestamp\": \"1700000000\"}, \"geoData\": {\"latitude\": 0.0, \"longitude\": 0.0}}")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        var photo = _photos.Photos.Single();
+        photo.TakenAt.ShouldNotBeNull();
+        photo.GpsLatitude.ShouldBeNull();
+        photo.GpsLongitude.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Process_MalformedSidecar_PhotoStillImports()
+    {
+        var zip = BuildZip(
+            ("a.jpg", Bytes("jpeg-a")),
+            ("a.jpg.json", Bytes("{not-json")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        job.Imported.ShouldBe(1);
+        job.Failed.ShouldBe(0);
+        _photos.Photos.Single().TakenAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Process_HeicEntry_SidecarMatchesOriginalEntryName()
+    {
+        var zip = BuildZip(
+            ("IMG_0001.heic", Bytes("heic-bytes")),
+            ("IMG_0001.heic.supplemental-metadata.json", Bytes("{\"title\": \"Happy day\"}")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        var photo = _photos.Photos.Single(p => p.FileName == "IMG_0001.jpg");
+        photo.Title.ShouldBe("Happy day");
     }
 
     [Fact]

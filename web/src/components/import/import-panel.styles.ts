@@ -42,7 +42,7 @@ export const CounterGrid = styled.div`
   gap: 0.75rem;
 
   @media (min-width: 40rem) {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
   }
 
   > div {
@@ -68,3 +68,10 @@ export const CounterGrid = styled.div`
     }
   }
 `;
+
+export const Hint = styled.p`
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+`;
+

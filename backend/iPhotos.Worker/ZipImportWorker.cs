@@ -5,18 +5,23 @@ using Microsoft.Extensions.Options;
 namespace iPhotos.Worker;
 
 /// <summary>
-/// Polls the zip_import_jobs queue (PostgreSQL, FOR UPDATE SKIP LOCKED) and processes
-/// one job at a time: archive extraction + photo ingestion (docs/plans/09 §Imports).
+/// Processes zip_import_jobs one at a time (PostgreSQL, FOR UPDATE SKIP LOCKED):
+/// archive extraction + photo ingestion (docs/plans/09 §Imports). Woken instantly by
+/// LISTEN/NOTIFY (<see cref="PostgresQueueListener"/>); the idle wait only bounds
+/// missed notifications.
 /// </summary>
 public sealed class ZipImportWorker(
     IServiceScopeFactory scopeFactory,
+    PostgresQueueListener queueListener,
     IOptions<WorkerOptions> options,
     ILogger<ZipImportWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var pollInterval = TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds));
-        logger.LogInformation("Zip import worker started (poll every {Seconds}s)", pollInterval.TotalSeconds);
+        var retryInterval = TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds));
+        var idleInterval = TimeSpan.FromSeconds(Math.Max(5, options.Value.IdlePollSeconds));
+        logger.LogInformation("Zip import worker started (idle wait {Idle}s, retry {Retry}s)",
+            idleInterval.TotalSeconds, retryInterval.TotalSeconds);
 
         // A worker crash mid-import strands jobs in Processing; dedup makes re-running
         // them safe, so requeue before starting the normal poll loop.
@@ -39,6 +44,7 @@ public sealed class ZipImportWorker(
             logger.LogError(ex, "Zip import startup recovery failed");
         }
 
+        using var wake = queueListener.Subscribe();
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -50,7 +56,7 @@ public sealed class ZipImportWorker(
                 var job = await jobs.DequeueNextAsync(stoppingToken);
                 if (job is null)
                 {
-                    await Task.Delay(pollInterval, stoppingToken);
+                    await wake.WaitAsync(idleInterval, stoppingToken);
                     continue;
                 }
 
@@ -59,8 +65,8 @@ public sealed class ZipImportWorker(
                     job.Id, job.FileName, job.OwnerId, job.Attempts + 1, job.MaxAttempts);
                 await handler.ProcessJobAsync(job, stoppingToken);
                 logger.LogInformation(
-                    "Zip import job {JobId} finished in state {State} (imported {Imported}, duplicated {Duplicated}, ignored {Ignored}, failed {Failed})",
-                    job.Id, job.State, job.Imported, job.Duplicated, job.Ignored, job.Failed);
+                    "Zip import job {JobId} finished in state {State} (imported {Imported}, duplicated {Duplicated}, ignored {Ignored}, videos skipped {VideosIgnored}, failed {Failed})",
+                    job.Id, job.State, job.Imported, job.Duplicated, job.Ignored, job.VideosIgnored, job.Failed);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -71,7 +77,7 @@ public sealed class ZipImportWorker(
                 logger.LogError(ex, "Zip import loop failed; retrying after poll interval");
                 try
                 {
-                    await Task.Delay(pollInterval, stoppingToken);
+                    await Task.Delay(retryInterval, stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {

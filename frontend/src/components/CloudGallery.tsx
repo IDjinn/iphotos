@@ -122,7 +122,14 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
 
   const openPhoto = (photo: CloudPhoto) => {
     haptic('light');
-    Alert.alert(photo.fileName, `${new Date(photo.createdAt).toLocaleString()}\n${photo.state}`, [
+    const details = [
+      photo.description,
+      new Date(photo.takenAt ?? photo.createdAt).toLocaleString(),
+      photo.state,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    Alert.alert(photo.title || photo.fileName, details, [
       { text: 'Download original', onPress: () => void download(photo) },
       { text: 'Delete', style: 'destructive', onPress: () => confirmDelete(photo) },
       { text: 'Close', style: 'cancel' },

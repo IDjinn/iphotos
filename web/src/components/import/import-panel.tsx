@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArchiveIcon,
   CircleAlertIcon,
@@ -27,13 +28,14 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { PageInner, PageScroll, PageTitle } from "@/components/shell/app-shell.styles";
 import { DropZone } from "@/components/upload/upload-dialog.styles";
-import { CounterGrid, JobHeader, SectionLabel } from "./import-panel.styles";
+import { CounterGrid, Hint, JobHeader, SectionLabel } from "./import-panel.styles";
 
 function looksLikeZip(file: File): boolean {
   return /\.zip$/i.test(file.name) || file.type.includes("zip");
 }
 
 export function ImportPanel() {
+  const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState<string | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
@@ -87,6 +89,10 @@ export function ImportPanel() {
         (update) => setJob(update),
         { intervalMs: 2_000, shouldStop: () => unmountedRef.current },
       );
+      // The library changed server-side (imports and even failures can add photos);
+      // refresh the gallery/usage caches that this panel doesn't own.
+      await queryClient.invalidateQueries({ queryKey: ["photos"] });
+      await queryClient.invalidateQueries({ queryKey: ["usage"] });
       if (finished.state === "Done") {
         toast(`Import finished — ${finished.imported} ${finished.imported === 1 ? "photo" : "photos"} added`);
       }
@@ -254,10 +260,18 @@ export function ImportPanel() {
                 <span>Ignored</span>
               </div>
               <div>
+                <strong>{job.videosIgnored}</strong>
+                <span>Videos skipped</span>
+              </div>
+              <div>
                 <strong>{job.failed}</strong>
                 <span>Failed</span>
               </div>
             </CounterGrid>
+            <Hint>
+              Split exports (e.g. Google Takeout part 001…00N) ship media across parts —
+              import every part. Duplicated files are detected automatically.
+            </Hint>
             <div className="flex justify-end">
               <Button variant="outline" onClick={reset} disabled={running}>
                 Import another archive

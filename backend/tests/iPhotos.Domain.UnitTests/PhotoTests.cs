@@ -159,4 +159,79 @@ public class PhotoTests
         Should.Throw<InvalidOperationException>(
             () => photo.MarkReady(new PhotoMetadata(1, 1, null, null, null, null, null), Now));
     }
+
+    // ── Import metadata seeding (Google Takeout) ────────────────────────────
+
+    [Fact]
+    public void SeedImportMetadata_FillsCatalogFields()
+    {
+        var photo = NewPhoto();
+        var takenAt = new DateTimeOffset(2025, 1, 25, 20, 47, 40, TimeSpan.Zero);
+
+        photo.SeedImportMetadata(takenAt, -23.2217, -44.7309, "  IMG_3069.JPG  ", "  Beach day ");
+
+        photo.TakenAt.ShouldBe(takenAt);
+        photo.GpsLatitude.ShouldBe(-23.2217);
+        photo.GpsLongitude.ShouldBe(-44.7309);
+        photo.Title.ShouldBe("IMG_3069.JPG");
+        photo.Description.ShouldBe("Beach day");
+    }
+
+    [Fact]
+    public void SeedImportMetadata_BlankValuesBecomeNull()
+    {
+        var photo = NewPhoto();
+
+        photo.SeedImportMetadata(null, null, null, "  ", null);
+
+        photo.Title.ShouldBeNull();
+        photo.Description.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SeedImportMetadata_FromOtherStates_Throws()
+    {
+        var photo = NewPhoto();
+        photo.MarkProcessing(Now);
+
+        Should.Throw<InvalidOperationException>(
+            () => photo.SeedImportMetadata(null, null, null, "t", null));
+    }
+
+    [Fact]
+    public void MarkReady_SeededValuesWinOverExif()
+    {
+        var photo = NewPhoto();
+        var seededTakenAt = new DateTimeOffset(2025, 1, 25, 20, 47, 40, TimeSpan.Zero);
+        photo.SeedImportMetadata(seededTakenAt, -23.2217, -44.7309, "IMG_3069.JPG", "Beach day");
+        photo.MarkProcessing(Now);
+
+        photo.MarkReady(new PhotoMetadata(
+            Width: 4032, Height: 3024, TakenAt: new DateTimeOffset(2020, 6, 1, 0, 0, 0, TimeSpan.Zero),
+            CameraMake: "Apple", CameraModel: "iPhone 15",
+            GpsLatitude: 1.0, GpsLongitude: 2.0), Now.AddSeconds(5));
+
+        photo.TakenAt.ShouldBe(seededTakenAt);
+        photo.GpsLatitude.ShouldBe(-23.2217);
+        photo.GpsLongitude.ShouldBe(-44.7309);
+        photo.Title.ShouldBe("IMG_3069.JPG");
+        photo.Description.ShouldBe("Beach day");
+        photo.CameraMake.ShouldBe("Apple");
+        photo.CameraModel.ShouldBe("iPhone 15");
+    }
+
+    [Fact]
+    public void MarkReady_PartialSeed_FillsMissingFromExif()
+    {
+        var photo = NewPhoto();
+        photo.SeedImportMetadata(null, null, null, "title only", null);
+        photo.MarkProcessing(Now);
+        var exifTakenAt = new DateTimeOffset(2020, 6, 1, 0, 0, 0, TimeSpan.Zero);
+
+        photo.MarkReady(new PhotoMetadata(10, 10, exifTakenAt, "Google", "Pixel 9", -22.9, -43.2), Now);
+
+        photo.TakenAt.ShouldBe(exifTakenAt);
+        photo.GpsLatitude.ShouldBe(-22.9);
+        photo.Title.ShouldBe("title only");
+    }
 }

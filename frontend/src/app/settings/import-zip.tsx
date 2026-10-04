@@ -325,10 +325,11 @@ export default function ImportZipScreen() {
   );
 }
 
-const REPORT_ROWS: { label: string; key: 'imported' | 'duplicated' | 'ignored' | 'failed' }[] = [
+const REPORT_ROWS: { label: string; key: 'imported' | 'duplicated' | 'ignored' | 'videosIgnored' | 'failed' }[] = [
   { label: 'Imported', key: 'imported' },
   { label: 'Duplicates skipped', key: 'duplicated' },
   { label: 'Files skipped', key: 'ignored' },
+  { label: 'Videos skipped', key: 'videosIgnored' },
   { label: 'Failed', key: 'failed' },
 ];
 

@@ -21,6 +21,8 @@ export interface ZipImportJob {
   imported: number;
   duplicated: number;
   ignored: number;
+  /** Video entries skipped by the import (video hosting is not supported yet). */
+  videosIgnored: number;
   failed: number;
   error?: string;
   createdAt: string;

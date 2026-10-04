@@ -13,6 +13,8 @@ builder.Services.AddHostedService<VariantProcessingWorker>();
 builder.Services.AddHostedService<ZipImportWorker>();
 builder.Services.AddHostedService<OrphanUploadSweeper>();
 builder.Services.AddHostedService<BillingExpiryWorker>();
+builder.Services.AddSingleton<PostgresQueueListener>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PostgresQueueListener>());
 
 var host = builder.Build();
 await host.Services.MigrateDatabaseAsync();

@@ -18,6 +18,10 @@ public sealed class ZipImportJob
     public int ProcessedEntries { get; set; }
     public int Imported { get; set; }
     public int Duplicated { get; set; }
+
+    /// <summary>Video entries skipped by the import (video hosting is not supported yet).</summary>
+    public int VideosIgnored { get; set; }
+
     public int Ignored { get; set; }
     public int Failed { get; set; }
 

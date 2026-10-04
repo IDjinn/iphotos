@@ -17,9 +17,11 @@ public sealed class ZipImportAbortException(string message) : Exception(message)
 /// Processes a claimed zip import job (e.g. a Google Takeout archive): extracts the
 /// archive entry by entry, transcodes HEIC/HEIF to JPEG, ingests supported images
 /// through PhotoService (per-owner hash dedup included) and tracks per-entry counters.
-/// Videos and Takeout sidecars (json/html/csv) are ignored. Executed by the
-/// iPhotos.Worker background service. Re-running a partially imported zip is safe —
-/// hash dedup turns already-imported entries into duplicates.
+/// Catalog metadata (takenAt, GPS, title, description) is seeded from Takeout sidecar
+/// JSON files (<see cref="TakeoutMetadata"/>); videos are skipped (VideosIgnored) and
+/// remaining sidecars/junk count as ignored. Executed by the iPhotos.Worker background
+/// service. Re-running a partially imported zip is safe — hash dedup turns
+/// already-imported entries into duplicates.
 /// </summary>
 public sealed class ZipImportHandler(
     IZipImportRepository imports,
@@ -75,6 +77,7 @@ public sealed class ZipImportHandler(
             job.TotalEntries = entries.Count(e => !IsDirectory(e));
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
+            var sidecars = TakeoutMetadata.BuildSidecarIndex(entries);
             var workDir = ResolveWorkDir();
             Directory.CreateDirectory(workDir);
             var counterSavePoint = 0;
@@ -89,7 +92,7 @@ public sealed class ZipImportHandler(
 
                 try
                 {
-                    await ProcessEntryAsync(job, entry, workDir, cancellationToken);
+                    await ProcessEntryAsync(job, entry, sidecars, workDir, cancellationToken);
                 }
                 catch (QuotaExceededException)
                 {
@@ -156,12 +159,31 @@ public sealed class ZipImportHandler(
     }
 
     private async Task ProcessEntryAsync(
-        ZipImportJob job, ZipArchiveEntry entry, string workDir, CancellationToken cancellationToken)
+        ZipImportJob job,
+        ZipArchiveEntry entry,
+        Dictionary<string, ZipArchiveEntry> sidecars,
+        string workDir,
+        CancellationToken cancellationToken)
     {
         var fileName = Path.GetFileName(entry.FullName.Replace('\\', '/'));
         var extension = Path.GetExtension(fileName);
 
-        if (IsIgnoredEntry(entry.FullName, fileName, extension))
+        if (IsHiddenOrJunk(entry.FullName, fileName))
+        {
+            job.Ignored++;
+            return;
+        }
+
+        if (VideoExtensions.Contains(extension))
+        {
+            // Video hosting is not supported yet; tracked separately so the job report
+            // can tell a Takeout of mostly videos apart from an empty archive.
+            job.VideosIgnored++;
+            return;
+        }
+
+        if (SidecarExtensions.Contains(extension)
+            || extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
         {
             job.Ignored++;
             return;
@@ -173,6 +195,8 @@ public sealed class ZipImportHandler(
             job.Ignored++;
             return;
         }
+
+        var seed = TakeoutMetadata.ResolveSeed(entry.FullName, sidecars);
 
         // GUID-named temp file: no zip-slip, no name collisions, by design.
         var tempPath = Path.Combine(workDir, $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}");
@@ -190,14 +214,19 @@ public sealed class ZipImportHandler(
                 var converted = await heifConverter.ConvertToJpegAsync(heifStream, cancellationToken);
                 await using var convertedStream = converted.Content;
                 var result = await photoService.UploadAsync(
-                    job.OwnerId, Path.ChangeExtension(fileName, ".jpg"), "image/jpeg", convertedStream, cancellationToken);
+                    job.OwnerId,
+                    Path.ChangeExtension(fileName, ".jpg"),
+                    "image/jpeg",
+                    convertedStream,
+                    seed,
+                    cancellationToken);
                 CountResult(job, result.Duplicated);
                 return;
             }
 
             await using var photoStream = File.OpenRead(tempPath);
             var upload = await photoService.UploadAsync(
-                job.OwnerId, fileName, MimeFor(extension), photoStream, cancellationToken);
+                job.OwnerId, fileName, MimeFor(extension), photoStream, seed, cancellationToken);
             CountResult(job, upload.Duplicated);
         }
         finally
@@ -235,7 +264,7 @@ public sealed class ZipImportHandler(
     private static bool IsDirectory(ZipArchiveEntry entry) =>
         entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\') || entry.Name.Length == 0;
 
-    private static bool IsIgnoredEntry(string fullName, string fileName, string extension)
+    private static bool IsHiddenOrJunk(string fullName, string fileName)
     {
         if (IgnoredFileNames.Contains(fileName))
         {
@@ -248,14 +277,7 @@ public sealed class ZipImportHandler(
             return true;
         }
 
-        if (fullName.Contains("__MACOSX", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return VideoExtensions.Contains(extension)
-            || SidecarExtensions.Contains(extension)
-            || extension.Equals(".zip", StringComparison.OrdinalIgnoreCase);
+        return fullName.Contains("__MACOSX", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsEncryptedEntry(Exception ex) =>

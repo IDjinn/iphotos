@@ -166,12 +166,12 @@ export function ViewerOverlay() {
           >
             <DialogPrimitive.Title asChild>
               <div role="status" className="sr-only">
-                {photo?.fileName ?? "Photo"}
+                {photo?.title || photo?.fileName || "Photo"}
               </div>
             </DialogPrimitive.Title>
             <TopRow>
               <Caption>
-                <strong>{photo?.fileName ?? "Loading…"}</strong>
+                <strong>{photo?.title || photo?.fileName || "Loading…"}</strong>
                 {photo ? (
                   <span>
                     {formatDate(photo.takenAt ?? photo.createdAt)}
@@ -181,6 +181,7 @@ export function ViewerOverlay() {
                     · {formatBytes(photo.sizeBytes)}
                   </span>
                 ) : null}
+                {photo?.description ? <span>{photo.description}</span> : null}
               </Caption>
               <IconButton
                 onClick={() => void download()}

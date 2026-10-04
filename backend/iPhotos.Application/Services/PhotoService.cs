@@ -16,6 +16,24 @@ public static class SupportedImageTypes
 
 public sealed record VariantFile(string BlobPath, string ContentType, long SizeBytes, string ContentHash);
 
+/// <summary>
+/// Catalog fields seeded by an import (Google Takeout sidecars or date folders) before
+/// the variant worker runs; EXIF only fills what the seed leaves null. All fields are
+/// optional and independently ignored when absent.
+/// </summary>
+public sealed record PhotoImportSeed(
+    DateTimeOffset? TakenAt,
+    double? GpsLatitude,
+    double? GpsLongitude,
+    string? Title,
+    string? Description)
+{
+    public bool HasAny => TakenAt is not null || GpsLatitude is not null
+        || GpsLongitude is not null || Title is not null || Description is not null;
+
+    public static PhotoImportSeed Empty { get; } = new(null, null, null, null, null);
+}
+
 public sealed class PhotoService(
     IPhotoRepository photos,
     IVariantRepository variants,
@@ -116,6 +134,7 @@ public sealed class PhotoService(
         string fileName,
         string contentType,
         Stream content,
+        PhotoImportSeed? seed = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(fileName))
@@ -150,6 +169,10 @@ public sealed class PhotoService(
 
         var photo = Photo.Create(ownerId, hash, fileName, contentType, content2.Length, dateTime.UtcNow);
         photo.OriginalBlobPath = BlobPaths.Original(ownerId, photo.Id, fileName);
+        if (seed is { HasAny: true })
+        {
+            photo.SeedImportMetadata(seed.TakenAt, seed.GpsLatitude, seed.GpsLongitude, seed.Title, seed.Description);
+        }
 
         await blobStorage.PutAsync(photo.OriginalBlobPath, content2, cancellationToken);
         await photos.AddAsync(photo, cancellationToken);

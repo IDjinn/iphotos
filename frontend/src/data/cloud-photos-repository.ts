@@ -27,6 +27,10 @@ export interface CloudPhoto {
   takenAt?: string;
   cameraMake?: string;
   cameraModel?: string;
+  /** Catalog title seeded by imports (Google Takeout sidecars). */
+  title?: string;
+  /** Catalog description/caption seeded by imports (Google Takeout sidecars). */
+  description?: string;
   state: PhotoState;
   lastError?: string;
   contentHash: string;

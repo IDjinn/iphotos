@@ -22,7 +22,7 @@ public static class PhotoEndpoints
         {
             await using var stream = file.OpenReadStream();
             var result = await photos.UploadAsync(
-                principal.GetUserId(), file.FileName, file.ContentType, stream, cancellationToken);
+                principal.GetUserId(), file.FileName, file.ContentType, stream, cancellationToken: cancellationToken);
             return result.Duplicated
                 ? Results.Ok(result)
                 : Results.Created($"/api/photos/{result.Photo.Id}", result);

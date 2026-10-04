@@ -49,7 +49,7 @@ public class PhotoServiceTests
 
     private async Task<Photo> UploadAsync(User owner, Stream? content = null, string fileName = "photo.jpg", string contentType = "image/jpeg")
     {
-        var result = await NewService().UploadAsync(owner.Id, fileName, contentType, content ?? JpegBytes(), CancellationToken.None);
+        var result = await NewService().UploadAsync(owner.Id, fileName, contentType, content ?? JpegBytes(), cancellationToken: CancellationToken.None);
         return _photos.Photos.Single(p => p.Id == result.Photo.Id);
     }
 

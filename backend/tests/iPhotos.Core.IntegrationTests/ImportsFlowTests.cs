@@ -105,9 +105,20 @@ public sealed class ImportsFlowTests : IClassFixture<iPhotosApiFactory>
         job.Duplicated.ShouldBe(0);
         job.FileName.ShouldBe("takeout.zip");
 
-        var photos = await client.GetFromJsonAsync<PagedResult<PhotoDto>>("/api/photos?pageSize=50", JsonOptions.Web);
-        photos!.TotalCount.ShouldBe(2);
-        photos.Items.ShouldAllBe(p => p.State == PhotoState.Ready);
+        // The import job finishing does not mean variants are done; poll until Ready.
+        using var readyCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (true)
+        {
+            var photos = await client.GetFromJsonAsync<PagedResult<PhotoDto>>("/api/photos?pageSize=50", JsonOptions.Web, readyCts.Token);
+            if (photos!.Items.All(p => p.State is PhotoState.Ready or PhotoState.Failed))
+            {
+                photos.TotalCount.ShouldBe(2);
+                photos.Items.ShouldAllBe(p => p.State == PhotoState.Ready);
+                break;
+            }
+
+            await Task.Delay(300, readyCts.Token);
+        }
     }
 
     [Fact]
@@ -148,7 +159,8 @@ public sealed class ImportsFlowTests : IClassFixture<iPhotosApiFactory>
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         while (true)
         {
-            var current = (await client.GetFromJsonAsync<PhotoDto>($"/api/photos/{photo.Id}", cts.Token))!;
+            // JsonOptions.Web is required: the API serializes enums as strings.
+            var current = (await client.GetFromJsonAsync<PhotoDto>($"/api/photos/{photo.Id}", JsonOptions.Web, cts.Token))!;
             if (current.State is PhotoState.Ready or PhotoState.Failed)
             {
                 current.State.ShouldBe(PhotoState.Ready);

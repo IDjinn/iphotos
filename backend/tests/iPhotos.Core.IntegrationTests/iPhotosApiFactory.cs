@@ -63,10 +63,14 @@ public sealed class iPhotosApiFactory : WebApplicationFactory<Program>, IAsyncLi
         builder.ConfigureTestServices(services =>
         {
             services.AddVariantProcessing();
-            services.AddHostedService<VariantProcessingWorker>();
             services.AddZipImportProcessing();
-            services.AddHostedService<ZipImportWorker>();
             services.AddBillingMaintenance();
+            // The listener wakes the workers on enqueue (LISTEN/NOTIFY); workers keep
+            // their fallback wait, so imports still complete if it cannot connect.
+            services.AddSingleton<PostgresQueueListener>();
+            services.AddHostedService(sp => sp.GetRequiredService<PostgresQueueListener>());
+            services.AddHostedService<VariantProcessingWorker>();
+            services.AddHostedService<ZipImportWorker>();
         });
         builder.ConfigureLogging(logging =>
         {

@@ -42,6 +42,13 @@ public sealed class Photo
     public string? CameraModel { get; set; }
     public double? GpsLatitude { get; set; }
     public double? GpsLongitude { get; set; }
+
+    /// <summary>Catalog title seeded by imports (e.g. Google Takeout sidecars).</summary>
+    public string? Title { get; set; }
+
+    /// <summary>Catalog description/caption seeded by imports (e.g. Google Takeout sidecars).</summary>
+    public string? Description { get; set; }
+
     public PhotoState State { get; set; }
     public string? LastError { get; set; }
     public string OriginalBlobPath { get; set; } = string.Empty;
@@ -121,15 +128,45 @@ public sealed class Photo
 
         Width = metadata.Width;
         Height = metadata.Height;
-        TakenAt = metadata.TakenAt;
+
+        // EXIF fills gaps only: values seeded at import time (Google Takeout sidecars
+        // or date folders) are authoritative and must not be clobbered by a null EXIF.
+        TakenAt ??= metadata.TakenAt;
+        GpsLatitude ??= metadata.GpsLatitude;
+        GpsLongitude ??= metadata.GpsLongitude;
         CameraMake = metadata.CameraMake;
         CameraModel = metadata.CameraModel;
-        GpsLatitude = metadata.GpsLatitude;
-        GpsLongitude = metadata.GpsLongitude;
         LastError = null;
         State = PhotoState.Ready;
         Touch(now);
     }
+
+    /// <summary>
+    /// Seeds catalog fields from an import source (Google Takeout sidecars or date
+    /// folders) while the photo is still in PendingProcessing; the variant worker
+    /// later fills any remaining gaps from EXIF.
+    /// </summary>
+    public void SeedImportMetadata(
+        DateTimeOffset? takenAt,
+        double? gpsLatitude,
+        double? gpsLongitude,
+        string? title,
+        string? description)
+    {
+        if (State != PhotoState.PendingProcessing)
+        {
+            throw new InvalidOperationException($"Cannot seed metadata for a photo in state {State}.");
+        }
+
+        TakenAt = takenAt;
+        GpsLatitude = gpsLatitude;
+        GpsLongitude = gpsLongitude;
+        Title = NullIfEmpty(title);
+        Description = NullIfEmpty(description);
+    }
+
+    private static string? NullIfEmpty(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     public void MarkFailed(string error, DateTimeOffset now)
     {

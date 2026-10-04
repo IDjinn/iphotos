@@ -54,6 +54,8 @@ public sealed class PhotosDbContext(DbContextOptions<PhotosDbContext> options) :
             entity.Property(p => p.MimeType).HasMaxLength(100).IsRequired();
             entity.Property(p => p.CameraMake).HasMaxLength(100);
             entity.Property(p => p.CameraModel).HasMaxLength(200);
+            entity.Property(p => p.Title).HasMaxLength(500);
+            entity.Property(p => p.Description).HasMaxLength(2000);
             entity.Property(p => p.State).HasConversion<string>().HasMaxLength(20);
             entity.Property(p => p.LastError).HasMaxLength(2000);
 

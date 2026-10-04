@@ -5,19 +5,24 @@ using Microsoft.Extensions.Options;
 namespace iPhotos.Worker;
 
 /// <summary>
-/// Polls the variant_jobs queue (PostgreSQL, FOR UPDATE SKIP LOCKED) and processes one
-/// job at a time: EXIF indexing + preview/thumbnail generation.
+/// Processes variant_jobs one at a time (PostgreSQL, FOR UPDATE SKIP LOCKED): EXIF
+/// indexing + preview/thumbnail generation. Woken instantly by LISTEN/NOTIFY
+/// (<see cref="PostgresQueueListener"/>); the idle wait only bounds missed notifications.
 /// </summary>
 public sealed class VariantProcessingWorker(
     IServiceScopeFactory scopeFactory,
+    PostgresQueueListener queueListener,
     IOptions<WorkerOptions> options,
     ILogger<VariantProcessingWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var pollInterval = TimeSpan.FromSeconds(Math.Max(0.25, options.Value.PollIntervalSeconds));
-        logger.LogInformation("Variant processing worker started (poll every {Seconds}s)", pollInterval.TotalSeconds);
+        var retryInterval = TimeSpan.FromSeconds(Math.Max(0.25, options.Value.PollIntervalSeconds));
+        var idleInterval = TimeSpan.FromSeconds(Math.Max(5, options.Value.IdlePollSeconds));
+        logger.LogInformation("Variant processing worker started (idle wait {Idle}s, retry {Retry}s)",
+            idleInterval.TotalSeconds, retryInterval.TotalSeconds);
 
+        using var wake = queueListener.Subscribe();
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -29,7 +34,7 @@ public sealed class VariantProcessingWorker(
                 var job = await jobs.DequeueNextAsync(stoppingToken);
                 if (job is null)
                 {
-                    await Task.Delay(pollInterval, stoppingToken);
+                    await wake.WaitAsync(idleInterval, stoppingToken);
                     continue;
                 }
 
@@ -48,7 +53,7 @@ public sealed class VariantProcessingWorker(
                 logger.LogError(ex, "Variant processing loop failed; retrying after poll interval");
                 try
                 {
-                    await Task.Delay(pollInterval, stoppingToken);
+                    await Task.Delay(retryInterval, stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
