@@ -20,7 +20,8 @@ public class PhotoServiceTests
     private readonly Sha256ContentHasher _hasher = new();
 
     private PhotoService NewService() => new(
-        _photos, _variants, _jobs, _users, _blobs, _hasher, _uow, new StubDateTimeProvider(Now));
+        _photos, _variants, _jobs, _users, _blobs, _hasher, new FakeImageVariantGenerator(),
+        new FakeExifExtractor(), _uow, new StubDateTimeProvider(Now));
 
     private User NewUser(long quota = 1_000_000) =>
         User.Create($"user-{Guid.NewGuid():N}@example.com", "hash", null, quota, Now) is { } user
@@ -54,7 +55,7 @@ public class PhotoServiceTests
     }
 
     [Fact]
-    public async Task Upload_NewPhoto_StoresBlobCreatesPhotoAndEnqueuesJob()
+    public async Task Upload_NewPhoto_StoresBlobsCreatesReadyPhotoWithVariants()
     {
         var owner = NewUser();
         var content = JpegBytes(100);
@@ -62,17 +63,24 @@ public class PhotoServiceTests
         var result = await NewService().UploadAsync(owner.Id, "vacation.jpg", "image/jpeg", content);
 
         result.Duplicated.ShouldBeFalse();
-        result.Photo.State.ShouldBe(PhotoState.PendingProcessing);
+        result.Photo.State.ShouldBe(PhotoState.Ready);
         result.Photo.FileName.ShouldBe("vacation.jpg");
         result.Photo.SizeBytes.ShouldBe(100);
         result.Photo.ContentHash.ShouldBe(Sha256Of(((MemoryStream)content).ToArray()));
+        result.Photo.Width.ShouldBe(4032);
+        result.Photo.Height.ShouldBe(3024);
 
+        // EXIF + preview + thumbnail are generated inline — no variant job, no read-back.
         var photo = _photos.Photos.Single();
         photo.Id.ShouldBe(result.Photo.Id);
+        photo.State.ShouldBe(PhotoState.Ready);
         photo.OriginalBlobPath.ShouldBe($"{owner.Id}/{photo.Id}/original.jpg");
         _blobs.Blobs.Keys.ShouldContain(photo.OriginalBlobPath);
-        _jobs.Jobs.ShouldHaveSingleItem();
-        _jobs.Jobs.Single().PhotoId.ShouldBe(photo.Id);
+        _blobs.Blobs.Keys.ShouldContain($"{owner.Id}/{photo.Id}/preview.jpg");
+        _blobs.Blobs.Keys.ShouldContain($"{owner.Id}/{photo.Id}/thumb.jpg");
+        _variants.Variants.Select(v => v.Kind).ShouldBe(
+            new[] { VariantKind.Original, VariantKind.Preview, VariantKind.Thumbnail });
+        _jobs.Jobs.ShouldBeEmpty();
         _uow.SaveCount.ShouldBe(1);
     }
 
@@ -88,8 +96,8 @@ public class PhotoServiceTests
         second.Duplicated.ShouldBeTrue();
         second.Photo.Id.ShouldBe(first.Photo.Id);
         _photos.Photos.ShouldHaveSingleItem();
-        _blobs.Blobs.Count.ShouldBe(1);
-        _jobs.Jobs.ShouldHaveSingleItem();
+        _blobs.Blobs.Count.ShouldBe(3);
+        _jobs.Jobs.ShouldBeEmpty();
     }
 
     [Theory]
@@ -163,13 +171,12 @@ public class PhotoServiceTests
     {
         var owner = NewUser();
         var photo = await UploadAsync(owner);
-        _variants.Variants.Add(PhotoVariant.Create(photo.Id, VariantKind.Thumbnail, "t.jpg", 10, 5, 50, "jpeg", Now));
 
         var dto = await NewService().GetAsync(owner.Id, photo.Id);
 
         dto.Id.ShouldBe(photo.Id);
-        dto.Variants.ShouldHaveSingleItem();
-        dto.Variants.Single().Kind.ShouldBe(VariantKind.Thumbnail);
+        dto.Variants.Select(v => v.Kind).ShouldBe(
+            new[] { VariantKind.Original, VariantKind.Preview, VariantKind.Thumbnail });
     }
 
     [Fact]
@@ -199,10 +206,14 @@ public class PhotoServiceTests
     public async Task GetVariantFile_NotGeneratedYet_ThrowsNotFound()
     {
         var owner = NewUser();
-        var photo = await UploadAsync(owner);
+        // Ticket flow: the photo waits in PendingProcessing until the worker runs,
+        // so the thumbnail variant does not exist yet.
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "later.jpg", "image/jpeg", 300, "hash-1");
+        _blobs.Blobs[_photos.Photos.Single().OriginalBlobPath] = [1, 2, 3];
+        await NewService().CompleteUploadAsync(owner.Id, ticket.Photo.Id);
 
         await Should.ThrowAsync<NotFoundException>(
-            () => NewService().GetVariantFileAsync(owner.Id, photo.Id, VariantKind.Thumbnail));
+            () => NewService().GetVariantFileAsync(owner.Id, ticket.Photo.Id, VariantKind.Thumbnail));
     }
 
     [Fact]
@@ -282,7 +293,7 @@ public class PhotoServiceTests
         ticket.UploadUrl.ShouldBeNull();
         _photos.Photos.ShouldHaveSingleItem();
         _blobs.PresignRequests.ShouldBeEmpty();
-        _jobs.Jobs.ShouldHaveSingleItem(); // only the one from the original upload
+        _jobs.Jobs.ShouldBeEmpty(); // UploadAsync no longer enqueues jobs
     }
 
     [Fact]

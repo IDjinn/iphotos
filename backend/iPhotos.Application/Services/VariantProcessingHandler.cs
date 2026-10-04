@@ -75,7 +75,7 @@ public sealed class VariantProcessingHandler(
                 PhotoVariant.Create(
                     photo.Id, kind, photo.OriginalBlobPath,
                     metadata.Width, metadata.Height, photo.SizeBytes,
-                    FormatFromMime(photo.MimeType), dateTime.UtcNow),
+                    VariantFormats.FromMime(photo.MimeType), dateTime.UtcNow),
                 cancellationToken);
             return;
         }
@@ -93,12 +93,4 @@ public sealed class VariantProcessingHandler(
                 output.Format, dateTime.UtcNow),
             cancellationToken);
     }
-
-    private static string FormatFromMime(string mimeType) => mimeType.ToLowerInvariant() switch
-    {
-        "image/jpeg" => "jpeg",
-        "image/png" => "png",
-        "image/webp" => "webp",
-        _ => "bin",
-    };
 }

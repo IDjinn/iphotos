@@ -1,3 +1,4 @@
+using iPhotos.Application.Abstractions;
 using iPhotos.Application.Common;
 using Microsoft.IdentityModel.Tokens;
 
@@ -17,6 +18,7 @@ public sealed class ExceptionMappingMiddleware(RequestDelegate next, ILogger<Exc
             var (status, message) = ex switch
             {
                 ValidationException e => (StatusCodes.Status400BadRequest, e.Message),
+                InvalidImageException e => (StatusCodes.Status400BadRequest, e.Message),
                 NotSupportedException e => (StatusCodes.Status501NotImplemented, e.Message),
                 EmailAlreadyExistsException e => (StatusCodes.Status409Conflict, e.Message),
                 UnauthorizedException e => (StatusCodes.Status401Unauthorized, e.Message),

@@ -41,6 +41,8 @@ public sealed class PhotoService(
     IUserRepository users,
     IBlobStorage blobStorage,
     IContentHasher contentHasher,
+    IImageVariantGenerator variantGenerator,
+    IExifExtractor exifExtractor,
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime)
 {
@@ -174,12 +176,52 @@ public sealed class PhotoService(
             photo.SeedImportMetadata(seed.TakenAt, seed.GpsLatitude, seed.GpsLongitude, seed.Title, seed.Description);
         }
 
+        // The upload stream is already seekable in memory, so indexing and the derived
+        // variants are produced here instead of the worker re-downloading the original.
+        // Variant jobs remain only for the direct-upload flow, where the backend never
+        // sees the bytes.
+        photo.MarkProcessing(dateTime.UtcNow);
+        var metadata = await exifExtractor.ExtractAsync(content2, cancellationToken);
+
+        content2.Position = 0;
+        var preview = await variantGenerator.GenerateAsync(content2, VariantKind.Preview, cancellationToken);
+        content2.Position = 0;
+        var thumbnail = await variantGenerator.GenerateAsync(content2, VariantKind.Thumbnail, cancellationToken);
+        content2.Position = 0;
+
         await blobStorage.PutAsync(photo.OriginalBlobPath, content2, cancellationToken);
+        var previewPath = BlobPaths.Preview(ownerId, photo.Id);
+        var thumbnailPath = BlobPaths.Thumbnail(ownerId, photo.Id);
+        await blobStorage.PutAsync(previewPath, preview.Content, cancellationToken);
+        await blobStorage.PutAsync(thumbnailPath, thumbnail.Content, cancellationToken);
+
+        // Photo row goes into the context before its variants: PhotoVariant carries
+        // only the FK value (no navigation), so EF inserts in add order and the
+        // variant rows would violate the FK if they were tracked first.
         await photos.AddAsync(photo, cancellationToken);
-        await jobs.EnqueueAsync(photo.Id, cancellationToken);
+
+        var variantRows = new[]
+        {
+            PhotoVariant.Create(
+                photo.Id, VariantKind.Original, photo.OriginalBlobPath,
+                metadata.Width, metadata.Height, photo.SizeBytes,
+                VariantFormats.FromMime(photo.MimeType), dateTime.UtcNow),
+            PhotoVariant.Create(
+                photo.Id, VariantKind.Preview, previewPath,
+                preview.Width, preview.Height, preview.SizeBytes, preview.Format, dateTime.UtcNow),
+            PhotoVariant.Create(
+                photo.Id, VariantKind.Thumbnail, thumbnailPath,
+                thumbnail.Width, thumbnail.Height, thumbnail.SizeBytes, thumbnail.Format, dateTime.UtcNow),
+        };
+        foreach (var variant in variantRows)
+        {
+            await variants.AddAsync(variant, cancellationToken);
+        }
+
+        photo.MarkReady(metadata, dateTime.UtcNow);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new PhotoUploadResult(ToDto(photo, []), Duplicated: false);
+        return new PhotoUploadResult(ToDto(photo, variantRows.Select(ToVariantDto).ToList()), Duplicated: false);
     }
 
     public async Task<PhotoDto> GetAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)

@@ -23,6 +23,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 builder.Services.AddSingleton<IDateTimeProvider, UtcDateTimeProvider>();
 builder.Services.AddSingleton<IContentHasher, Sha256ContentHasher>();
+builder.Services.AddSingleton<IImageVariantGenerator, ImageSharpVariantGenerator>();
+builder.Services.AddSingleton<IExifExtractor, ImageSharpExifExtractor>();
 
 // Options are bound lazily (resolved from the final IConfiguration) so test hosts
 // created via WebApplicationFactory can override appsettings after Program starts.

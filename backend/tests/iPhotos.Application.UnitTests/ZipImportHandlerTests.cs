@@ -39,7 +39,11 @@ public class ZipImportHandlerTests
             Options.Create(options ?? new ZipImportOptions()));
 
     private PhotoService NewPhotoService() =>
-        new(_photos, _variants, _variantJobs, _users, _blobs, new Sha256ContentHasher(), _uow, new StubDateTimeProvider(Now));
+        new(_photos, _variants, _variantJobs, _users, _blobs, new Sha256ContentHasher(),
+            new FakeImageVariantGenerator(),
+            // EXIF-neutral: these tests verify sidecar/date-folder seeding only.
+            new FakeExifExtractor { Metadata = new PhotoMetadata(0, 0, null, null, null, null, null) },
+            _uow, new StubDateTimeProvider(Now));
 
     private ZipImportJob NewJob(byte[] zipBytes)
     {

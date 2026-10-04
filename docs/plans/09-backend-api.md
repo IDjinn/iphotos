@@ -10,8 +10,11 @@
 ## 1. O que existe (e o que mudou nas premissas)
 
 - Backend próprio (D2 confirmado): **.NET 10 + PostgreSQL 17**, API (`iPhotos.Core`) +
-  **worker separado** (`iPhotos.Worker`) que gera variantes e indexa EXIF via fila
-  `variant_jobs` no banco. `docker compose up --build` sobe tudo (postgres + api +
+  **worker separado** (`iPhotos.Worker`). O upload multipart e a importação de zip geram
+  as variantes (thumb 320px / preview 2048px) e indexam EXIF **sincronamente no
+  upload** (os bytes já estão em memória) — a foto nasce `Ready`. O worker com a fila
+  `variant_jobs` fica só para o fluxo de upload direto (presigned), em que os bytes não
+  passam pela API. `docker compose up --build` sobe tudo (postgres + api +
   worker) com migrations aplicadas no startup.
 - Modelo **servidor confiável estilo Immich** (decisão D11): o servidor vê as fotos
   para gerar thumb (320px) / preview (2048px) e indexar metadados (takenAt, câmera,
@@ -76,7 +79,7 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
 
 | Endpoint | Descrição |
 |---|---|
-| `POST /api/photos` | Upload **multipart/form-data, campo `file`** (nome do arquivo preservado). → **201** `{ photo, duplicated: false }` ou **200** `{ photo, duplicated: true }` (mesmo SHA-256 já enviado por esta conta). Fallback do fluxo direto |
+| `POST /api/photos` | Upload **multipart/form-data, campo `file`** (nome do arquivo preservado). EXIF + variantes gerados inline: → **201** `{ photo, duplicated: false }` já em `state: "Ready"` com as 3 variantes, ou **200** `{ photo, duplicated: true }` (mesmo SHA-256 já enviado por esta conta). **400** se os bytes não forem uma imagem decodificável. Fallback do fluxo direto |
 | `POST /api/photos/upload-ticket` | Upload **direto ao storage**: body JSON `{ fileName, contentType, sizeBytes, contentHash }`. Valida mime, dedup (hash) e quota **antes** dos bytes existirem; cria a foto em `state: "PendingUpload"` (reserva de quota) e → **201** `{ photo, duplicated: false, uploadUrl, expiresAt }` (PUT presigned, default 15 min) ou **200** `{ photo, duplicated: true }` sem URL. **501** quando o storage configurado não presigna (ex.: filesystem) → cliente cai no multipart |
 | `POST /api/photos/{id}/complete` | Confirma o PUT presigned: verifica existência do blob, move `PendingUpload → PendingProcessing`, enfileira o processamento → **200** PhotoDto. **404** se os bytes ainda não chegaram (cliente pode reenviar e completar depois) |
 | `GET /api/photos` | Listagem paginada com filtros: `from`, `to`, `fileName` (contains, case-insensitive), `camera`, `page` (≥1), `pageSize` (1–100, default 20) |
@@ -97,18 +100,18 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
   "fileName": "vacation.jpg",
   "mimeType": "image/jpeg",
   "sizeBytes": 2710,
-  "width": 640,            // null até processar
+  "width": 640,            // EXIF; null só no fluxo direto antes do worker processar
   "height": 200,
   "takenAt": "2025-12-25T10:30:00+00:00",  // EXIF ou seed de import (doc §3.4); UTC; null se não houver
   "cameraMake": "Google", "cameraModel": "Pixel 9",
   "gpsLatitude": -22.9, "gpsLongitude": -43.2,
   "title": null,                 // seed de import (Takeout sidecars), 2026-10-04
   "description": null,           // idem (legenda do Google Fotos)
-  "state": "PendingProcessing",  // PendingUpload|PendingProcessing|Processing|Ready|Failed
+  "state": "Ready",              // PendingUpload|PendingProcessing|Processing|Ready|Failed
   "lastError": null,             // preenchido quando state=Failed
   "contentHash": "939298ea...",  // SHA-256 hex (igual ao do inventário 03A)
   "createdAt": "2026-08-18T19:18:11.56+00:00",
-  "variants": [                   // preenchidas pelo worker
+  "variants": [                   // multipart/zip: já preenchidas na resposta do upload; fluxo direto: preenchidas pelo worker
     { "kind": "Original", "blobPath": "...", "width": 640, "height": 200, "sizeBytes": 2710, "format": "jpeg" },
     { "kind": "Preview", "width": 640, "sizeBytes": 2693, "format": "jpeg", "...": "..." },
     { "kind": "Thumbnail", "width": 320, "height": 100, "sizeBytes": 1172, "format": "jpeg" }
@@ -116,9 +119,10 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
 }
 ```
 
-**Ciclo do upload (async):** `201` com `state: "PendingProcessing"` → worker processa
-(poll padrão 0,5 s) → `Ready` (metadados indexados + 3 variantes) ou `Failed`
-(`lastError`). O app faz **poll** de `GET /api/photos/{id}` até `Ready|Failed`.
+**Ciclo do upload:** multipart/zip é **síncrono** — `201` já traz `state: "Ready"`,
+metadados indexados e as 3 variantes; o app não precisa fazer poll (só de defesa,
+tratar `PendingProcessing`/`Processing` como "aguarde"). **Fluxo direto continua
+async**: após `complete`, o worker processa (poll padrão 0,5 s) até `Ready|Failed`.
 Variantes nunca upscale e respeitam orientação EXIF.
 
 **Fluxo direto (preferido quando o app tem o hash):** `upload-ticket` → **PUT presigned
