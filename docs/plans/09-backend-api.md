@@ -146,8 +146,19 @@ converter no cliente com `expo-image-manipulator`); ≤ 200 MB; quota excedida �
 **`POST /api/imports/zip`** — multipart, campo `file` (obrigatório ser um ZIP real:
 validação por magic bytes `PK\x03\x04`). Query opcional `?fileName=<nome>` — o nome
 real do arquivo (uploaders nativos podem enviar um filename opaco no multipart).
-Payload máximo: `ZipImport:MaxZipBytes` (default 10 GiB; excedido → **413**).
+Payload máximo: `ZipImport:MaxZipBytes` (default **100 GiB** desde 2026-10-03; excedido → **413**).
 Resposta **202**: `{ "jobId": "<guid>" }`. O processamento é assíncrono (worker).
+
+> **Hops de payload grandes (2026-10-03)** — o zip atravessa dois saltos de streaming
+> até o storage: browser → API (override por requisição do limite do Kestrel em
+> `ImportEndpoints`) e API → storage host (`PUT /api/objects/{owner}/imports/{jobId}.zip`).
+> Para isso funcionar acima de 200 MB: o storage host aceita até `Storage:MaxBodyBytes`
+> (default **110 GiB**, acima do teto de import); `HttpBlobStorage` não impõe timeout
+> total a PUT/GET de payload (ficam limitados ao `CancellationToken` — abort do browser
+> ou shutdown do worker; `StorageService:TimeoutSeconds` vale só para head/delete/presign);
+> e `S3ObjectStore` usa upload multipart (partes de 32 MB) acima de 128 MB, contornando
+> o limite de 5 GB do PutObject único — um objeto de 100 GiB ≈ 3200 partes (limite S3:
+> 10 000). O SDK S3 roda sem timeout por request (default 100 s do SDK foi removido).
 
 > **Ingresso (revisão 2026-10-03)** — o túnel Cloudflare (`api.lucas-romero.com`)
 > limita o corpo de requisição a 100 MB, então uploads grandes (zip multi-GB, fotos)

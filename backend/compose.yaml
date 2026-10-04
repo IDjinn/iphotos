@@ -31,6 +31,9 @@ services:
       Storage__SigningKey: ${IPHOTOS_STORAGE_SIGNING_KEY:-change-me-in-production-32-bytes-minimum!!}
       Storage__AllowPrivateNetworks: "true" # compose-internal endpoints (api -> storage, filesystem provider)
       Storage__DefaultProvider: ${IPHOTOS_STORAGE_PROVIDER:-filesystem}
+      # Zip-import staging PUTs stream the whole archive through the storage host,
+      # so its body cap must stay above ZipImport:MaxZipBytes (100 GiB).
+      Storage__MaxBodyBytes: "118111600640"
       Providers__FileSystem__RootPath: /var/lib/iphotos/objects
       # S3-compatible blob target (Wasabi/MinIO/B2/R2/AWS) — values come from backend/.env.
       # Flip IPHOTOS_STORAGE_PROVIDER=s3 there (and fill the IPHOTOS_S3_* vars) to switch.

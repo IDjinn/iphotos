@@ -27,7 +27,9 @@ public sealed class StorageServiceOptions
     /// <summary>302-redirect GETs to presigned URLs instead of proxying (S3-family only).</summary>
     public bool RedirectToPresigned { get; set; }
 
-    public long MaxBodyBytes { get; set; } = 200L * 1024 * 1024;
+    /// <summary>Must cover zip-import staging: the API streams the whole archive through
+    /// a single PUT, so this needs headroom above ZipImport:MaxZipBytes (100 GiB).</summary>
+    public long MaxBodyBytes { get; set; } = 110L * 1024 * 1024 * 1024;
 }
 
 public sealed class FileSystemProviderOptions

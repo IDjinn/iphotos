@@ -12,6 +12,9 @@ public sealed class HttpBlobStorageOptions
     /// <summary>Provider id to address on every request; empty = the service default.</summary>
     public string Provider { get; set; } = string.Empty;
 
+    /// <summary>Timeout for quick metadata operations (head/delete/presign) against the
+    /// storage service. Payload transfers (PUT/GET) have no total timeout; they are
+    /// bounded by the caller's CancellationToken instead.</summary>
     public int TimeoutSeconds { get; set; } = 100;
 
     /// <summary>Allow loopback/private storage-service endpoints (compose, on-prem).</summary>

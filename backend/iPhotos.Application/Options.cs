@@ -41,9 +41,9 @@ public sealed class ZipImportOptions
 {
     public const string SectionName = "ZipImport";
 
-    /// <summary>Maximum accepted ZIP payload size (single archives up to 10 GiB are accepted;
-    /// smaller Takeout parts of 2-4 GiB remain the recommended export size).</summary>
-    public long MaxZipBytes { get; set; } = 10L * 1024 * 1024 * 1024; // 10 GiB
+    /// <summary>Maximum accepted ZIP payload size (single archives up to 100 GiB are accepted;
+    /// splitting a Takeout into parts remains recommended for very large libraries).</summary>
+    public long MaxZipBytes { get; set; } = 100L * 1024 * 1024 * 1024; // 100 GiB
 
     /// <summary>Fail fast when a ZIP declares more entries than this (Takeout zips carry JSON sidecars).</summary>
     public int MaxEntries { get; set; } = 50_000;

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading;
 using iPhotos.Application;
 using iPhotos.Application.Common;
 using iPhotos.Storage;
@@ -12,12 +13,13 @@ namespace iPhotos.Infrastructure.Storage;
 /// IBlobStorage backed by the standalone storage service (iPhotos.Storage.Host): every
 /// operation is an HTTP call carrying the raw payload; the database keeps blob *keys*,
 /// so the URL returned on upload is ignored. Reads are buffered into a delete-on-close
-/// temp file so consumers (ImageSharp) can seek without holding 200 MB in memory.
+/// temp file so consumers (ImageSharp) can seek without holding the whole blob in memory.
 /// </summary>
 public sealed class HttpBlobStorage : IBlobStorage, IDisposable
 {
     private readonly HttpClient _http;
     private readonly string _providerQuery;
+    private readonly int _metadataTimeoutSeconds;
     private readonly bool _ownsHttpClient;
 
     public HttpBlobStorage(IOptions<HttpBlobStorageOptions> options)
@@ -39,10 +41,14 @@ public sealed class HttpBlobStorage : IBlobStorage, IDisposable
         _providerQuery = string.IsNullOrWhiteSpace(options.Provider)
             ? string.Empty
             : $"?provider={Uri.EscapeDataString(options.Provider)}";
+        _metadataTimeoutSeconds = options.TimeoutSeconds;
         _ownsHttpClient = handler is null;
+        // No total timeout: payload PUTs/GETs stream for as long as the caller keeps the
+        // transfer alive (hours for large zip imports) and are bounded by the caller's
+        // CancellationToken (browser RequestAborted, worker shutdown) instead.
         _http = handler is null
-            ? new HttpClient() { BaseAddress = baseUri, Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds) }
-            : new HttpClient(handler) { BaseAddress = baseUri };
+            ? new HttpClient() { BaseAddress = baseUri, Timeout = Timeout.InfiniteTimeSpan }
+            : new HttpClient(handler) { BaseAddress = baseUri, Timeout = Timeout.InfiniteTimeSpan };
         if (!string.IsNullOrEmpty(options.ApiKey))
         {
             _http.DefaultRequestHeaders.Add("X-Api-Key", options.ApiKey);
@@ -109,7 +115,8 @@ public sealed class HttpBlobStorage : IBlobStorage, IDisposable
     public async Task DeleteAsync(string path, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Delete, ObjectUrl(path));
-        using var response = await _http.SendAsync(request, cancellationToken);
+        using var response = await WithMetadataTimeout(
+            token => _http.SendAsync(request, token), cancellationToken);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.NoContent or HttpStatusCode.OK)
         {
             return;
@@ -121,7 +128,8 @@ public sealed class HttpBlobStorage : IBlobStorage, IDisposable
     public async Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Head, ObjectUrl(path));
-        using var response = await _http.SendAsync(request, cancellationToken);
+        using var response = await WithMetadataTimeout(
+            token => _http.SendAsync(request, token), cancellationToken);
         return response.StatusCode switch
         {
             HttpStatusCode.OK => true,
@@ -140,7 +148,8 @@ public sealed class HttpBlobStorage : IBlobStorage, IDisposable
             query += $"&contentType={Uri.EscapeDataString(contentType)}";
         }
 
-        using var response = await _http.PostAsync($"api/objects/upload-url?{query}", content: null, cancellationToken);
+        using var response = await WithMetadataTimeout(
+            token => _http.PostAsync($"api/objects/upload-url?{query}", content: null, token), cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotImplemented)
         {
             return null;
@@ -157,6 +166,17 @@ public sealed class HttpBlobStorage : IBlobStorage, IDisposable
     }
 
     private sealed record UploadUrlResponse(string Url, DateTimeOffset ExpiresAt);
+
+    /// <summary>
+    /// Quick metadata calls (head/delete/presign) get an explicit timeout so a dead
+    /// connection surfaces instead of hanging on the caller's token that never fires.
+    /// </summary>
+    private async Task<T> WithMetadataTimeout<T>(Func<CancellationToken, Task<T>> send, CancellationToken cancellationToken)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(_metadataTimeoutSeconds));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+        return await send(linked.Token);
+    }
 
     private string ObjectUrl(string path)
     {

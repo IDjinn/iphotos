@@ -1,5 +1,7 @@
+using System.Threading;
 using Amazon.S3;
 using Amazon.S3.Model;
+using Amazon.S3.Transfer;
 
 namespace iPhotos.Storage.Providers;
 
@@ -9,7 +11,12 @@ namespace iPhotos.Storage.Providers;
 /// </summary>
 public sealed class S3ObjectStore : IObjectStore
 {
+    /// <summary>Above this size uploads go through S3 multipart: a single PutObject caps
+    /// objects at 5 GB, while zip-import staging streams archives up to 100 GiB.</summary>
+    internal const long MultipartThresholdBytes = 128L * 1024 * 1024;
+
     private readonly IAmazonS3 _client;
+    private readonly TransferUtility _transfer;
     private readonly string _bucket;
     private readonly string _prefix;
     private readonly bool _isHttpEndpoint;
@@ -24,6 +31,9 @@ public sealed class S3ObjectStore : IObjectStore
             RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(options.Region),
             ForcePathStyle = options.ForcePathStyle,
             AuthenticationRegion = options.Region,
+            // No per-request timeout: large multipart parts stream for minutes and are
+            // bounded by the CancellationToken passed to each call instead.
+            Timeout = Timeout.InfiniteTimeSpan,
         };
         // AWSSDK v4: assigning ServiceURL (even null) invalidates RegionEndpoint, so it
         // must only be set when a custom endpoint (Wasabi/MinIO/B2/R2) is configured.
@@ -41,7 +51,19 @@ public sealed class S3ObjectStore : IObjectStore
         }
 
         _client = new AmazonS3Client(options.AccessKey, options.SecretKey, config);
+        // Never disposed: TransferUtility.Dispose tears down the injected client, which
+        // is process-lifetime here.
+        _transfer = new TransferUtility(_client, new TransferUtilityConfig
+        {
+            MinSizeBeforePartUpload = MultipartThresholdBytes,
+            ConcurrentServiceRequests = 4,
+        });
     }
+
+    /// <summary>Non-seekable bodies are spilled to a seekable temp file before this runs,
+    /// so the decision is purely a size one in practice.</summary>
+    internal static bool ShouldUseMultipart(Stream payload) =>
+        payload.CanSeek && payload.Length > MultipartThresholdBytes;
 
     public string Id => "s3";
 
@@ -63,18 +85,36 @@ public sealed class S3ObjectStore : IObjectStore
             payload = File.OpenRead(spillPath);
         }
 
-        var request = new PutObjectRequest
-        {
-            BucketName = _bucket,
-            Key = FullKey(key),
-            InputStream = payload,
-            ContentType = contentType,
-            AutoCloseStream = false,
-            UseChunkEncoding = false,
-        };
-
         try
         {
+            if (ShouldUseMultipart(payload))
+            {
+                // Multipart: required above 5 GB (single-PutObject cap). TransferUtility
+                // aborts the pending upload itself when the call throws or is cancelled;
+                // multipart ETags are not plain MD5s, so none is returned. Part size keeps
+                // a 100 GiB object at ~3200 parts, well under the S3 10k-part limit.
+                await _transfer.UploadAsync(new TransferUtilityUploadRequest
+                {
+                    BucketName = _bucket,
+                    Key = FullKey(key),
+                    InputStream = payload,
+                    AutoCloseStream = false,
+                    PartSize = 32L * 1024 * 1024,
+                    MpuObjectSize = payload.Length,
+                }, cancellationToken);
+                return new ObjectWriteResult(payload.Length, null);
+            }
+
+            var request = new PutObjectRequest
+            {
+                BucketName = _bucket,
+                Key = FullKey(key),
+                InputStream = payload,
+                ContentType = contentType,
+                AutoCloseStream = false,
+                UseChunkEncoding = false,
+            };
+
             var response = await _client.PutObjectAsync(request, cancellationToken);
             return new ObjectWriteResult(response.ContentLength > 0 ? response.ContentLength : payload.Length, response.ETag);
         }
