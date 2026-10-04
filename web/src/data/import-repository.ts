@@ -43,32 +43,63 @@ export interface ZipUploadHandle {
   cancel: () => void;
 }
 
+/** Minutes the server gets to confirm the upload after the last byte leaves the
+ * client (it still has to stage the archive locally) before the transfer is
+ * abandoned with a clear error instead of spinning forever. */
+const STAGING_TIMEOUT_MS = 15 * 60_000;
+
 /** Starts a zip import upload; progress and cancellation surface through the handle. */
 export function createZipImportUpload(
   file: File,
   onUploadProgress?: (progress: UploadProgress) => void,
 ): ZipUploadHandle {
   const controller = new AbortController();
+  let stagingTimedOut = false;
 
   const jobIdPromise = (async (): Promise<string> => {
     const formData = new FormData();
     formData.append("file", file, file.name);
-    const body = await apiUpload<{ jobId: string }>("/api/imports/zip", formData, {
-      params: { fileName: file.name },
-      onProgress: (progress) =>
-        onUploadProgress?.({
-          fraction: progress.totalBytes > 0 ? progress.sentBytes / progress.totalBytes : 0,
-          sentBytes: progress.sentBytes,
-          totalBytes: progress.totalBytes,
-        }),
-      signal: controller.signal,
-    }).catch((error: unknown) => {
+    let stagingWatchdog: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const body = await apiUpload<{ jobId: string }>("/api/imports/zip", formData, {
+        params: { fileName: file.name },
+        onProgress: (progress) => {
+          if (
+            progress.totalBytes > 0
+            && progress.sentBytes >= progress.totalBytes
+            && stagingWatchdog === undefined
+          ) {
+            // All bytes have left the client; the server still stages the archive
+            // before replying. Bound that window so a stalled backend surfaces
+            // as an error instead of an eternal spinner.
+            stagingWatchdog = setTimeout(() => {
+              stagingTimedOut = true;
+              controller.abort();
+            }, STAGING_TIMEOUT_MS);
+          }
+          onUploadProgress?.({
+            fraction: progress.totalBytes > 0 ? progress.sentBytes / progress.totalBytes : 0,
+            sentBytes: progress.sentBytes,
+            totalBytes: progress.totalBytes,
+          });
+        },
+        signal: controller.signal,
+      });
+      return body.jobId;
+    } catch (error: unknown) {
+      if (stagingTimedOut) {
+        throw new ApiError(
+          0,
+          "Upload timed out — the server didn't confirm the transfer. Check the backend logs or try again.",
+        );
+      }
       if (error instanceof ApiError && error.status === 429) {
         throw new ApiError(429, "Too many requests — wait a moment and try again.");
       }
       throw error;
-    });
-    return body.jobId;
+    } finally {
+      if (stagingWatchdog !== undefined) clearTimeout(stagingWatchdog);
+    }
   })();
 
   return {

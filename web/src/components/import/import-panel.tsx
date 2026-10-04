@@ -100,7 +100,9 @@ export function ImportPanel() {
       if (isCancel(caught)) {
         setError("Import canceled.");
       } else if (caught instanceof ApiError && caught.status === 0) {
-        setError("Upload failed — check your connection and try again.");
+        // Status 0 covers network failures and the staging watchdog — prefer the
+        // specific cause when the ApiError carries one.
+        setError(caught.message || "Upload failed — check your connection and try again.");
       } else if (caught instanceof ApiError) {
         setError(caught.message || "The import couldn't be started. Try again.");
       } else {
@@ -192,7 +194,9 @@ export function ImportPanel() {
                 <div className="row">
                   <Loader2Icon aria-hidden className="size-4 animate-spin text-muted-foreground" />
                   <span className="text-sm">
-                    Uploading {file?.name}… {progress ? `${Math.round(progress.fraction * 100)}%` : ""}
+                    {progress && progress.fraction >= 1
+                      ? "Storing archive on server…"
+                      : `Uploading ${file?.name}… ${progress ? `${Math.round(progress.fraction * 100)}%` : ""}`}
                   </span>
                   <Button
                     variant="ghost"

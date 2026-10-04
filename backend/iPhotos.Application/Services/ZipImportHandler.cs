@@ -3,6 +3,7 @@ using ICSharpCode.SharpZipLib.Zip;
 using iPhotos.Application.Abstractions;
 using iPhotos.Application.Common;
 using iPhotos.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -19,13 +20,15 @@ public sealed class ZipImportAbortException(string message) : Exception(message)
 /// through PhotoService (per-owner hash dedup included) and tracks per-entry counters.
 /// Catalog metadata (takenAt, GPS, title, description) is seeded from Takeout sidecar
 /// JSON files (<see cref="TakeoutMetadata"/>); videos are skipped (VideosIgnored) and
-/// remaining sidecars/junk count as ignored. Executed by the iPhotos.Worker background
+/// remaining sidecars/junk count as ignored. The raw archive is read from (and deleted
+/// from) the "staging" blob storage — a local-disk provider, never the remote blob
+/// target; only ingested photos land there. Executed by the iPhotos.Worker background
 /// service. Re-running a partially imported zip is safe — hash dedup turns
 /// already-imported entries into duplicates.
 /// </summary>
 public sealed class ZipImportHandler(
     IZipImportRepository imports,
-    IBlobStorage blobStorage,
+    [FromKeyedServices("staging")] IBlobStorage blobStorage,
     PhotoService photoService,
     IHeifConverter heifConverter,
     IUnitOfWork unitOfWork,

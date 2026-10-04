@@ -53,6 +53,25 @@ public static class DependencyInjection
             return new HttpBlobStorage(storageService);
         });
 
+        // Zip-import staging ("staging" key): zip archives park here between upload and
+        // processing, so StorageService:StagingProvider points at a local-disk provider
+        // (compose uses the storage host's 'filesystem' provider) and the raw archive
+        // never round-trips through the remote blob target. Only photos uploaded by the
+        // import go to the main provider. Unset provider (or filesystem blob mode)
+        // aliases the main backend, keeping single-node/dev setups unchanged.
+        services.AddKeyedSingleton<IBlobStorage>("staging", (sp, _) =>
+        {
+            var blob = sp.GetRequiredService<IOptions<BlobStorageOptions>>().Value;
+            var storageService = sp.GetRequiredService<IOptions<HttpBlobStorageOptions>>().Value;
+            if (string.IsNullOrWhiteSpace(storageService.StagingProvider)
+                || !string.Equals(blob.Mode, "Http", StringComparison.OrdinalIgnoreCase))
+            {
+                return sp.GetRequiredService<IBlobStorage>();
+            }
+
+            return new HttpBlobStorage(storageService.ForProvider(storageService.StagingProvider));
+        });
+
         return services;
     }
 

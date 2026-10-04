@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Claims;
 using iPhotos.Application;
 using iPhotos.Application.Abstractions;
@@ -6,6 +7,7 @@ using iPhotos.Application.Services;
 using iPhotos.Domain;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
@@ -22,8 +24,9 @@ public static class ImportEndpoints
             ClaimsPrincipal principal,
             IOptions<ZipImportOptions> optionsAccessor,
             IZipImportRepository imports,
-            IBlobStorage blobs,
+            [FromKeyedServices("staging")] IBlobStorage stagingBlobs,
             IDateTimeProvider dateTime,
+            ILogger<Program> logger,
             string? fileName,
             CancellationToken cancellationToken) =>
         {
@@ -47,21 +50,34 @@ public static class ImportEndpoints
             var displayFileName = SanitizeFileName(
                 string.IsNullOrWhiteSpace(fileName) ? sectionFileName : fileName);
 
+            logger.LogInformation(
+                "Zip import '{FileName}': receiving archive{Length}",
+                displayFileName,
+                context.Request.ContentLength is { } length ? $" ({length} bytes)" : string.Empty);
+
             var jobId = Guid.NewGuid();
             var blobPath = BlobPaths.Import(ownerId, jobId);
             long sizeBytes;
+            var stagingStarted = Stopwatch.GetTimestamp();
             try
             {
                 await using var counted = new ZipUploadStream(fileBody, options.MaxZipBytes);
-                await blobs.PutAsync(blobPath, counted, cancellationToken);
+                await stagingBlobs.PutAsync(blobPath, counted, cancellationToken);
                 sizeBytes = counted.BytesRead;
             }
             catch
             {
                 // A partially staged archive is useless — drop it before surfacing the error.
-                try { await blobs.DeleteAsync(blobPath, CancellationToken.None); } catch { /* best effort */ }
+                try { await stagingBlobs.DeleteAsync(blobPath, CancellationToken.None); } catch { /* best effort */ }
                 throw;
             }
+
+            logger.LogInformation(
+                "Zip import '{FileName}' staged as {BlobPath} ({SizeBytes} bytes, {Elapsed:F0} ms)",
+                displayFileName,
+                blobPath,
+                sizeBytes,
+                Stopwatch.GetElapsedTime(stagingStarted).TotalMilliseconds);
 
             var job = ZipImportJob.Create(ownerId, displayFileName, sizeBytes, blobPath, dateTime.UtcNow);
             job.Id = jobId;

@@ -99,9 +99,11 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
   "sizeBytes": 2710,
   "width": 640,            // null até processar
   "height": 200,
-  "takenAt": "2025-12-25T10:30:00+00:00",  // EXIF, UTC; null se não houver
+  "takenAt": "2025-12-25T10:30:00+00:00",  // EXIF ou seed de import (doc §3.4); UTC; null se não houver
   "cameraMake": "Google", "cameraModel": "Pixel 9",
   "gpsLatitude": -22.9, "gpsLongitude": -43.2,
+  "title": null,                 // seed de import (Takeout sidecars), 2026-10-04
+  "description": null,           // idem (legenda do Google Fotos)
   "state": "PendingProcessing",  // PendingUpload|PendingProcessing|Processing|Ready|Failed
   "lastError": null,             // preenchido quando state=Failed
   "contentHash": "939298ea...",  // SHA-256 hex (igual ao do inventário 03A)
@@ -160,6 +162,19 @@ Resposta **202**: `{ "jobId": "<guid>" }`. O processamento é assíncrono (worke
 > o limite de 5 GB do PutObject único — um objeto de 100 GiB ≈ 3200 partes (limite S3:
 > 10 000). O SDK S3 roda sem timeout por request (default 100 s do SDK foi removido).
 
+> **Staging local (2026-10-04b)** — o zip bruto **não vai mais ao provider de blobs
+> principal (S3)**: o endpoint grava o arquivo em `StorageService:StagingProvider`
+> (compose: provider `filesystem` do storage host, volume `storage-data`) via o
+> seletor de provider por requisição (`?provider=`) e responde **202 assim que o
+> zip está staged em disco local**. Antes, o 202 esperava o PUT completo ao S3 —
+> dezenas de minutos para uma parte multi-GB, com o cliente preso em "100%". O
+> worker lê (e apaga) o zip do mesmo provider de staging; só as fotos processadas
+> sobem ao provider principal. DI: `IBlobStorage` com chave `"staging"` no endpoint
+> e no `ZipImportHandler`; sem `StagingProvider` (ou em modo filesystem), o staging
+> aliasa o backend principal (retrocompatível). O parágrafo acima segue válido para
+> os hops de streaming (browser → API → storage host); o multipart S3 aplica-se
+> agora apenas às fotos.
+
 > **Ingresso (revisão 2026-10-03)** — o túnel Cloudflare (`api.lucas-romero.com`)
 > limita o corpo de requisição a 100 MB, então uploads grandes (zip multi-GB, fotos)
 > devem usar o endereço LAN do servidor (`http://<ip-local>:5205`, porta exposta no
@@ -173,16 +188,40 @@ Resposta **202**: `{ "jobId": "<guid>" }`. O processamento é assíncrono (worke
   "id": "…", "state": "Queued|Processing|Done|Failed",
   "fileName": "takeout.zip", "sizeBytes": 123,
   "totalEntries": 300, "processedEntries": 180,
-  "imported": 150, "duplicated": 20, "ignored": 10, "failed": 0,
+  "imported": 150, "duplicated": 20, "ignored": 10, "videosIgnored": 15, "failed": 0,
   "error": null, "createdAt": "…", "completedAt": null
 }
 ```
 
 - `totalEntries`/contadores preenchem conforme o worker processa; poll a cada ~3 s
-  até `Done|Failed`.
+  até `Done|Failed`. `videosIgnored` (2026-10-04) conta vídeos pulados separadamente
+  — video hosting ainda não é suportado.
 - Fotos suportadas no zip: `jpg/jpeg/png/webp/heic/heif` (HEIC/HEIF é transcrito para
-  JPEG no servidor, preservando EXIF). Vídeos, sidecars do Takeout (`json/html/csv`),
-  `__MACOSX/`, ocultos, `Thumbs.db` e zips aninhados são **ignorados** e contados.
+  JPEG no servidor, preservando EXIF). Vídeos (`videosIgnored`), sidecars restantes
+  (`json/html/csv`), `__MACOSX/`, ocultos, `Thumbs.db` e zips aninhados são
+  **ignorados** e contados.
+
+> **Metadados Google Takeout (2026-10-04)** — o import semeia metadados do catálogo
+> antes do processamento de variantes: sidecar JSON ao lado da mídia, nos dois
+> layouts (`<arquivo>.json` legado e `<arquivo>.supplemental-metadata.json` atual,
+> casamento por caminho no mesmo diretório, case-insensitive) fornece
+> `photoTakenTime`→`takenAt` (fallback `creationTime`), `geoDataExif`/`geoData`→GPS
+> (`0,0` = sem local), `title` e `description`; pastas `YYYY-MM-DD` no caminho
+> preenchem só um `takenAt` ausente (pastas só-ano, ex. "Fotos de 2025", **não**
+> semeiam data — uma data errada impediria o EXIF de preencher depois). Sidecar
+> corrompido não falha a foto. O EXIF do processamento de variantes preenche apenas
+> lacunas (`MarkReady` fill-if-missing): metadado semeado é autoritativo.
+> `photos.title` (500) e `photos.description` (2000) entram no contrato de foto
+> (§3.2) e são exibidos nos viewers.
+
+> **Fila do worker — LISTEN/NOTIFY (2026-10-04)** — triggers `AFTER INSERT` em
+> `variant_jobs`/`zip_import_jobs` fazem `pg_notify('iphotos_jobs_queued', …)` e o
+> worker escuta o canal (Npgsql), acordando na hora do enqueue em vez de fazer
+> polling quente a cada 0,5 s. NOTIFY é fire-and-forget: o worker mantém um fallback
+> ocioso de 30 s (`Worker:IdlePollSeconds`) para notificações perdidas
+> (reconexões); jobs enfileirados com o worker fora do ar são pegos na primeira
+> iteração. O claim continua `FOR UPDATE SKIP LOCKED`; `Worker:PollIntervalSeconds`
+> virou apenas o intervalo de retry após erro.
 - Zip criptografado → job `Failed` com `"Protected/encrypted ZIPs are not supported."`;
   quota estourada → `Failed` com mensagem clara. Falhas transitórias reenfileiram
   (até 3 tentativas) — reprocessar é seguro porque o dedupe vira `duplicated`.

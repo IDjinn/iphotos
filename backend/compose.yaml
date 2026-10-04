@@ -67,6 +67,10 @@ services:
       StorageService__BaseUrl: http://storage:8080
       StorageService__ApiKey: ${IPHOTOS_STORAGE_API_KEY:-change-me-storage-api-key}
       StorageService__AllowPrivateNetworks: "true"
+      # Zip staging (raw archives) goes to the storage host's filesystem provider
+      # (storage-data volume, docker-local disk) so multi-GB uploads never
+      # round-trip through S3; only processed photos land in S3.
+      StorageService__StagingProvider: ${IPHOTOS_STORAGE_STAGING_PROVIDER:-filesystem}
       Auth__Jwt__SigningKey: ${IPHOTOS_JWT_SIGNING_KEY:-change-me-in-production-32-bytes-minimum!!}
       # Browser origins allowed to call the API (web app dev server, desktop shell).
       Cors__AllowedOrigins__0: ${IPHOTOS_CORS_ORIGIN_WEB:-http://localhost:3000}
@@ -94,6 +98,9 @@ services:
       StorageService__BaseUrl: http://storage:8080
       StorageService__ApiKey: ${IPHOTOS_STORAGE_API_KEY:-change-me-storage-api-key}
       StorageService__AllowPrivateNetworks: "true"
+      # Same staging provider as the api: the worker reads (and deletes) raw zip
+      # archives from the storage host's filesystem provider, never from S3.
+      StorageService__StagingProvider: ${IPHOTOS_STORAGE_STAGING_PROVIDER:-filesystem}
       Worker__PollIntervalSeconds: "0.5"
     # No volume: blobs live in the storage service.
 

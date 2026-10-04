@@ -14,6 +14,45 @@
 > modo offline e para salvar vídeos na galeria) — as seções §3/§4 (validação,
 > zip-slip, ignorados) continuam como referência de regras.
 
+> **Revisão 2026-10-04 — import Takeout-aware (server-side).** O worker agora
+> entende o formato Google Takeout e preserva metadados:
+> - **Sidecars JSON** ao lado da mídia, nos dois layouts — `<arquivo>.json` (legado)
+>   e `<arquivo>.supplemental-metadata.json` (atual), casados por caminho no mesmo
+>   diretório (case-insensitive). Fornecem `photoTakenTime`→`takenAt` (fallback
+>   `creationTime`), `geoDataExif`/`geoData`→GPS (`0,0` = sem local), `title` e
+>   `description` (colunas novas em `photos`; contrato 09 §3.2).
+> - **Pastas de data**: `YYYY-MM-DD` no caminho semeia `takenAt` ausente; pastas
+>   só-ano (ex. "Fotos de 2025") não semeiam — o EXIF do worker de variantes
+>   preenche lacunas depois (fill-if-missing; seed é autoritativo, nunca
+>   sobrescrito).
+> - **Vídeos** continuam ignorados, mas com contador próprio `videosIgnored` no job
+>   (mostrado nos relatórios web/mobile) — importa saber que uma parte do Takeout
+>   pode ser quase toda de vídeos. Parte real analisada (part 005, 8,6 GiB):
+>   1.672 imagens (5,19 GiB), 394 vídeos (2,84 GiB), 1.502 sidecars.
+> - **Multi-parte**: cada parte (`takeout-…-1-00N.zip`) é um job independente —
+>   importar todas as partes; duplicadas entre partes viram `duplicated`.
+> - **Limites server-side vigentes** (nota: a tabela §3 abaixo descreve a fase
+>   device-side futura e está desatualizada vs. o server-side): zip até
+>   `ZipImport:MaxZipBytes` (100 GiB), máx. 50.000 entradas (`ZipImport:MaxEntries`),
+>   ingresso grande apenas via LAN (túnel Cloudflare corta em ~100 MB — 09 §3.4).
+> - **Fila**: worker acorda via Postgres LISTEN/NOTIFY (sem polling quente;
+>   fallback 30 s) — 09 §3.4.
+
+> **Revisão 2026-10-04b — staging local (o zip não vai mais ao S3).** Até então o
+> zip bruto era replicado ao provider de blobs principal (S3) antes do 202: para
+> uma parte de 8,6 GiB o upload ao S3 levava dezenas de minutos com a UI presa em
+> "100%" (o 202 só voltava após o PUT completo ao S3 e o worker baixava o zip de
+> volta de lá). Agora o arquivamento bruto vai para um **provider de staging em
+> disco local**: `POST /api/imports/zip` grava em `StorageService:StagingProvider`
+> (compose: provider `filesystem` do storage host, volume `storage-data`) e responde
+> 202 assim que o zip está staged (segundos, escrita local). O worker lê o zip do
+> staging local e só as **fotos processadas** sobem ao provider principal (S3).
+> Fluxo vigente: **client → API → staging local → unzip → processamento → S3**.
+> Endpoints/handler usam o `IBlobStorage` com chave `"staging"`; sem
+> `StagingProvider` configurado, o staging aliasa o backend principal
+> (retrocompatível). Web: após 100% dos bytes a UI mostra "Storing archive on
+> server…" e um watchdog de 15 min converte travamento do servidor em erro claro.
+
 ## 1. Contexto atual
 
 - Library tab (`src/app/(tabs)/library.tsx`) já tem o padrão de "utility cards"
