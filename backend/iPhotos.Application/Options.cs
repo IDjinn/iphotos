@@ -85,6 +85,17 @@ public sealed class BillingOptions
         Products.TryGetValue(productId, out var product) ? product : null;
 }
 
+public sealed class CorsSettings
+{
+    public const string SectionName = "Cors";
+
+    /// <summary>Origins allowed to call the API from a browser (web app, Electron shell).
+    /// Empty disables cross-origin access entirely; native clients are unaffected by CORS.</summary>
+    public string[] AllowedOrigins { get; set; } = [];
+
+    public const string PolicyName = "web";
+}
+
 public sealed class TestBillingOptions
 {
     public const string SectionName = "Billing:Test";

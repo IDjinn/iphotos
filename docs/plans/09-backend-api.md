@@ -37,6 +37,14 @@
   Não existe endpoint default — sem env válida o app falha com erro explícito. Nunca
   hardcode em componentes.
 
+### CORS (2026-10-03)
+
+O API aplica a policy `web` (`app.UseCors` antes do rate limiter — preflight nunca é
+throttled). Origens permitidas configuráveis por `Cors:AllowedOrigins` (array; default
+vazio = nenhuma origem de browser tem acesso; clientes nativos não são afetados por
+CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:3210`
+(desktop Electron) — doc 14/D16.
+
 ## 3. Contrato da API
 
 ### 3.1 Auth — `/api/auth` (rate limit: 20 req/min por IP → 429)

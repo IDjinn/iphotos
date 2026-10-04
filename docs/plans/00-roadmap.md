@@ -1,6 +1,6 @@
 # Roadmap — iPhotos: Conta, Backup E2E e Classificação
 
-> Última atualização: 2026-08-22 · Idioma: PT-BR (código e UI permanecem em inglês)
+> Última atualização: 2026-10-03 · Idioma: PT-BR (código e UI permanecem em inglês)
 > Esta pasta (`docs/plans/`) contém o planejamento por tópicos. Cada documento é
 > autocontido e pensado para ser implementado **um tópico por sessão de trabalho**.
 
@@ -46,6 +46,7 @@ A evolução planejada adiciona, sem perder o caráter local-first:
 | [10-billing-assinaturas.md](./10-billing-assinaturas.md) | Billing & assinaturas | Decisão D5 (Play Billing vs Stripe), sync de `plan`/quota com o backend, paywall e matriz de planos |
 | [11-e2e-zero-knowledge.md](./11-e2e-zero-knowledge.md) | Modo E2E zero-knowledge | Estágios 03B–03F detalhados: cripto de cliente, chave de recuperação (D3), upload cifrado, restore, GC |
 | [12-hosting-custom.md](./12-hosting-custom.md) | Hosting custom (Offline estendido) | `StorageProvider` S3/WebDAV com credenciais do usuário + licença vitalícia |
+| [14-web-desktop.md](./14-web-desktop.md) | Web & Desktop | Segundo cliente (Next.js + Electron) consumindo o mesmo backend: galeria cloud, upload, ZIP, billing, settings |
 
 ## 3. Fases de implementação
 
@@ -75,6 +76,13 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
 
 ### Fase 5 — Classificação cloud + assinaturas completas
 - 05B Serviço opcional de classificação no fluxo de upload (opt-in anônimo)
+
+### Fase 6 — Web & Desktop (doc 14)
+- 14A Scaffold Next.js/Electron + CORS no API + porte do contrato `src/data`
+- 14B Shell responsivo + auth (login/registro) + rotas
+- 14C Galeria cloud (grid virtualizado) + viewer overlay
+- 14D Upload (3 caminhos), importação ZIP, billing, settings
+- 14E Empacotamento desktop (electron-builder)
 
 ### Futuro — Hosting custom (modo Offline estendido)
 - 02 §5: S3-compatible/WebDAV com credenciais do próprio usuário + licença vitalícia
@@ -107,6 +115,7 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
 | 09 Backend API | 3 | ✅ **Implementado** (2026-08-18): backend .NET 10 + PostgreSQL em `C:\dev\csharp\iPhotos` — auth e-mail+senha+JWT (Argon2id, refresh rotativo), upload multipart com dedup SHA-256 e quota, variantes thumb/preview/original via worker separado, indexação EXIF (data/câmera/GPS/dimensões), listagem com filtros, usage; 107 testes (TDD) + compose. **Integração front ✅** (2026-08-18, commit `e547c82`): `api-client.ts` (refresh single-flight em 401), login/registro/logout reais, backup-engine v1, timeline remota `/cloud-photos` com thumbs autenticadas, `GET /api/usage` na conta |
 | 10 Billing & assinaturas | 5 | ✅ **Implementado** (2026-10-03): abstração `IBillingProvider` + provider sandbox (`test`) conforme decisão D5; produto único `iphotos.cloud.1tb.monthly` (1 TB = US$ 15/mês, catálogo por config), tabela `billing_purchases`, endpoints `/api/billing/products|verify|status|restore`, worker de expiração com grace de 3 dias, paywall `/settings/subscription`, plano em Settings/Account e gatilho 413 no backup. 19 testes unit + 5 integração. **Follow-up**: `GooglePlayBillingProvider`/Stripe + RTDN/webhooks (doc 10 §8) |
 | 13 IA off + previews + modo encriptado | — | ✅ **Implementado** (2026-08-20): master switch "Artificial intelligence" nas Settings (desliga CLIP local, labeling cloud, indexação automática e esconde labels/entradas de IA, sem apagar dados); pipeline local de thumbnails ~512px (`src/data/thumbnails.ts`, tabela `thumbnails`, `PhotoCell` usa preview com fallback); modo encriptado offline (`docs/plans/13-encrypted-mode.md`) — fotos cifradas AES-256-GCM com chave derivada de senha (PBKDF2 200k), removidas da galeria do sistema, galeria interna com previews descriptografados sob demanda, original decriptado ao abrir, cache de sessão purge no lock/background, disable decripta tudo de volta |
+| 14 Web & Desktop | 6 | ✅ **Implementado** (2026-10-03): cliente cloud completo em `web/` — Next.js + shadcn/ui + styled-components, Electron desktop com servidor embutido e instalador NSIS; CORS configurável no API (D16); contrato REST portado para `web/src/data`. Galeria virtualizada + viewer, upload (picker/drop/paste), ZIP import, billing sandbox, settings/tema. Verificação: unit 14/14, E2E Playwright 3/3, smoke real contra o backend (upload→worker→thumbnail autenticada). Detalhes no doc 14 §7 |
 
 > Atualizar esta tabela ao concluir cada estágio.
 
@@ -242,6 +251,7 @@ Dividas técnicas conhecidas da implementação atual:
 | D13 | Storage desacoplado em serviço próprio (`iPhotos.Storage` + `iPhotos.Storage.Host` na mesma solution, isolado da lógica principal): API simples "payload → URL" (PUT objeto → URL assinada/presigned), providers FileSystem, S3-compatible (AWS/Wasabi/MinIO/B2/R2 via endpoint+path-style), WebDAV e Google Drive (SA); auth `X-Api-Key`, URLs assinadas (HMAC ou SigV4), guard SSRF para endpoints privados; o backend consome via `IBlobStorage` Http (DB continua guardando keys) | ✔ Implementado 2026-09-30 |
 | D14 | Upload de fotos **direto ao storage com URL presigned** (`upload-ticket` → PUT SigV4 direto do app ao S3 → `complete`), encerrando o proxy api→storage que atravessava túnel+rede 2× por foto. Dedup por hash do cliente (mesma confiança D11), quota reservada no ticket, estado `PendingUpload` + sweeper de órfãos (24 h) no worker; multipart `/api/photos` permanece como fallback (storages sem presign → 501). Otimizações no mesmo pacote: worker baixa o original 1× (antes 3×), poll 2 s → 0,5 s, backup com 3 uploads paralelos no app | ✔ Implementado 2026-10-03 |
 | D15 | Billing: **abstração `IBillingProvider` + provider sandbox (`test`) no v1** — toda a infraestrutura (verificação server-side idempotente por token, tabela `billing_purchases`, expiração com grace, paywall) independe da loja; `GooglePlayBillingProvider`/Stripe entram depois sem tocar domínio/endpoints/app. Catálogo de produtos por config (preço nunca é regra do backend); produto v1: `iphotos.cloud.1tb.monthly` (1 TB, US$ 15/mês), mensal | ✔ Implementado 2026-10-03 |
+| D16 | **Web & Desktop: segundo cliente novo em `web/` (Next.js App Router + shadcn/ui + styled-components; Electron para desktop com servidor Next embutido)** — não é port do app Expo (reanimated v4, quick-crypto, onnx, media-library e file-system não rodam na web); reusa os módulos de contrato REST (`src/data`) por cópia adaptada. Auth: refresh token em localStorage na v1 (hardening httpOnly depois). Upload web: multipart (presigned D14 segue mobile-only até haver CORS no Storage.Host). CORS do API configurável por `Cors:AllowedOrigins` | ✔ Decidido 2026-10-03 (doc 14) |
 
 ## 7. Como usar estes documentos
 

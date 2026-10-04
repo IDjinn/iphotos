@@ -65,6 +65,9 @@ services:
       StorageService__ApiKey: ${IPHOTOS_STORAGE_API_KEY:-change-me-storage-api-key}
       StorageService__AllowPrivateNetworks: "true"
       Auth__Jwt__SigningKey: ${IPHOTOS_JWT_SIGNING_KEY:-change-me-in-production-32-bytes-minimum!!}
+      # Browser origins allowed to call the API (web app dev server, desktop shell).
+      Cors__AllowedOrigins__0: ${IPHOTOS_CORS_ORIGIN_WEB:-http://localhost:3000}
+      Cors__AllowedOrigins__1: ${IPHOTOS_CORS_ORIGIN_DESKTOP:-http://127.0.0.1:3210}
     # No volume: blobs live in the storage service.
     # Reachable on the LAN (large zip imports bypass the Cloudflare 100 MB body
     # cap via the LAN address); remote traffic keeps flowing through the

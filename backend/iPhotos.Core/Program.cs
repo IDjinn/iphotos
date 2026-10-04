@@ -33,6 +33,7 @@ builder.Services.AddOptions<Argon2HasherOptions>().Configure<IConfiguration>((o,
 builder.Services.AddOptions<ZipImportOptions>().Configure<IConfiguration>((o, c) => c.GetSection(ZipImportOptions.SectionName).Bind(o));
 builder.Services.AddOptions<BillingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(BillingOptions.SectionName).Bind(o));
 builder.Services.AddOptions<TestBillingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(TestBillingOptions.SectionName).Bind(o));
+builder.Services.AddOptions<CorsSettings>().Configure<IConfiguration>((o, c) => c.GetSection(CorsSettings.SectionName).Bind(o));
 
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<JwtOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<Argon2HasherOptions>>().Value);
@@ -61,6 +62,15 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
         };
     });
 builder.Services.AddAuthorization();
+
+// Browser clients (web app, desktop shell) reach the API only from configured origins;
+// native apps are unaffected by CORS. Empty list = no cross-origin access. The policy
+// delegate runs on first request, so late configuration overrides are honored.
+builder.Services.AddCors(options => options.AddPolicy(CorsSettings.PolicyName, policy =>
+{
+    var origins = builder.Configuration.GetSection(CorsSettings.SectionName).Get<CorsSettings>()?.AllowedOrigins ?? [];
+    policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+}));
 
 builder.Services.AddInfrastructure();
 
@@ -106,6 +116,7 @@ builder.WebHost.ConfigureKestrel(options =>
 var app = builder.Build();
 
 app.UseMiddleware<ExceptionMappingMiddleware>();
+app.UseCors(CorsSettings.PolicyName); // before rate limiting so preflight requests are never throttled
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

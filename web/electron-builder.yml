@@ -1,0 +1,18 @@
+appId: com.idjinn.iphotos
+productName: iPhotos
+directories:
+  output: dist-electron
+# The embedded Next server reads .next and node_modules from disk; asar would
+# break runtime file resolution.
+asar: false
+files:
+  - electron/**/*
+  - .next/**/*
+  - public/**/*
+  - package.json
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: true
+  perMachine: false
