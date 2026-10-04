@@ -14,7 +14,7 @@ public static class SupportedImageTypes
     };
 }
 
-public sealed record VariantFile(string BlobPath, string ContentType, long SizeBytes);
+public sealed record VariantFile(string BlobPath, string ContentType, long SizeBytes, string ContentHash);
 
 public sealed class PhotoService(
     IPhotoRepository photos,
@@ -227,14 +227,14 @@ public sealed class PhotoService(
 
         if (kind == VariantKind.Original)
         {
-            return new VariantFile(photo.OriginalBlobPath, photo.MimeType, photo.SizeBytes);
+            return new VariantFile(photo.OriginalBlobPath, photo.MimeType, photo.SizeBytes, photo.ContentHash);
         }
 
         var variant = (await variants.ListByPhotoAsync(photoId, cancellationToken))
             .FirstOrDefault(v => v.Kind == kind)
             ?? throw new NotFoundException($"{kind} variant for photo '{photoId}' is not ready yet.");
 
-        return new VariantFile(variant.BlobPath, MimeFromFormat(variant.Format), variant.SizeBytes);
+        return new VariantFile(variant.BlobPath, MimeFromFormat(variant.Format), variant.SizeBytes, photo.ContentHash);
     }
 
     private static Stream EnsureSeekable(Stream content) =>

@@ -4,6 +4,7 @@ using iPhotos.Application.Common;
 using iPhotos.Application.Services;
 using iPhotos.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 
 namespace iPhotos.Core.Endpoints;
 
@@ -91,6 +92,8 @@ public static class PhotoEndpoints
             Guid id,
             string kind,
             ClaimsPrincipal principal,
+            HttpRequest request,
+            HttpResponse response,
             PhotoService photos,
             IBlobStorage blobs,
             CancellationToken cancellationToken) =>
@@ -104,8 +107,23 @@ public static class PhotoEndpoints
             }
 
             var file = await photos.GetVariantFileAsync(principal.GetUserId(), id, variantKind, cancellationToken);
+
+            // Variant blobs are immutable once written (uploads are content-addressed and
+            // variants are generated a single time), so clients may cache aggressively and
+            // revalidate: a matching If-None-Match short-circuits before any storage hop.
+            var etagValue = $"\"{file.ContentHash}-{variantKind.ToString().ToLowerInvariant()}\"";
+            var etag = EntityTagHeaderValue.Parse(etagValue);
+            response.Headers.CacheControl = "private, max-age=31536000, immutable";
+            if (request.Headers.IfNoneMatch.Any(candidate =>
+                    EntityTagHeaderValue.TryParse(candidate, out var parsed)
+                    && parsed.Compare(etag, useStrongComparison: true)))
+            {
+                response.Headers.ETag = etagValue;
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
+
             var stream = await blobs.OpenReadAsync(file.BlobPath, cancellationToken);
-            return Results.Stream(stream, file.ContentType, enableRangeProcessing: true);
+            return Results.Stream(stream, file.ContentType, entityTag: etag, enableRangeProcessing: true);
         });
 
         app.MapGet("/api/usage", async (

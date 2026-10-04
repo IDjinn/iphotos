@@ -96,6 +96,16 @@ public sealed class PhotosFlowTests : IClassFixture<iPhotosApiFactory>
         thumbImage.Width.ShouldBe(320);
         thumbImage.Height.ShouldBe(100);
 
+        // Blobs are immutable: the response carries cache directives, and revalidation
+        // with the ETag yields 304 without the body.
+        thumb.Headers.CacheControl!.ToString().ShouldContain("immutable");
+        thumb.Headers.ETag.ShouldNotBeNull();
+        using var revalidate = new HttpRequestMessage(HttpMethod.Get, $"/api/photos/{result.Photo.Id}/files/thumbnail");
+        revalidate.Headers.IfNoneMatch.Add(thumb.Headers.ETag!);
+        var notModified = await client.SendAsync(revalidate);
+        notModified.StatusCode.ShouldBe(HttpStatusCode.NotModified);
+        (await notModified.Content.ReadAsByteArrayAsync()).ShouldBeEmpty();
+
         // Original bytes round-trip untouched.
         var original = await client.GetAsync($"/api/photos/{result.Photo.Id}/files/original");
         original.StatusCode.ShouldBe(HttpStatusCode.OK);

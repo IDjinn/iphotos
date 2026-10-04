@@ -82,7 +82,7 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
 | `GET /api/photos` | Listagem paginada com filtros: `from`, `to`, `fileName` (contains, case-insensitive), `camera`, `page` (≥1), `pageSize` (1–100, default 20) |
 | `GET /api/photos/{id}` | Metadados completos + `variants[]` |
 | `DELETE /api/photos/{id}` | **204** — hard delete v1 (tombstones/GC são futuro, doc 03 §8) |
-| `GET /api/photos/{id}/files/{kind}` | `kind` = `original` \| `preview` \| `thumbnail` → stream (variantes em JPEG; original com mime original). Suporta Range. **404 se a variante ainda não foi gerada** |
+| `GET /api/photos/{id}/files/{kind}` | `kind` = `original` \| `preview` \| `thumbnail` → stream (variantes em JPEG; original com mime original). Suporta Range. **404 se a variante ainda não foi gerada**. Cacheável: `Cache-Control: private, max-age=31536000, immutable` + `ETag` (`{contentHash}-{kind}`) — `If-None-Match` correspondente responde **304** sem ler o blob (as blobs são imutáveis; grid/viewer não repetem o download) |
 | `GET /api/usage` | `{ usedBytes, quotaBytes, photoCount, variantCount }` — alimenta a barra de uso do doc 07 |
 | `GET /health` | `{ status, utcNow }` — sem auth, para o app checar conectividade |
 
