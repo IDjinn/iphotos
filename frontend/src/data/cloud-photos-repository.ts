@@ -77,8 +77,21 @@ export async function downloadFile(photoId: string, kind: VariantKind): Promise<
   return apiJson<ArrayBuffer>(`/api/photos/${photoId}/files/${kind}`, { responseType: 'arraybuffer' });
 }
 
-export async function listPhotos(page = 1, pageSize = 50): Promise<PagedResult<CloudPhoto>> {
-  return apiJson<PagedResult<CloudPhoto>>('/api/photos', { params: { page, pageSize } });
+export interface ListPhotosQuery {
+  page?: number;
+  pageSize?: number;
+  /** Restrict the listing to one media kind. */
+  mediaType?: CloudMediaType;
+  /** Sort field — 'takenAt' (default) or 'createdAt'. */
+  sortBy?: 'takenAt' | 'createdAt';
+  /** Sort direction — 'desc' (default) or 'asc'. */
+  order?: 'asc' | 'desc';
+}
+
+export async function listPhotos(query: ListPhotosQuery | number = 1, pageSize = 50): Promise<PagedResult<CloudPhoto>> {
+  const params: Record<string, unknown> =
+    typeof query === 'number' ? { page: query, pageSize } : { pageSize: 50, ...query };
+  return apiJson<PagedResult<CloudPhoto>>('/api/photos', { params });
 }
 
 /** Hashes of every photo already stored server-side — the dedup set for backups. */

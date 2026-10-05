@@ -72,6 +72,10 @@ export interface ListPhotosQuery {
   camera?: string;
   /** Restrict the listing to one media kind. */
   mediaType?: CloudMediaType;
+  /** Sort field — 'takenAt' (default) or 'createdAt'. */
+  sortBy?: "takenAt" | "createdAt";
+  /** Sort direction — 'desc' (default, newest first) or 'asc'. */
+  order?: "asc" | "desc";
 }
 
 export interface UploadOutcome {

@@ -6,6 +6,8 @@ import { useDeferredValue } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  ArrowDownWideNarrowIcon,
+  ArrowUpNarrowWideIcon,
   CalendarIcon,
   CloudUploadIcon,
   ImageOffIcon,
@@ -14,7 +16,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { deletePhoto, listPhotos } from "@/data/cloud-photos-repository";
+import { deletePhoto, listPhotos, type CloudMediaType } from "@/data/cloud-photos-repository";
 import { useViewerStore, useUploadDialogStore } from "@/stores/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +61,11 @@ interface GridLayout {
 
 const DEFAULT_LAYOUT: GridLayout = { columns: 3, cell: 152, gap: 4 };
 
+const MEDIA_OPTIONS: { value: CloudMediaType; label: string }[] = [
+  { value: "Photo", label: "Photos" },
+  { value: "Video", label: "Videos" },
+];
+
 export function GalleryScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -71,8 +78,10 @@ export function GalleryScreen() {
   const camera = searchParams.get("camera") ?? "";
   const from = searchParams.get("from") ?? "";
   const to = searchParams.get("to") ?? "";
-  const deferred = useDeferredValue({ q, camera, from, to });
-  const hasFilters = Boolean(q || camera || from || to);
+  const mediaType = searchParams.get("mediaType");
+  const order: "asc" | "desc" = searchParams.get("order") === "asc" ? "asc" : "desc";
+  const deferred = useDeferredValue({ q, camera, from, to, mediaType, order });
+  const hasFilters = Boolean(q || camera || from || to || mediaType);
 
   const photosQuery = useInfiniteQuery({
     queryKey: ["photos", deferred],
@@ -84,6 +93,13 @@ export function GalleryScreen() {
         camera: deferred.camera || undefined,
         from: deferred.from ? `${deferred.from}T00:00:00Z` : undefined,
         to: deferred.to ? `${deferred.to}T23:59:59Z` : undefined,
+        mediaType:
+          deferred.mediaType === "photo"
+            ? "Photo"
+            : deferred.mediaType === "video"
+              ? "Video"
+              : undefined,
+        order: deferred.order,
       }),
     initialPageParam: 1,
     getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
@@ -262,6 +278,53 @@ export function GalleryScreen() {
                     value={to}
                     onChange={(event) => setFilter("to", event.target.value)}
                   />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Media type</Label>
+                <div className="flex gap-1.5" role="group" aria-label="Filter by media type">
+                  <Button
+                    variant={mediaType ? "outline" : "default"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setFilter("mediaType", "")}
+                  >
+                    All
+                  </Button>
+                  {MEDIA_OPTIONS.map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={mediaType === option.value.toLowerCase() ? "default" : "outline"}
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setFilter("mediaType", option.value.toLowerCase())}
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Sort order</Label>
+                <div className="flex gap-1.5" role="group" aria-label="Sort order">
+                  <Button
+                    variant={order === "desc" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setFilter("order", "desc")}
+                  >
+                    <ArrowDownWideNarrowIcon aria-hidden className="size-3.5" />
+                    Newest first
+                  </Button>
+                  <Button
+                    variant={order === "asc" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setFilter("order", "asc")}
+                  >
+                    <ArrowUpNarrowWideIcon aria-hidden className="size-3.5" />
+                    Oldest first
+                  </Button>
                 </div>
               </div>
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

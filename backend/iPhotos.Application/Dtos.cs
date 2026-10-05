@@ -75,7 +75,9 @@ public sealed record PhotoFilter(
     string? Camera = null,
     int Page = 1,
     int PageSize = 20,
-    MediaType? MediaType = null);
+    MediaType? MediaType = null,
+    string? SortBy = null,
+    string? Order = null);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount)
 {

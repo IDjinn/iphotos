@@ -56,11 +56,29 @@ public sealed class PhotoRepository(PhotosDbContext db) : IPhotoRepository
             query = query.Where(p => p.MediaType == filter.MediaType);
         }
 
-        // taken_at DESC NULLS LAST (Postgres would otherwise sort NULLs first on DESC).
-        query = query
-            .OrderByDescending(p => p.TakenAt != null)
-            .ThenByDescending(p => p.TakenAt)
-            .ThenByDescending(p => p.CreatedAt);
+        // Sort field/direction come validated from the endpoint; defaults keep the
+        // historical newest-taken-first order. NULLS LAST on desc, NULLS FIRST on asc.
+        var descending = filter.Order is null || filter.Order == "desc";
+        if (filter.SortBy == "createdAt")
+        {
+            query = descending
+                ? query.OrderByDescending(p => p.CreatedAt)
+                : query.OrderBy(p => p.CreatedAt);
+        }
+        else if (descending)
+        {
+            query = query
+                .OrderByDescending(p => p.TakenAt != null)
+                .ThenByDescending(p => p.TakenAt)
+                .ThenByDescending(p => p.CreatedAt);
+        }
+        else
+        {
+            query = query
+                .OrderBy(p => p.TakenAt != null)
+                .ThenBy(p => p.TakenAt)
+                .ThenBy(p => p.CreatedAt);
+        }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query

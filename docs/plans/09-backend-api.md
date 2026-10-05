@@ -82,7 +82,7 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
 | `POST /api/photos` | Upload **multipart/form-data, campo `file`** (nome do arquivo preservado). EXIF + variantes gerados inline: → **201** `{ photo, duplicated: false }` já em `state: "Ready"` com as 3 variantes, ou **200** `{ photo, duplicated: true }` (mesmo SHA-256 já enviado por esta conta). **400** se os bytes não forem uma imagem decodificável. Fallback do fluxo direto |
 | `POST /api/photos/upload-ticket` | Upload **direto ao storage**: body JSON `{ fileName, contentType, sizeBytes, contentHash }`. Valida mime, dedup (hash) e quota **antes** dos bytes existirem; cria a foto em `state: "PendingUpload"` (reserva de quota) e → **201** `{ photo, duplicated: false, uploadUrl, expiresAt }` (PUT presigned, default 15 min) ou **200** `{ photo, duplicated: true }` sem URL. **501** quando o storage configurado não presigna (ex.: filesystem) → cliente cai no multipart |
 | `POST /api/photos/{id}/complete` | Confirma o PUT presigned: verifica existência do blob, move `PendingUpload → PendingProcessing`, enfileira o processamento → **200** PhotoDto. **404** se os bytes ainda não chegaram (cliente pode reenviar e completar depois) |
-| `GET /api/photos` | Listagem paginada com filtros: `from`, `to`, `fileName` (contains, case-insensitive), `camera`, `page` (≥1), `pageSize` (1–100, default 20) |
+| `GET /api/photos` | Listagem paginada com filtros: `from`, `to`, `fileName` (contains, case-insensitive), `camera`, `mediaType` (`photo`\|`video`), `sortBy` (`takenAt`\|`createdAt`, default `takenAt`), `order` (`asc`\|`desc`, default `desc`), `page` (≥1), `pageSize` (1–100, default 20) |
 | `GET /api/photos/{id}` | Metadados completos + `variants[]` |
 | `DELETE /api/photos/{id}` | **204** — hard delete v1 (tombstones/GC são futuro, doc 03 §8) |
 | `GET /api/photos/{id}/files/{kind}` | `kind` = `original` \| `preview` \| `thumbnail` → stream (variantes em JPEG; original com mime original). Suporta Range. **404 se a variante ainda não foi gerada**. Cacheável: `Cache-Control: private, max-age=31536000, immutable` + `ETag` (`{contentHash}-{kind}`) — `If-None-Match` correspondente responde **304** sem ler o blob (as blobs são imutáveis; grid/viewer não repetem o download) |
@@ -141,7 +141,10 @@ converter no cliente com `expo-image-manipulator`) e, desde 2026-10-05 (doc 15),
 ≤ 200 MB; quota excedida → **413**.
 
 **Listagem:** além dos filtros `from/to/fileName/camera`, `GET /api/photos` aceita
-`?mediaType=photo|video` (case-insensitive; valor inválido → 400).
+`?mediaType=photo|video` (case-insensitive; valor inválido → 400) e os parâmetros de
+ordenação `?sortBy=takenAt|createdAt` (default `takenAt`) com `?order=asc|desc`
+(default `desc`) — valor inválido → 400. Com `sortBy=takenAt`, fotos sem `taken_at`
+vão para o fim no `desc` e para o começo no `asc`, com fallback `created_at`.
 
 ### 3.3 Formato de erros e convenções
 

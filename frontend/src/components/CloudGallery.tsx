@@ -20,6 +20,15 @@ import { formatDuration } from '@/utils/format';
 
 const PAGE_SIZE = 60;
 
+type MediaTypeFilter = 'All' | 'Photo' | 'Video';
+type SortOrder = 'desc' | 'asc';
+
+const MEDIA_FILTERS: { value: MediaTypeFilter; label: string }[] = [
+  { value: 'All', label: 'All' },
+  { value: 'Photo', label: 'Photos' },
+  { value: 'Video', label: 'Videos' },
+];
+
 type ListState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
@@ -38,30 +47,46 @@ interface CloudGalleryProps {
  */
 export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryProps) {
   const { colors } = useTheme();
+  const [mediaFilter, setMediaFilter] = useState<MediaTypeFilter>('All');
+  const [order, setOrder] = useState<SortOrder>('desc');
   const [state, setState] = useState<ListState>({ status: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
   const [playing, setPlaying] = useState<CloudPhoto | null>(null);
 
-  const load = useCallback(async (page: number) => {
-    try {
-      const result = await listPhotos(page, PAGE_SIZE);
-      setState((current) => {
-        if (page === 1) {
-          return { status: 'ready', items: result.items, page, totalPages: result.totalPages, loadingMore: false };
-        }
-        if (current.status !== 'ready') return current;
-        const seen = new Set(current.items.map((item) => item.id));
-        const merged = [...current.items, ...result.items.filter((item) => !seen.has(item.id))];
-        return { status: 'ready', items: merged, page, totalPages: result.totalPages, loadingMore: false };
-      });
-    } catch (error) {
-      setState({ status: 'error', message: error instanceof Error ? error.message : 'Failed to load photos.' });
-    }
-  }, []);
+  const load = useCallback(
+    async (page: number, activeMedia: MediaTypeFilter, activeOrder: SortOrder) => {
+      try {
+        const result = await listPhotos({
+          page,
+          pageSize: PAGE_SIZE,
+          mediaType: activeMedia === 'All' ? undefined : activeMedia,
+          order: activeOrder,
+        });
+        setState((current) => {
+          if (page === 1) {
+            return { status: 'ready', items: result.items, page, totalPages: result.totalPages, loadingMore: false };
+          }
+          if (current.status !== 'ready') return current;
+          const seen = new Set(current.items.map((item) => item.id));
+          const merged = [...current.items, ...result.items.filter((item) => !seen.has(item.id))];
+          return { status: 'ready', items: merged, page, totalPages: result.totalPages, loadingMore: false };
+        });
+      } catch (error) {
+        setState({ status: 'error', message: error instanceof Error ? error.message : 'Failed to load photos.' });
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
-    listPhotos(1, PAGE_SIZE)
+    setState({ status: 'loading' });
+    listPhotos({
+      page: 1,
+      pageSize: PAGE_SIZE,
+      mediaType: mediaFilter === 'All' ? undefined : mediaFilter,
+      order,
+    })
       .then((result) => {
         if (cancelled) return;
         setState({ status: 'ready', items: result.items, page: 1, totalPages: result.totalPages, loadingMore: false });
@@ -73,18 +98,18 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [mediaFilter, order]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load(1);
+    await load(1, mediaFilter, order);
     setRefreshing(false);
   };
 
   const onEndReached = () => {
     if (state.status !== 'ready' || state.loadingMore || state.page >= state.totalPages) return;
     setState({ ...state, loadingMore: true });
-    void load(state.page + 1);
+    void load(state.page + 1, mediaFilter, order);
   };
 
   const confirmDelete = (photo: CloudPhoto) => {
@@ -96,7 +121,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
         style: 'destructive',
         onPress: async () => {
           await deletePhoto(photo.id).catch(() => Alert.alert('Delete failed', 'Try again later.'));
-          void load(1);
+          void load(1, mediaFilter, order);
         },
       },
     ]);
@@ -144,6 +169,52 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     ]);
   };
 
+  const setFilter = (next: MediaTypeFilter | SortOrder) => {
+    haptic('light');
+    if (next === 'desc' || next === 'asc') setOrder(next);
+    else setMediaFilter(next);
+  };
+
+  const filterHeader = (
+    <View style={styles.filterRow}>
+      {MEDIA_FILTERS.map((option) => (
+        <Pressable
+          key={option.value}
+          onPress={() => setFilter(option.value)}
+          accessibilityRole="button"
+          accessibilityLabel={`Show ${option.label.toLowerCase()}`}
+          accessibilityState={{ selected: mediaFilter === option.value }}
+          style={({ pressed }) => [
+            styles.chip,
+            mediaFilter === option.value && { backgroundColor: colors.accent, borderColor: colors.accent },
+            pressed && styles.chipPressed,
+          ]}
+        >
+          <Text
+            style={[
+              styles.chipText,
+              { color: mediaFilter === option.value ? colors.textInverse : colors.textSecondary },
+            ]}
+          >
+            {option.label}
+          </Text>
+        </Pressable>
+      ))}
+      <View style={styles.sortSpacer} />
+      <Pressable
+        onPress={() => setFilter(order === 'desc' ? 'asc' : 'desc')}
+        accessibilityRole="button"
+        accessibilityLabel={order === 'desc' ? 'Sort oldest first' : 'Sort newest first'}
+        style={({ pressed }) => [styles.chip, styles.sortChip, pressed && styles.chipPressed]}
+      >
+        <Icon name={order === 'desc' ? 'arrow-down' : 'arrow-up'} size={13} color={colors.textSecondary} />
+        <Text style={[styles.chipText, { color: colors.textSecondary }]}>
+          {order === 'desc' ? 'Newest' : 'Oldest'}
+        </Text>
+      </Pressable>
+    </View>
+  );
+
   if (state.status === 'loading') {
     return (
       <View style={styles.center}>
@@ -159,10 +230,10 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
           {state.message}
         </ThemedText>
         <Pressable
-          onPress={() => {
-            setState({ status: 'loading' });
-            void load(1);
-          }}
+        onPress={() => {
+          setState({ status: 'loading' });
+          void load(1, mediaFilter, order);
+        }}
           accessibilityLabel="Try again"
           accessibilityRole="button"
         >
@@ -177,11 +248,18 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
   }
 
   if (state.items.length === 0) {
+    const emptyByFilter =
+      mediaFilter === 'Photo'
+        ? 'No photos in the cloud yet.'
+        : mediaFilter === 'Video'
+          ? 'No videos in the cloud yet.'
+          : undefined;
     return (
       <View style={styles.center}>
+        {filterHeader}
         <Icon name="cloud-offline-outline" size={40} color={colors.iconInactive} />
         <ThemedText variant="bodySmall" color="secondary" style={styles.emptyText}>
-          {emptyHint ?? 'No photos or videos in the cloud yet — run a backup from Settings.'}
+          {emptyByFilter ?? emptyHint ?? 'No photos or videos in the cloud yet — run a backup from Settings.'}
         </ThemedText>
       </View>
     );
@@ -194,6 +272,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
         keyExtractor={(item) => item.id}
         numColumns={3}
         contentContainerStyle={contentContainerStyle}
+        ListHeaderComponent={filterHeader}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.5}
         refreshing={refreshing}
@@ -278,4 +357,25 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
   footer: { marginVertical: 16 },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(128,128,128,0.35)',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  chipPressed: { opacity: 0.7 },
+  chipText: { fontSize: 12, fontWeight: '600' },
+  sortSpacer: { flex: 1 },
+  sortChip: { alignSelf: 'flex-start' },
 });

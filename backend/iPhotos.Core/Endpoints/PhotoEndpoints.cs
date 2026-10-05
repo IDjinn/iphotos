@@ -64,6 +64,8 @@ public static class PhotoEndpoints
             [FromQuery] string? fileName,
             [FromQuery] string? camera,
             [FromQuery] string? mediaType,
+            [FromQuery] string? sortBy,
+            [FromQuery] string? order,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             CancellationToken cancellationToken = default) =>
@@ -85,8 +87,30 @@ public static class PhotoEndpoints
                 parsedMediaType = parsed;
             }
 
+            // Normalize to the canonical camelCase values the repository switches on.
+            sortBy = sortBy?.Trim().ToLowerInvariant() switch
+            {
+                null or "" => "takenAt",
+                "takenat" => "takenAt",
+                "createdat" => "createdAt",
+                var other => other,
+            };
+            if (sortBy is not ("takenAt" or "createdAt"))
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"Unknown sort field '{sortBy}'. Use 'takenAt' or 'createdAt'.",
+                });
+            }
+
+            order = string.IsNullOrWhiteSpace(order) ? "desc" : order.Trim().ToLowerInvariant();
+            if (order is not ("asc" or "desc"))
+            {
+                return Results.BadRequest(new { error = $"Unknown order '{order}'. Use 'asc' or 'desc'." });
+            }
+
             var filter = new PhotoFilter(
-                principal.GetUserId(), from, to, fileName, camera, page, pageSize, parsedMediaType);
+                principal.GetUserId(), from, to, fileName, camera, page, pageSize, parsedMediaType, sortBy, order);
             return Results.Ok(await photos.ListAsync(principal.GetUserId(), filter, cancellationToken));
         });
 
