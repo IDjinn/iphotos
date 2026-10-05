@@ -102,6 +102,7 @@ web/
 - [x] Upload: picker + drag-and-drop (superfície inteira, estado dragover) + paste; validação única
 - [x] Fila de upload com progresso por arquivo; erros neutros (413 → paywall)
 - [x] `/import`: upload de ZIP + polling do job (contadores)
+- [x] `/import` múltiplos zips: uploads em sequência sem esperar o processamento (job enfileirado no backend); polling concorrente por job, falha de um arquivo não para o lote
 - [x] `/subscription`: catálogo + status + verify sandbox; usage/quota na settings
 - [x] `/settings`: conta (usage, logout), tema (dark/light/system)
 - Aceite: três caminhos de input com a mesma validação; paywall aciona por quota excedida. ✔
