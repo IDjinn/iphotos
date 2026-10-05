@@ -44,6 +44,15 @@ public sealed class ZipImportRepository(PhotosDbContext db) : IZipImportReposito
     public Task<ZipImportJob?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default)
         => db.ZipImportJobs.FirstOrDefaultAsync(j => j.Id == id && j.OwnerId == ownerId, cancellationToken);
 
+    public async Task<IReadOnlyList<ZipImportJob>> ListRecentForOwnerAsync(
+        Guid ownerId, int limit, CancellationToken cancellationToken = default)
+        => await db.ZipImportJobs
+            .AsNoTracking()
+            .Where(j => j.OwnerId == ownerId)
+            .OrderByDescending(j => j.CreatedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
     public async Task<int> RequeueStuckAsync(CancellationToken cancellationToken = default)
         => await db.Database.ExecuteSqlAsync(
             $"UPDATE zip_import_jobs SET state = 'Queued' WHERE state = 'Processing'");

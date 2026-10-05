@@ -112,6 +112,13 @@ export async function getZipImport(jobId: string): Promise<ZipImportJob> {
   return apiJson<ZipImportJob>(`/api/imports/${jobId}`);
 }
 
+/** Recent import jobs for the signed-in user, newest first. The import panel
+ * seeds its queue view from this on mount, so a page reload doesn't lose track
+ * of archives that are queued or still importing server-side. */
+export function listZipImports(): Promise<ZipImportJob[]> {
+  return apiJson<ZipImportJob[]>("/api/imports");
+}
+
 export interface PollOptions {
   /** Delay between polls in ms (default 3 s). */
   intervalMs?: number;

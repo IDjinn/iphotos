@@ -210,6 +210,14 @@ public sealed class InMemoryZipImportRepository : IZipImportRepository
     public Task<ZipImportJob?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default)
         => Task.FromResult(Jobs.FirstOrDefault(j => j.Id == id && j.OwnerId == ownerId));
 
+    public Task<IReadOnlyList<ZipImportJob>> ListRecentForOwnerAsync(
+        Guid ownerId, int limit, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<ZipImportJob>>(
+            Jobs.Where(j => j.OwnerId == ownerId)
+                .OrderByDescending(j => j.CreatedAt)
+                .Take(limit)
+                .ToList());
+
     public Task<int> RequeueStuckAsync(CancellationToken cancellationToken = default)
     {
         var count = 0;

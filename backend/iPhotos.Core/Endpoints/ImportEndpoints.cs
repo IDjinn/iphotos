@@ -15,6 +15,9 @@ namespace iPhotos.Core.Endpoints;
 
 public static class ImportEndpoints
 {
+    /// <summary>Cap for the recent-imports list served by GET /api/imports.</summary>
+    private const int RecentImportsLimit = 50;
+
     public static IEndpointRouteBuilder MapImportEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/imports").WithTags("Imports").RequireAuthorization();
@@ -87,6 +90,18 @@ public static class ImportEndpoints
         })
         .DisableAntiforgery()
         .WithName("ImportZip");
+
+        group.MapGet("/", async (
+            ClaimsPrincipal principal,
+            IZipImportRepository imports,
+            CancellationToken cancellationToken) =>
+        {
+            // Recent history for the import panel: the web client restores the
+            // queue view (and polling of active jobs) from this after a reload.
+            var jobs = await imports.ListRecentForOwnerAsync(
+                principal.GetUserId(), RecentImportsLimit, cancellationToken);
+            return Results.Ok(jobs.Select(ZipImportJobDto.From));
+        });
 
         group.MapGet("/{id:guid}", async (
             Guid id,

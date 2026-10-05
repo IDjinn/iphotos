@@ -73,6 +73,13 @@ public interface IZipImportRepository
     Task<ZipImportJob?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists the owner's most recent import jobs, newest first. Backs the web
+    /// import panel, which restores the queue view (and its polling) after a
+    /// page reload.
+    /// </summary>
+    Task<IReadOnlyList<ZipImportJob>> ListRecentForOwnerAsync(Guid ownerId, int limit, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Moves jobs stranded in Processing (worker crash mid-import) back to Queued.
     /// Safe by design: hash dedup turns already-imported entries into duplicates.
     /// </summary>

@@ -205,4 +205,37 @@ public sealed class ImportsFlowTests : IClassFixture<iPhotosApiFactory>
         var response = await _factory.CreateClient().GetAsync($"/api/imports/{Guid.NewGuid()}");
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
+
+    [Fact]
+    public async Task ListImports_ReturnsOwnersJobsNewestFirst()
+    {
+        using var owner = await NewAuthorizedClientAsync();
+        using var intruder = await NewAuthorizedClientAsync();
+
+        var first = await StartImportAsync(owner, BuildZip(("a.jpg", Jpeg(64, 64))), "first.zip");
+        var second = await StartImportAsync(owner, BuildZip(("b.jpg", Jpeg(64, 64))), "second.zip");
+        var intruderJob = await StartImportAsync(intruder, BuildZip(("c.jpg", Jpeg(64, 64))), "intruder.zip");
+        await WaitUntilFinishedAsync(owner, first);
+        await WaitUntilFinishedAsync(owner, second);
+
+        var response = await owner.GetAsync("/api/imports");
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var jobs = (await response.Content.ReadFromJsonAsync<List<ZipImportJobDto>>(JsonOptions.Web))!;
+
+        // The list is owner-scoped: the intruder's job never appears.
+        jobs.Select(j => j.Id).ShouldNotContain(intruderJob);
+        var firstIndex = jobs.FindIndex(j => j.Id == first);
+        var secondIndex = jobs.FindIndex(j => j.Id == second);
+        firstIndex.ShouldBeGreaterThanOrEqualTo(0);
+        secondIndex.ShouldBeGreaterThanOrEqualTo(0);
+        // Newest first: the second import was created after the first one.
+        secondIndex.ShouldBeLessThan(firstIndex);
+    }
+
+    [Fact]
+    public async Task ListImports_WithoutAuth_Returns401()
+    {
+        var response = await _factory.CreateClient().GetAsync("/api/imports");
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
 }

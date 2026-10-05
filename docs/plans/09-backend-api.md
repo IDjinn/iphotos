@@ -185,6 +185,11 @@ Resposta **202**: `{ "jobId": "<guid>" }`. O processamento é assíncrono (worke
 > compose). Um experimento de upload chunked via túnel foi implementado e revertido
 > no mesmo dia — não funcionou como esperado.
 
+**`GET /api/imports`** (2026-10-05) — lista os jobs de import mais recentes do próprio
+usuário, **mais novos primeiro** (teto de 50; sem paginação — alimenta a restauração da
+fila no painel web após reload). Mesmo JSON de `GET /api/imports/{id}`, como array.
+Outro owner nunca aparece na lista (escopo por owner no repositório).
+
 **`GET /api/imports/{id}`** — status do job do próprio usuário (outro owner → **404**):
 
 ```json
