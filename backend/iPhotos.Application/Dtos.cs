@@ -17,9 +17,11 @@ public sealed record PhotoDto(
     Guid OwnerId,
     string FileName,
     string MimeType,
+    MediaType MediaType,
     long SizeBytes,
     int? Width,
     int? Height,
+    double? DurationSeconds,
     DateTimeOffset? TakenAt,
     string? CameraMake,
     string? CameraModel,
@@ -38,9 +40,11 @@ public sealed record PhotoDto(
         photo.OwnerId,
         photo.FileName,
         photo.MimeType,
+        photo.MediaType,
         photo.SizeBytes,
         photo.Width,
         photo.Height,
+        photo.DurationSeconds,
         photo.TakenAt,
         photo.CameraMake,
         photo.CameraModel,
@@ -70,7 +74,8 @@ public sealed record PhotoFilter(
     string? FileName = null,
     string? Camera = null,
     int Page = 1,
-    int PageSize = 20);
+    int PageSize = 20,
+    MediaType? MediaType = null);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount)
 {
@@ -89,6 +94,7 @@ public sealed record ZipImportJobDto(
     int TotalEntries,
     int ProcessedEntries,
     int Imported,
+    int VideosImported,
     int Duplicated,
     int Ignored,
     int VideosIgnored,
@@ -105,6 +111,7 @@ public sealed record ZipImportJobDto(
         job.TotalEntries,
         job.ProcessedEntries,
         job.Imported,
+        job.VideosImported,
         job.Duplicated,
         job.Ignored,
         job.VideosIgnored,

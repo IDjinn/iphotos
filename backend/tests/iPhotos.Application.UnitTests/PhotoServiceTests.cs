@@ -18,10 +18,11 @@ public class PhotoServiceTests
     private readonly FakeBlobStorage _blobs = new();
     private readonly FakeUnitOfWork _uow = new();
     private readonly Sha256ContentHasher _hasher = new();
+    private readonly FakeVideoProcessor _video = new();
 
     private PhotoService NewService() => new(
         _photos, _variants, _jobs, _users, _blobs, _hasher, new FakeImageVariantGenerator(),
-        new FakeExifExtractor(), _uow, new StubDateTimeProvider(Now));
+        new FakeExifExtractor(), _video, _uow, new StubDateTimeProvider(Now));
 
     private User NewUser(long quota = 1_000_000) =>
         User.Create($"user-{Guid.NewGuid():N}@example.com", "hash", null, quota, Now) is { } user
@@ -104,12 +105,67 @@ public class PhotoServiceTests
     [InlineData("application/pdf")]
     [InlineData("image/heic")]
     [InlineData("text/plain")]
+    [InlineData("video/x-flv")]
     public async Task Upload_UnsupportedContentType_Throws(string contentType)
     {
         var owner = NewUser();
 
         await Should.ThrowAsync<ValidationException>(
             () => NewService().UploadAsync(owner.Id, "file", contentType, JpegBytes()));
+    }
+
+    // ── Video uploads ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Upload_VideoContent_StoresOriginalPosterVariantsAndDuration()
+    {
+        var owner = NewUser();
+        var content = new MemoryStream(Encoding.UTF8.GetBytes("fake-video-bytes"));
+
+        var result = await NewService().UploadAsync(owner.Id, "clip.mp4", "video/mp4", content);
+
+        result.Duplicated.ShouldBeFalse();
+        result.Photo.State.ShouldBe(PhotoState.Ready);
+        result.Photo.MediaType.ShouldBe(MediaType.Video);
+        result.Photo.MimeType.ShouldBe("video/mp4");
+        result.Photo.DurationSeconds.ShouldBe(_video.Info.DurationSeconds);
+        result.Photo.Width.ShouldBe(1920);
+        result.Photo.Height.ShouldBe(1080);
+
+        var photo = _photos.Photos.Single();
+        photo.OriginalBlobPath.ShouldBe($"{owner.Id}/{photo.Id}/original.mp4");
+        _blobs.Blobs.Keys.ShouldContain(photo.OriginalBlobPath);
+        // Poster feeds the regular pipeline: same preview/thumbnail paths as photos.
+        _blobs.Blobs.Keys.ShouldContain($"{owner.Id}/{photo.Id}/preview.jpg");
+        _blobs.Blobs.Keys.ShouldContain($"{owner.Id}/{photo.Id}/thumb.jpg");
+        var original = _variants.Variants.Single(v => v.Kind == VariantKind.Original);
+        original.Format.ShouldBe("mp4");
+        _jobs.Jobs.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Upload_SameVideoTwice_ReturnsExistingAsDuplicated()
+    {
+        var owner = NewUser();
+        var bytes = Encoding.UTF8.GetBytes("fake-video-bytes");
+
+        var first = await NewService().UploadAsync(owner.Id, "one.mp4", "video/mp4", new MemoryStream(bytes));
+        var second = await NewService().UploadAsync(owner.Id, "two.mp4", "video/mp4", new MemoryStream(bytes));
+
+        second.Duplicated.ShouldBeTrue();
+        second.Photo.Id.ShouldBe(first.Photo.Id);
+        _photos.Photos.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task Upload_VideoOverQuota_Throws()
+    {
+        var owner = NewUser(quota: 5);
+
+        await Should.ThrowAsync<QuotaExceededException>(
+            () => NewService().UploadAsync(
+                owner.Id, "big.mp4", "video/mp4",
+                new MemoryStream(Encoding.UTF8.GetBytes("a-video-much-longer-than-the-quota"))));
     }
 
     [Fact]
@@ -310,12 +366,26 @@ public class PhotoServiceTests
     [Theory]
     [InlineData("application/pdf")]
     [InlineData("image/heic")]
+    [InlineData("video/x-flv")]
     public async Task CreateUploadTicket_UnsupportedContentType_Throws(string contentType)
     {
         var owner = NewUser();
 
         await Should.ThrowAsync<ValidationException>(
             () => NewService().CreateUploadTicketAsync(owner.Id, "file", contentType, 100, "hash-1"));
+    }
+
+    [Fact]
+    public async Task CreateUploadTicket_VideoContent_ReservesQuotaAndPresigns()
+    {
+        var owner = NewUser();
+
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "clip.mp4", "video/mp4", 500, "hash-v1");
+
+        ticket.Duplicated.ShouldBeFalse();
+        ticket.Photo.MediaType.ShouldBe(MediaType.Video);
+        ticket.UploadUrl.ShouldNotBeNull();
+        _photos.Photos.Single().MediaType.ShouldBe(MediaType.Video);
     }
 
     [Theory]

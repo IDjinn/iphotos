@@ -65,12 +65,14 @@ export interface EnqueueResult {
   rejected: number;
 }
 
-/** Contract limits (docs/plans/09 §3.2): image mime types, 200 MB per file. */
+/** Contract limits (docs/plans/09 §3.2): photo/video mime types, 200 MB per file. */
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 function validateUpload(file: File): string | null {
-  if (!file.type.startsWith("image/")) return "Only image files can be uploaded.";
-  if (file.size > MAX_UPLOAD_BYTES) return "Images can be up to 200 MB.";
+  const isImage = file.type.startsWith("image/");
+  const isVideo = file.type.startsWith("video/");
+  if (!isImage && !isVideo) return "Only photos and videos can be uploaded.";
+  if (file.size > MAX_UPLOAD_BYTES) return isVideo ? "Videos can be up to 200 MB." : "Photos can be up to 200 MB.";
   return null;
 }
 

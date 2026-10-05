@@ -19,9 +19,11 @@ export interface ZipImportJob {
   totalEntries: number;
   processedEntries: number;
   imported: number;
+  /** Video entries ingested by the import (subset of imported). */
+  videosImported: number;
   duplicated: number;
   ignored: number;
-  /** Video entries skipped by the import (video hosting is not supported yet). */
+  /** Video entries skipped by the import (legacy counter; video hosting is supported). */
   videosIgnored: number;
   failed: number;
   error?: string;

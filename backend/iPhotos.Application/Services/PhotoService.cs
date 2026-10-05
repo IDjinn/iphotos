@@ -14,6 +14,36 @@ public static class SupportedImageTypes
     };
 }
 
+public static class SupportedVideoTypes
+{
+    public static readonly IReadOnlySet<string> MimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "video/mp4",       // .mp4, .m4v
+        "video/quicktime", // .mov
+        "video/webm",
+        "video/x-msvideo",
+        "video/3gpp",
+    };
+}
+
+public static class SupportedMediaTypes
+{
+    private static readonly string SupportedList =
+        $"{string.Join(", ", SupportedImageTypes.MimeTypes)}, {string.Join(", ", SupportedVideoTypes.MimeTypes)}";
+
+    public static void EnsureSupported(string contentType)
+    {
+        if (!SupportedImageTypes.MimeTypes.Contains(contentType)
+            && !SupportedVideoTypes.MimeTypes.Contains(contentType))
+        {
+            throw new ValidationException($"Unsupported content type '{contentType}'. Supported: {SupportedList}.");
+        }
+    }
+
+    public static MediaType KindOf(string contentType) =>
+        SupportedVideoTypes.MimeTypes.Contains(contentType) ? MediaType.Video : MediaType.Photo;
+}
+
 public sealed record VariantFile(string BlobPath, string ContentType, long SizeBytes, string ContentHash);
 
 /// <summary>
@@ -43,6 +73,7 @@ public sealed class PhotoService(
     IContentHasher contentHasher,
     IImageVariantGenerator variantGenerator,
     IExifExtractor exifExtractor,
+    IVideoProcessor videoProcessor,
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime)
 {
@@ -62,11 +93,7 @@ public sealed class PhotoService(
             throw new ValidationException("File name is required.");
         }
 
-        if (!SupportedImageTypes.MimeTypes.Contains(contentType))
-        {
-            throw new ValidationException(
-                $"Unsupported content type '{contentType}'. Supported: image/jpeg, image/png, image/webp.");
-        }
+        SupportedMediaTypes.EnsureSupported(contentType);
 
         if (sizeBytes <= 0)
         {
@@ -94,7 +121,9 @@ public sealed class PhotoService(
                 $"Upload of {sizeBytes} bytes would exceed the storage quota of {user.StorageQuotaBytes} bytes.");
         }
 
-        var photo = Photo.CreatePendingUpload(ownerId, contentHash, fileName, contentType, sizeBytes, dateTime.UtcNow);
+        var photo = Photo.CreatePendingUpload(
+            ownerId, contentHash, fileName, contentType, sizeBytes, dateTime.UtcNow,
+            SupportedMediaTypes.KindOf(contentType));
         photo.OriginalBlobPath = BlobPaths.Original(ownerId, photo.Id, fileName);
 
         // The ticket reserves the quota by persisting the PendingUpload row; the presigned
@@ -144,10 +173,11 @@ public sealed class PhotoService(
             throw new ValidationException("File name is required.");
         }
 
-        if (!SupportedImageTypes.MimeTypes.Contains(contentType))
+        SupportedMediaTypes.EnsureSupported(contentType);
+
+        if (SupportedVideoTypes.MimeTypes.Contains(contentType))
         {
-            throw new ValidationException(
-                $"Unsupported content type '{contentType}'. Supported: image/jpeg, image/png, image/webp.");
+            return await UploadVideoAsync(ownerId, fileName, contentType, content, seed, cancellationToken);
         }
 
         var content2 = EnsureSeekable(content);
@@ -222,6 +252,106 @@ public sealed class PhotoService(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new PhotoUploadResult(ToDto(photo, variantRows.Select(ToVariantDto).ToList()), Duplicated: false);
+    }
+
+    /// <summary>
+    /// Video ingest (multipart and zip import): the bytes go to a temp file (seekable,
+    /// out of the large-object heap), ffprobe/ffmpeg produce the metadata and the poster
+    /// frame, and the derived Preview/Thumbnail variants are the poster resized by the
+    /// regular image pipeline. The original is never transcoded.
+    /// </summary>
+    private async Task<PhotoUploadResult> UploadVideoAsync(
+        Guid ownerId,
+        string fileName,
+        string contentType,
+        Stream content,
+        PhotoImportSeed? seed,
+        CancellationToken cancellationToken)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), $"iphotos-upload-{Guid.NewGuid():N}{Path.GetExtension(fileName)}");
+        try
+        {
+            await using (var target = File.Create(tempPath))
+            {
+                await content.CopyToAsync(target, cancellationToken);
+            }
+
+            await using var videoFile = File.OpenRead(tempPath);
+            var hash = contentHasher.ComputeHash(videoFile);
+
+            var existing = await photos.FindByContentHashAsync(ownerId, hash, cancellationToken);
+            if (existing is not null)
+            {
+                return new PhotoUploadResult(ToDto(existing, []), Duplicated: true);
+            }
+
+            var user = await users.GetByIdAsync(ownerId, cancellationToken)
+                ?? throw new NotFoundException($"User '{ownerId}' was not found.");
+
+            var usage = await photos.GetUsageAsync(ownerId, cancellationToken);
+            if (usage.UsedBytes + videoFile.Length > user.StorageQuotaBytes)
+            {
+                throw new QuotaExceededException(
+                    $"Upload of {videoFile.Length} bytes would exceed the storage quota of {user.StorageQuotaBytes} bytes.");
+            }
+
+            var photo = Photo.Create(ownerId, hash, fileName, contentType, videoFile.Length, dateTime.UtcNow, MediaType.Video);
+            photo.OriginalBlobPath = BlobPaths.Original(ownerId, photo.Id, fileName);
+            if (seed is { HasAny: true })
+            {
+                photo.SeedImportMetadata(seed.TakenAt, seed.GpsLatitude, seed.GpsLongitude, seed.Title, seed.Description);
+            }
+
+            photo.MarkProcessing(dateTime.UtcNow);
+            var processed = await videoProcessor.ProcessAsync(videoFile, cancellationToken);
+
+            videoFile.Position = 0;
+            await blobStorage.PutAsync(photo.OriginalBlobPath, videoFile, cancellationToken);
+
+            var previewPath = BlobPaths.Preview(ownerId, photo.Id);
+            var thumbnailPath = BlobPaths.Thumbnail(ownerId, photo.Id);
+            processed.Poster.Content.Position = 0;
+            var preview = await variantGenerator.GenerateAsync(processed.Poster.Content, VariantKind.Preview, cancellationToken);
+            processed.Poster.Content.Position = 0;
+            var thumbnail = await variantGenerator.GenerateAsync(processed.Poster.Content, VariantKind.Thumbnail, cancellationToken);
+            await blobStorage.PutAsync(previewPath, preview.Content, cancellationToken);
+            await blobStorage.PutAsync(thumbnailPath, thumbnail.Content, cancellationToken);
+
+            // Photo row goes into the context before its variants: PhotoVariant carries
+            // only the FK value (no navigation), so EF inserts in add order and the
+            // variant rows would violate the FK if they were tracked first.
+            await photos.AddAsync(photo, cancellationToken);
+
+            var metadata = new PhotoMetadata(
+                processed.Info.Width, processed.Info.Height, processed.Info.TakenAt,
+                null, null, null, null, processed.Info.DurationSeconds);
+            var variantRows = new[]
+            {
+                PhotoVariant.Create(
+                    photo.Id, VariantKind.Original, photo.OriginalBlobPath,
+                    metadata.Width, metadata.Height, photo.SizeBytes,
+                    VariantFormats.FromMime(photo.MimeType), dateTime.UtcNow),
+                PhotoVariant.Create(
+                    photo.Id, VariantKind.Preview, previewPath,
+                    preview.Width, preview.Height, preview.SizeBytes, preview.Format, dateTime.UtcNow),
+                PhotoVariant.Create(
+                    photo.Id, VariantKind.Thumbnail, thumbnailPath,
+                    thumbnail.Width, thumbnail.Height, thumbnail.SizeBytes, thumbnail.Format, dateTime.UtcNow),
+            };
+            foreach (var variant in variantRows)
+            {
+                await variants.AddAsync(variant, cancellationToken);
+            }
+
+            photo.MarkReady(metadata, dateTime.UtcNow);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return new PhotoUploadResult(ToDto(photo, variantRows.Select(ToVariantDto).ToList()), Duplicated: false);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
     }
 
     public async Task<PhotoDto> GetAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
@@ -318,6 +448,11 @@ public sealed class PhotoService(
         "jpeg" or "jpg" => "image/jpeg",
         "png" => "image/png",
         "webp" => "image/webp",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "avi" => "video/x-msvideo",
+        "3gp" => "video/3gpp",
         _ => "application/octet-stream",
     };
 

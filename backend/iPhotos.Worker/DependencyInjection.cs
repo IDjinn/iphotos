@@ -22,10 +22,14 @@ public static class DependencyInjection
             (options, configuration) => configuration.GetSection(OrphanSweepOptions.SectionName).Bind(options));
         services.AddOptions<ImagingOptions>().Configure<IConfiguration>(
             (options, configuration) => configuration.GetSection(ImagingOptions.SectionName).Bind(options));
+        services.AddOptions<VideoProcessorOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(VideoProcessorOptions.SectionName).Bind(options));
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<ImagingOptions>>().Value);
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<VideoProcessorOptions>>().Value);
 
         services.AddSingleton<IImageVariantGenerator, ImageSharpVariantGenerator>();
         services.AddSingleton<IExifExtractor, ImageSharpExifExtractor>();
+        services.AddSingleton<IVideoProcessor, FfmpegVideoProcessor>();
         services.AddScoped<VariantProcessingHandler>();
         return services;
     }

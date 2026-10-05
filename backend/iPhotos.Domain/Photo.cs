@@ -18,6 +18,12 @@ public enum VariantKind
     Thumbnail,
 }
 
+public enum MediaType
+{
+    Photo,
+    Video,
+}
+
 public sealed record PhotoMetadata(
     int Width,
     int Height,
@@ -25,7 +31,8 @@ public sealed record PhotoMetadata(
     string? CameraMake,
     string? CameraModel,
     double? GpsLatitude,
-    double? GpsLongitude);
+    double? GpsLongitude,
+    double? DurationSeconds = null);
 
 public sealed class Photo
 {
@@ -34,9 +41,13 @@ public sealed class Photo
     public string ContentHash { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public string MimeType { get; set; } = string.Empty;
+    public MediaType MediaType { get; set; } = MediaType.Photo;
     public long SizeBytes { get; set; }
     public int? Width { get; set; }
     public int? Height { get; set; }
+
+    /// <summary>Playback length in seconds; videos only.</summary>
+    public double? DurationSeconds { get; set; }
     public DateTimeOffset? TakenAt { get; set; }
     public string? CameraMake { get; set; }
     public string? CameraModel { get; set; }
@@ -61,13 +72,15 @@ public sealed class Photo
         string fileName,
         string mimeType,
         long sizeBytes,
-        DateTimeOffset now) => new()
+        DateTimeOffset now,
+        MediaType mediaType = MediaType.Photo) => new()
     {
         Id = Guid.NewGuid(),
         OwnerId = ownerId,
         ContentHash = contentHash,
         FileName = fileName,
         MimeType = mimeType,
+        MediaType = mediaType,
         SizeBytes = sizeBytes,
         State = PhotoState.PendingProcessing,
         CreatedAt = now,
@@ -84,13 +97,15 @@ public sealed class Photo
         string fileName,
         string mimeType,
         long sizeBytes,
-        DateTimeOffset now) => new()
+        DateTimeOffset now,
+        MediaType mediaType = MediaType.Photo) => new()
     {
         Id = Guid.NewGuid(),
         OwnerId = ownerId,
         ContentHash = contentHash,
         FileName = fileName,
         MimeType = mimeType,
+        MediaType = mediaType,
         SizeBytes = sizeBytes,
         State = PhotoState.PendingUpload,
         CreatedAt = now,
@@ -128,6 +143,7 @@ public sealed class Photo
 
         Width = metadata.Width;
         Height = metadata.Height;
+        DurationSeconds = metadata.DurationSeconds;
 
         // EXIF fills gaps only: values seeded at import time (Google Takeout sidecars
         // or date folders) are authoritative and must not be clobbered by a null EXIF.

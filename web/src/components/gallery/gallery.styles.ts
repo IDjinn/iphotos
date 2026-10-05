@@ -130,6 +130,28 @@ export const CellBadge = styled.span`
   backdrop-filter: blur(4px);
 `;
 
+export const VideoBadge = styled.span`
+  position: absolute;
+  bottom: 0.375rem;
+  right: 0.375rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  border-radius: calc(var(--radius) - 4px);
+  background: color-mix(in oklab, var(--background) 70%, transparent);
+  color: var(--foreground);
+  backdrop-filter: blur(4px);
+
+  svg {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+`;
+
 export const SkeletonGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));

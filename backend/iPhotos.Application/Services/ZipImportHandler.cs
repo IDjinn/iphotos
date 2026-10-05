@@ -16,15 +16,15 @@ public sealed class ZipImportAbortException(string message) : Exception(message)
 
 /// <summary>
 /// Processes a claimed zip import job (e.g. a Google Takeout archive): extracts the
-/// archive entry by entry, transcodes HEIC/HEIF to JPEG, ingests supported images
-/// through PhotoService (per-owner hash dedup included) and tracks per-entry counters.
-/// Catalog metadata (takenAt, GPS, title, description) is seeded from Takeout sidecar
-/// JSON files (<see cref="TakeoutMetadata"/>); videos are skipped (VideosIgnored) and
-/// remaining sidecars/junk count as ignored. The raw archive is read from (and deleted
-/// from) the "staging" blob storage — a local-disk provider, never the remote blob
-/// target; only ingested photos land there. Executed by the iPhotos.Worker background
-/// service. Re-running a partially imported zip is safe — hash dedup turns
-/// already-imported entries into duplicates.
+/// archive entry by entry, transcodes HEIC/HEIF to JPEG, and ingests supported images
+/// and videos through PhotoService (per-owner hash dedup included), tracking per-entry
+/// counters. Catalog metadata (takenAt, GPS, title, description) is seeded from
+/// Takeout sidecar JSON files (<see cref="TakeoutMetadata"/>); remaining sidecars and
+/// junk count as ignored. The raw archive is read from (and deleted from) the
+/// "staging" blob storage — a local-disk provider, never the remote blob target; only
+/// ingested media lands there. Executed by the iPhotos.Worker background service.
+/// Re-running a partially imported zip is safe — hash dedup turns already-imported
+/// entries into duplicates.
 /// </summary>
 public sealed class ZipImportHandler(
     IZipImportRepository imports,
@@ -100,7 +100,7 @@ public sealed class ZipImportHandler(
                 catch (QuotaExceededException)
                 {
                     throw new ZipImportAbortException(
-                        $"Storage quota exceeded — {job.Imported} photos imported before stopping.");
+                        $"Storage quota exceeded — {job.Imported} items imported before stopping.");
                 }
                 catch (InvalidDataException ex) when (IsEncryptedEntry(ex))
                 {
@@ -177,14 +177,6 @@ public sealed class ZipImportHandler(
             return;
         }
 
-        if (VideoExtensions.Contains(extension))
-        {
-            // Video hosting is not supported yet; tracked separately so the job report
-            // can tell a Takeout of mostly videos apart from an empty archive.
-            job.VideosIgnored++;
-            return;
-        }
-
         if (SidecarExtensions.Contains(extension)
             || extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
         {
@@ -193,7 +185,8 @@ public sealed class ZipImportHandler(
         }
 
         var isHeif = HeifExtensions.Contains(extension);
-        if (!isHeif && !PhotoExtensions.Contains(extension))
+        var isVideo = VideoExtensions.Contains(extension);
+        if (!isHeif && !isVideo && !PhotoExtensions.Contains(extension))
         {
             job.Ignored++;
             return;
@@ -227,10 +220,10 @@ public sealed class ZipImportHandler(
                 return;
             }
 
-            await using var photoStream = File.OpenRead(tempPath);
+            await using var mediaStream = File.OpenRead(tempPath);
             var upload = await photoService.UploadAsync(
-                job.OwnerId, fileName, MimeFor(extension), photoStream, seed, cancellationToken);
-            CountResult(job, upload.Duplicated);
+                job.OwnerId, fileName, MimeFor(extension), mediaStream, seed, cancellationToken);
+            CountResult(job, upload.Duplicated, isVideo);
         }
         finally
         {
@@ -238,7 +231,7 @@ public sealed class ZipImportHandler(
         }
     }
 
-    private static void CountResult(ZipImportJob job, bool duplicated)
+    private static void CountResult(ZipImportJob job, bool duplicated, bool isVideo = false)
     {
         if (duplicated)
         {
@@ -247,6 +240,10 @@ public sealed class ZipImportHandler(
         else
         {
             job.Imported++;
+            if (isVideo)
+            {
+                job.VideosImported++;
+            }
         }
     }
 
@@ -291,6 +288,11 @@ public sealed class ZipImportHandler(
         ".jpg" or ".jpeg" => "image/jpeg",
         ".png" => "image/png",
         ".webp" => "image/webp",
+        ".mp4" or ".m4v" => "video/mp4",
+        ".mov" => "video/quicktime",
+        ".webm" => "video/webm",
+        ".avi" => "video/x-msvideo",
+        ".3gp" => "video/3gpp",
         _ => "application/octet-stream",
     };
 

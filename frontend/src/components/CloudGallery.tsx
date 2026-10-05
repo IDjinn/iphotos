@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library/legacy';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import { CloudVideoPlayer } from '@/components/CloudVideoPlayer';
 import { authHeaders } from '@/data/api-client';
 import {
   deletePhoto,
@@ -15,6 +16,7 @@ import {
 } from '@/data/cloud-photos-repository';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
+import { formatDuration } from '@/utils/format';
 
 const PAGE_SIZE = 60;
 
@@ -38,6 +40,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
   const { colors } = useTheme();
   const [state, setState] = useState<ListState>({ status: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
+  const [playing, setPlaying] = useState<CloudPhoto | null>(null);
 
   const load = useCallback(async (page: number) => {
     try {
@@ -105,15 +108,16 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
       const file = await downloadFile(photo.id, 'original');
       const { Buffer } = await import('buffer');
       const { writeAsStringAsync, documentDirectory } = await import('expo-file-system/legacy');
+      const dotExt = photo.fileName.includes('.') ? photo.fileName.slice(photo.fileName.lastIndexOf('.')) : '.bin';
+      const localUri = `${documentDirectory}iphotos-${photo.id}${dotExt}`;
       const base64 = Buffer.from(file).toString('base64');
-      const localUri = `${documentDirectory}iphotos-${photo.id}.${photo.mimeType === 'image/png' ? 'png' : 'jpg'}`;
       await writeAsStringAsync(localUri, base64, { encoding: 'base64' });
       try {
         await MediaLibrary.saveToLibraryAsync(localUri);
-        Alert.alert('Saved', 'Photo saved back to your library.');
+        Alert.alert('Saved', 'File saved back to your library.');
       } catch {
         // Expo Go cannot grant media access — the bytes are still in the cache.
-        Alert.alert('Saved', 'Photo saved to the app cache directory.');
+        Alert.alert('Saved', 'File saved to the app cache directory.');
       }
     } catch (error) {
       Alert.alert('Download failed', error instanceof Error ? error.message : 'Try again later.');
@@ -122,6 +126,10 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
 
   const openPhoto = (photo: CloudPhoto) => {
     haptic('light');
+    if (photo.state === 'Ready' && photo.mediaType === 'Video') {
+      setPlaying(photo);
+      return;
+    }
     const details = [
       photo.description,
       new Date(photo.takenAt ?? photo.createdAt).toLocaleString(),
@@ -173,48 +181,64 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
       <View style={styles.center}>
         <Icon name="cloud-offline-outline" size={40} color={colors.iconInactive} />
         <ThemedText variant="bodySmall" color="secondary" style={styles.emptyText}>
-          {emptyHint ?? 'No photos in the cloud yet — run a backup from Settings.'}
+          {emptyHint ?? 'No photos or videos in the cloud yet — run a backup from Settings.'}
         </ThemedText>
       </View>
     );
   }
 
   return (
-    <FlatList
-      data={state.items}
-      keyExtractor={(item) => item.id}
-      numColumns={3}
-      contentContainerStyle={contentContainerStyle}
-      onEndReached={onEndReached}
-      onEndReachedThreshold={0.5}
-      refreshing={refreshing}
-      onRefresh={onRefresh}
-      ListFooterComponent={
-        state.loadingMore ? <ActivityIndicator color={colors.accent} style={styles.footer} /> : null
-      }
-      renderItem={({ item }) => (
-        <Pressable style={styles.cell} onPress={() => openPhoto(item)} accessibilityLabel={item.fileName}>
-          <Image
-            source={{ uri: fileUrl(item.id, 'thumbnail'), headers: authHeaders() }}
-            style={styles.cellImage}
-            contentFit="cover"
-            recyclingKey={item.id}
-            onError={(event) => {
-              if (__DEV__) console.warn(`[gallery] thumbnail failed for ${item.id}: ${event.error}`);
-            }}
-          />
-          {item.state !== 'Ready' ? (
-            <View style={[styles.stateBadge, { backgroundColor: colors.background }]}>
-              {item.state === 'Failed' ? (
-                <Icon name="alert-circle" size={14} color={colors.danger} />
-              ) : (
-                <ActivityIndicator size="small" color={colors.accent} />
-              )}
-            </View>
-          ) : null}
-        </Pressable>
-      )}
-    />
+    <>
+      <FlatList
+        data={state.items}
+        keyExtractor={(item) => item.id}
+        numColumns={3}
+        contentContainerStyle={contentContainerStyle}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        ListFooterComponent={
+          state.loadingMore ? <ActivityIndicator color={colors.accent} style={styles.footer} /> : null
+        }
+        renderItem={({ item }) => {
+        const isReadyVideo = item.state === 'Ready' && item.mediaType === 'Video';
+        return (
+          <Pressable style={styles.cell} onPress={() => openPhoto(item)} accessibilityLabel={item.fileName}>
+            <Image
+              source={{ uri: fileUrl(item.id, 'thumbnail'), headers: authHeaders() }}
+              style={styles.cellImage}
+              contentFit="cover"
+              recyclingKey={item.id}
+              onError={(event) => {
+                if (__DEV__) console.warn(`[gallery] thumbnail failed for ${item.id}: ${event.error}`);
+              }}
+            />
+            {item.state !== 'Ready' ? (
+              <View style={[styles.stateBadge, { backgroundColor: colors.background }]}>
+                {item.state === 'Failed' ? (
+                  <Icon name="alert-circle" size={14} color={colors.danger} />
+                ) : (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                )}
+              </View>
+            ) : null}
+            {isReadyVideo ? (
+              <>
+                <View style={styles.videoBadge} pointerEvents="none">
+                  <Icon name="play" size={13} color={colors.textInverse} />
+                </View>
+                {item.durationSeconds ? (
+                  <Text style={styles.duration}>{formatDuration(item.durationSeconds)}</Text>
+                ) : null}
+              </>
+            ) : null}
+          </Pressable>
+        );
+        }}
+      />
+      <CloudVideoPlayer photo={playing} onClose={() => setPlaying(null)} />
+    </>
   );
 }
 
@@ -230,6 +254,28 @@ const styles = StyleSheet.create({
     right: 6,
     borderRadius: 8,
     padding: 3,
+  },
+  videoBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  duration: {
+    position: 'absolute',
+    bottom: 4,
+    left: 6,
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   footer: { marginVertical: 16 },
 });

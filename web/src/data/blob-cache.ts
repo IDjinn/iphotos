@@ -69,12 +69,12 @@ function cacheFor(kind: VariantKind): BlobUrlCache {
  * browser back/forward cache and virtualized grids re-mount cells freely;
  * `staleTime: Infinity` keeps the object URL stable for the session.
  */
-export function useAuthFileUrl(photoId: string, kind: VariantKind) {
+export function useAuthFileUrl(photoId: string, kind: VariantKind, enabled = true) {
   const cache = cacheFor(kind);
   return useQuery({
     queryKey: ["file-url", photoId, kind],
     queryFn: () => cache.load(`${photoId}:${kind}`, () => fetchFileBlob(photoId, kind)),
-    enabled: typeof window !== "undefined",
+    enabled: enabled && typeof window !== "undefined",
     staleTime: Infinity,
   });
 }

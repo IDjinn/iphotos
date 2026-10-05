@@ -37,6 +37,17 @@ public sealed class ImagingOptions
     public int PreviewQuality { get; set; } = 80;
 }
 
+public sealed class VideoProcessorOptions
+{
+    public const string SectionName = "VideoProcessor";
+
+    /// <summary>ffmpeg binary used for poster-frame extraction; resolved from PATH unless overridden.</summary>
+    public string FfmpegPath { get; set; } = "ffmpeg";
+
+    /// <summary>ffprobe binary used for container/stream probing; resolved from PATH unless overridden.</summary>
+    public string FfprobePath { get; set; } = "ffprobe";
+}
+
 public sealed class ZipImportOptions
 {
     public const string SectionName = "ZipImport";

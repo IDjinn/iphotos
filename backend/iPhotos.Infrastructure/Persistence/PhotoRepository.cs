@@ -51,6 +51,11 @@ public sealed class PhotoRepository(PhotosDbContext db) : IPhotoRepository
                 || p.CameraModel != null && p.CameraModel.ToLower().Contains(term));
         }
 
+        if (filter.MediaType is not null)
+        {
+            query = query.Where(p => p.MediaType == filter.MediaType);
+        }
+
         // taken_at DESC NULLS LAST (Postgres would otherwise sort NULLs first on DESC).
         query = query
             .OrderByDescending(p => p.TakenAt != null)

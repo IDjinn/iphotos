@@ -134,7 +134,7 @@ export function UploadDialog() {
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             hidden
             onChange={(event) => {

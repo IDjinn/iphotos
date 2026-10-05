@@ -111,6 +111,18 @@ export const Photo = styled.img`
   }
 `;
 
+export const Video = styled.video`
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  animation: viewer-zoom-in var(--duration-slow) var(--ease-out);
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: viewer-fade-in var(--duration-fast) ease;
+  }
+`;
+
 export const StageButton = styled.button<{ $side: "left" | "right" }>`
   position: absolute;
   top: 50%;

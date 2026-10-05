@@ -19,7 +19,7 @@ import {
 } from "@/data/cloud-photos-repository";
 import { useAuthFileUrl } from "@/data/blob-cache";
 import { useViewerStore } from "@/stores/ui";
-import { formatDate, formatBytes } from "@/lib/format";
+import { formatDate, formatBytes, formatDuration } from "@/lib/format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,6 +41,7 @@ import {
   StageButton,
   StageSkeleton,
   TopRow,
+  Video,
 } from "./viewer.styles";
 
 /**
@@ -96,7 +97,14 @@ export function ViewerOverlay() {
     enabled: photoId !== null,
   });
 
+  const photo = photoQuery.data;
+
   const previewQuery = useAuthFileUrl(photoId ?? "", "preview");
+
+  // Videos play the original bytes (Range-friendly); the preview (poster frame)
+  // doubles as the <video> poster while the file loads.
+  const isVideo = photo?.mediaType === "Video";
+  const videoQuery = useAuthFileUrl(photoId ?? "", "original", Boolean(photoId) && isVideo);
 
   const [downloading, setDownloading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -138,8 +146,6 @@ export function ViewerOverlay() {
     }
   };
 
-  const photo = photoQuery.data;
-
   return (
     <DialogPrimitive.Root
       open={open}
@@ -177,6 +183,9 @@ export function ViewerOverlay() {
                     {formatDate(photo.takenAt ?? photo.createdAt)}
                     {photo.width && photo.height
                       ? ` · ${photo.width} × ${photo.height}`
+                      : ""}
+                    {photo.mediaType === "Video" && photo.durationSeconds
+                      ? ` · ${formatDuration(photo.durationSeconds)}`
                       : ""}{" "}
                     · {formatBytes(photo.sizeBytes)}
                   </span>
@@ -206,13 +215,23 @@ export function ViewerOverlay() {
               </IconButton>
             </TopRow>
             <Stage>
-              {photoId && previewQuery.isPending ? <StageSkeleton /> : null}
-              {photoId && previewQuery.data ? (
+              {photoId && !isVideo && previewQuery.isPending ? <StageSkeleton /> : null}
+              {photoId && !isVideo && previewQuery.data ? (
                 <Photo key={photoId} src={previewQuery.data} alt={photo?.fileName ?? ""} />
               ) : null}
-              {photoId && previewQuery.isError ? (
+              {photoId && isVideo && videoQuery.data ? (
+                <Video
+                  key={photoId}
+                  src={videoQuery.data}
+                  poster={previewQuery.data}
+                  controls
+                  autoPlay
+                  playsInline
+                />
+              ) : null}
+              {photoId && (isVideo ? videoQuery.isError : previewQuery.isError) ? (
                 <p role="alert" className="text-sm text-white/80">
-                  Couldn&apos;t load this photo. Try again.
+                  Couldn&apos;t load this {isVideo ? "video" : "photo"}. Try again.
                 </p>
               ) : null}
               {photoIds.length > 1 ? (

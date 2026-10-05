@@ -99,10 +99,12 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
   "ownerId": "75c9749c-...",
   "fileName": "vacation.jpg",
   "mimeType": "image/jpeg",
+  "mediaType": "Photo",          // Photo|Video (2026-10-05, doc 15)
   "sizeBytes": 2710,
-  "width": 640,            // EXIF; null só no fluxo direto antes do worker processar
+  "width": 640,            // EXIF/ffprobe; null só no fluxo direto antes do worker processar
   "height": 200,
-  "takenAt": "2025-12-25T10:30:00+00:00",  // EXIF ou seed de import (doc §3.4); UTC; null se não houver
+  "durationSeconds": null,       // vídeos apenas (2026-10-05)
+  "takenAt": "2025-12-25T10:30:00+00:00",  // EXIF/ffprobe ou seed de import (doc §3.4); UTC; null se não houver
   "cameraMake": "Google", "cameraModel": "Pixel 9",
   "gpsLatitude": -22.9, "gpsLongitude": -43.2,
   "title": null,                 // seed de import (Takeout sidecars), 2026-10-04
@@ -117,6 +119,8 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
     { "kind": "Thumbnail", "width": 320, "height": 100, "sizeBytes": 1172, "format": "jpeg" }
   ]
 }
+// Vídeos: Original = arquivo original (format mp4/mov/webm/avi/3gp, nunca
+// transcodado); Preview/Thumbnail = poster JPEG extraído pelo ffmpeg (doc 15).
 ```
 
 **Ciclo do upload:** multipart/zip é **síncrono** — `201` já traz `state: "Ready"`,
@@ -132,7 +136,12 @@ direto ao S3** (bytes não passam pela API/túnel; sem o cap de ~100 MB do Cloud
 varridos pelo worker após `OrphanSweep:MaxAgeHours` (default 24 h).
 
 **Restrições do upload:** mime `image/jpeg` | `image/png` | `image/webp` (HEIC não —
-converter no cliente com `expo-image-manipulator`); ≤ 200 MB; quota excedida → **413**.
+converter no cliente com `expo-image-manipulator`) e, desde 2026-10-05 (doc 15),
+`video/mp4` | `video/quicktime` | `video/webm` | `video/x-msvideo` | `video/3gpp`;
+≤ 200 MB; quota excedida → **413**.
+
+**Listagem:** além dos filtros `from/to/fileName/camera`, `GET /api/photos` aceita
+`?mediaType=photo|video` (case-insensitive; valor inválido → 400).
 
 ### 3.3 Formato de erros e convenções
 
@@ -197,18 +206,22 @@ Outro owner nunca aparece na lista (escopo por owner no repositório).
   "id": "…", "state": "Queued|Processing|Done|Failed",
   "fileName": "takeout.zip", "sizeBytes": 123,
   "totalEntries": 300, "processedEntries": 180,
-  "imported": 150, "duplicated": 20, "ignored": 10, "videosIgnored": 15, "failed": 0,
+  "imported": 150, "videosImported": 40, "duplicated": 20, "ignored": 10,
+  "videosIgnored": 0, "failed": 0,
   "error": null, "createdAt": "…", "completedAt": null
 }
 ```
 
 - `totalEntries`/contadores preenchem conforme o worker processa; poll a cada ~3 s
-  até `Done|Failed`. `videosIgnored` (2026-10-04) conta vídeos pulados separadamente
-  — video hosting ainda não é suportado.
-- Fotos suportadas no zip: `jpg/jpeg/png/webp/heic/heif` (HEIC/HEIF é transcrito para
-  JPEG no servidor, preservando EXIF). Vídeos (`videosIgnored`), sidecars restantes
-  (`json/html/csv`), `__MACOSX/`, ocultos, `Thumbs.db` e zips aninhados são
-  **ignorados** e contados.
+  até `Done|Failed`. `videosImported` (2026-10-05) conta vídeos importados
+  (subconjunto de `imported`). `videosIgnored` (2026-10-04) é legado do período em
+  que video hosting não era suportado — desde 2026-10-05 permanece em 0.
+- Mídia suportada no zip: fotos `jpg/jpeg/png/webp/heic/heif` (HEIC/HEIF é
+  transcrito para JPEG no servidor, preservando EXIF) e **vídeos
+  `mp4/m4v/mov/webm/avi/3gp`** (doc 15: poster + duração via ffmpeg). Sidecars
+  restantes (`json/html/csv`), `__MACOSX/`, ocultos, `Thumbs.db` e zips aninhados
+  são **ignorados** e contados. Vídeo com decodificação falha conta como
+  `failed`, sem abortar o job.
 
 > **Metadados Google Takeout (2026-10-04)** — o import semeia metadados do catálogo
 > antes do processamento de variantes: sidecar JSON ao lado da mídia, nos dois

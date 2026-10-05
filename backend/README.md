@@ -218,8 +218,12 @@ variant generation go over HTTP, and the database keeps blob keys only.
   offset, `timestamptz`).
 - EXIF has no timezone: `DateTimeOriginal` is interpreted as UTC.
 - Variants: thumbnail 320px q75 · preview 2048px q80 (no upscaling, EXIF orientation
-  respected).
-- Accepted upload formats: JPEG/PNG/WebP (HEIC is a follow-up; the mobile app converts).
+  respected). Videos: Original keeps the file as-is (never transcoded) and
+  Preview/Thumbnail are the ffmpeg-extracted poster frame (JPEG).
+- Accepted upload formats: photos JPEG/PNG/WebP (HEIC arrives via zip import, where
+  the server transcodes it) and videos MP4/M4V/MOV/WEBM/AVI/3GP. Video metadata and
+  poster extraction require **ffmpeg/ffprobe** — installed in the api/worker Docker
+  images; locally set `VideoProcessor:FfmpegPath`/`FfprobePath` if not on PATH.
 - ImageSharp is pinned to **3.1.x**: starting with 4.0 the package requires a license
   key for Release/Docker builds (`sixlabors.lic`, free via
   [sixlabors.com/pricing](https://sixlabors.com/pricing/)).

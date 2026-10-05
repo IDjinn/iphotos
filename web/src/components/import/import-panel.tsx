@@ -151,7 +151,7 @@ export function ImportPanel() {
             await queryClient.invalidateQueries({ queryKey: ["photos"] });
             await queryClient.invalidateQueries({ queryKey: ["usage"] });
             toast(
-              `Import finished — ${finished.imported} ${finished.imported === 1 ? "photo" : "photos"} added`,
+              `Import finished — ${finished.imported} ${finished.imported === 1 ? "item" : "items"} added`,
             );
           } else {
             updateItems((current) =>
@@ -364,7 +364,7 @@ export function ImportPanel() {
               <p>
                 Drop one or more .zip archives here, paste them (Ctrl+V), or browse.
                 <br />
-                Photo archives like Google Takeout (all parts at once) are supported.
+                Photo and video archives like Google Takeout (all parts at once) are supported.
               </p>
               <Button variant="outline" onClick={() => inputRef.current?.click()}>
                 Browse files
@@ -484,12 +484,13 @@ export function ImportPanel() {
               const totals = tracked.reduce(
                 (acc, item) => ({
                   imported: acc.imported + (item.job?.imported ?? 0),
+                  videosImported: acc.videosImported + (item.job?.videosImported ?? 0),
                   duplicated: acc.duplicated + (item.job?.duplicated ?? 0),
                   ignored: acc.ignored + (item.job?.ignored ?? 0),
                   videosIgnored: acc.videosIgnored + (item.job?.videosIgnored ?? 0),
                   failed: acc.failed + (item.job?.failed ?? 0),
                 }),
-                { imported: 0, duplicated: 0, ignored: 0, videosIgnored: 0, failed: 0 },
+                { imported: 0, videosImported: 0, duplicated: 0, ignored: 0, videosIgnored: 0, failed: 0 },
               );
               return (
                 <>
@@ -498,7 +499,11 @@ export function ImportPanel() {
                   <CounterGrid>
                     <div>
                       <strong>{totals.imported}</strong>
-                      <span>Photos added</span>
+                      <span>Items added</span>
+                    </div>
+                    <div>
+                      <strong>{totals.videosImported}</strong>
+                      <span>Videos added</span>
                     </div>
                     <div>
                       <strong>{totals.duplicated}</strong>
@@ -508,10 +513,12 @@ export function ImportPanel() {
                       <strong>{totals.ignored}</strong>
                       <span>Ignored</span>
                     </div>
-                    <div>
-                      <strong>{totals.videosIgnored}</strong>
-                      <span>Videos skipped</span>
-                    </div>
+                    {totals.videosIgnored > 0 ? (
+                      <div>
+                        <strong>{totals.videosIgnored}</strong>
+                        <span>Videos skipped</span>
+                      </div>
+                    ) : null}
                     <div>
                       <strong>{totals.failed}</strong>
                       <span>Failed</span>

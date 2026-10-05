@@ -20,6 +20,7 @@ public class ZipImportHandlerTests
     private readonly FakeBlobStorage _blobs = new();
     private readonly FakeUnitOfWork _uow = new();
     private readonly FakeHeifConverter _heif = new();
+    private readonly FakeVideoProcessor _video = new();
     private readonly User _owner = User.Create("owner@example.com", "hash", null, 1_000_000_000, Now);
 
     public ZipImportHandlerTests()
@@ -43,6 +44,7 @@ public class ZipImportHandlerTests
             new FakeImageVariantGenerator(),
             // EXIF-neutral: these tests verify sidecar/date-folder seeding only.
             new FakeExifExtractor { Metadata = new PhotoMetadata(0, 0, null, null, null, null, null) },
+            _video,
             _uow, new StubDateTimeProvider(Now));
 
     private ZipImportJob NewJob(byte[] zipBytes)
@@ -114,14 +116,17 @@ public class ZipImportHandlerTests
 
         job.State.ShouldBe(JobState.Done);
         job.TotalEntries.ShouldBe(12);
-        job.Imported.ShouldBe(3);
-        job.VideosIgnored.ShouldBe(1);
+        job.Imported.ShouldBe(4);
+        job.VideosImported.ShouldBe(1);
+        job.VideosIgnored.ShouldBe(0);
         job.Ignored.ShouldBe(8);
         job.Duplicated.ShouldBe(0);
         job.Failed.ShouldBe(0);
-        _photos.Photos.Count.ShouldBe(3);
-        _photos.Photos.Select(p => p.FileName).ShouldBe(["one.jpg", "two.png", "three.webp"], ignoreOrder: true);
+        _photos.Photos.Count.ShouldBe(4);
+        _photos.Photos.Select(p => p.FileName).ShouldBe(
+            ["one.jpg", "two.png", "three.webp", "clip.mp4"], ignoreOrder: true);
         _photos.Photos.ShouldAllBe(p => p.OwnerId == _owner.Id);
+        _photos.Photos.Single(p => p.FileName == "clip.mp4").MediaType.ShouldBe(MediaType.Video);
 
         // Sidecars seed catalog metadata on the photo they sit next to.
         var one = _photos.Photos.Single(p => p.FileName == "one.jpg");
@@ -378,5 +383,78 @@ public class ZipImportHandlerTests
         job.Imported.ShouldBe(1);
         job.Failed.ShouldBe(1);
         job.ProcessedEntries.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Process_VideoEntry_ImportsWithSidecarSeedAndVideoMetadata()
+    {
+        const string sidecar = """
+            {
+              "title": "Beach clip",
+              "photoTakenTime": { "timestamp": "1737838060" },
+              "geoDataExif": { "latitude": -23.2217, "longitude": -44.7309 }
+            }
+            """;
+        var zip = BuildZip(
+            ("Takeout/Google Photos/2025/VID_3069.mp4", Bytes("video-bytes")),
+            ("Takeout/Google Photos/2025/VID_3069.mp4.supplemental-metadata.json", Bytes(sidecar)));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        job.Imported.ShouldBe(1);
+        job.VideosImported.ShouldBe(1);
+        job.Ignored.ShouldBe(1); // the sidecar
+        var video = _photos.Photos.Single();
+        video.FileName.ShouldBe("VID_3069.mp4");
+        video.MediaType.ShouldBe(MediaType.Video);
+        video.MimeType.ShouldBe("video/mp4");
+        video.DurationSeconds.ShouldBe(_video.Info.DurationSeconds);
+        video.TakenAt.ShouldBe(DateTimeOffset.FromUnixTimeSeconds(1737838060));
+        video.Title.ShouldBe("Beach clip");
+
+        // The original lands under its video extension; poster variants are JPEG.
+        _blobs.Blobs.Keys.ShouldContain(video.OriginalBlobPath);
+        video.OriginalBlobPath.EndsWith("/original.mp4").ShouldBeTrue();
+        _variants.Variants.Select(v => v.Kind).ShouldBe(
+            [VariantKind.Original, VariantKind.Preview, VariantKind.Thumbnail], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task Process_UndecodableVideoEntry_CountsAsFailedAndContinues()
+    {
+        var zip = BuildZip(
+            ("good.jpg", Bytes("jpeg-good")),
+            ("broken.mp4", Bytes("not-really-video")));
+        var job = NewJob(zip);
+        _video.ThrowOnProcess = new InvalidImageException("The stream is not a decodable video.");
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        job.Imported.ShouldBe(1);
+        job.Failed.ShouldBe(1);
+        job.VideosImported.ShouldBe(0);
+        job.ProcessedEntries.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Process_ReimportedZipWithVideo_CountsVideoAsDuplicated()
+    {
+        var zip = BuildZip(
+            ("clip.mp4", Bytes("video-bytes")),
+            ("a.jpg", Bytes("jpeg-a")));
+        var first = NewJob(zip);
+        var second = NewJob(zip);
+        var handler = NewHandler();
+
+        await handler.ProcessJobAsync(first);
+        await handler.ProcessJobAsync(second);
+
+        first.VideosImported.ShouldBe(1);
+        second.Imported.ShouldBe(0);
+        second.Duplicated.ShouldBe(2);
+        second.VideosImported.ShouldBe(0);
     }
 }

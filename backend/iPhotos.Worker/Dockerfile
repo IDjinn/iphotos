@@ -2,6 +2,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 # Blob storage dir writable by the non-root app user (Docker volumes mount as root).
 USER root
 RUN mkdir -p /var/lib/iphotos/blobs && chown -R $APP_UID /var/lib/iphotos
+# ffmpeg/ffprobe: video probing + poster frames for imports and the presigned flow.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 USER $APP_UID
 WORKDIR /app
 

@@ -13,10 +13,11 @@ public class VariantProcessingHandlerTests
     private readonly FakeBlobStorage _blobs = new();
     private readonly FakeImageVariantGenerator _generator = new();
     private readonly FakeExifExtractor _exif = new();
+    private readonly FakeVideoProcessor _video = new();
     private readonly FakeUnitOfWork _uow = new();
 
     private VariantProcessingHandler NewHandler() =>
-        new(_photos, _variants, _blobs, _generator, _exif, _uow, new StubDateTimeProvider(Now));
+        new(_photos, _variants, _blobs, _generator, _exif, _video, _uow, new StubDateTimeProvider(Now));
 
     private async Task<Photo> NewProcessedPhoto()
     {
@@ -25,6 +26,17 @@ public class VariantProcessingHandlerTests
         photo.OriginalBlobPath = $"{owner.Id}/{photo.Id}/original.jpg";
         _photos.Photos.Add(photo);
         _blobs.Blobs[photo.OriginalBlobPath] = new byte[100];
+        await Task.CompletedTask;
+        return photo;
+    }
+
+    private async Task<Photo> NewProcessedVideo()
+    {
+        var owner = User.Create("owner@example.com", "hash", null, 1_000_000, Now);
+        var photo = Photo.Create(owner.Id, "hash456", "clip.mp4", "video/mp4", 500, Now, MediaType.Video);
+        photo.OriginalBlobPath = $"{owner.Id}/{photo.Id}/original.mp4";
+        _photos.Photos.Add(photo);
+        _blobs.Blobs[photo.OriginalBlobPath] = new byte[500];
         await Task.CompletedTask;
         return photo;
     }
@@ -127,5 +139,49 @@ public class VariantProcessingHandlerTests
 
         _variants.Variants.Count.ShouldBe(3);
         _variants.Variants.ShouldNotContain(v => v.BlobPath == "stale.jpg");
+    }
+
+    [Fact]
+    public async Task Process_Video_UsesVideoProcessorAndMarksReady()
+    {
+        var photo = await NewProcessedVideo();
+        var job = NewJob(photo.Id);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        photo.State.ShouldBe(PhotoState.Ready);
+        photo.Width.ShouldBe(1920);
+        photo.Height.ShouldBe(1080);
+        photo.DurationSeconds.ShouldBe(_video.Info.DurationSeconds);
+        job.State.ShouldBe(JobState.Done);
+
+        _variants.Variants.Select(v => v.Kind).ShouldBe(
+            [VariantKind.Original, VariantKind.Preview, VariantKind.Thumbnail], ignoreOrder: true);
+
+        var original = _variants.Variants.Single(v => v.Kind == VariantKind.Original);
+        original.BlobPath.ShouldBe(photo.OriginalBlobPath);
+        original.Format.ShouldBe("mp4");
+        original.SizeBytes.ShouldBe(500);
+
+        // Poster feeds the regular pipeline: same preview/thumbnail paths as photos.
+        var thumb = _variants.Variants.Single(v => v.Kind == VariantKind.Thumbnail);
+        thumb.BlobPath.ShouldBe($"{photo.OwnerId}/{photo.Id}/thumb.jpg");
+        thumb.Format.ShouldBe("jpeg");
+        _blobs.Blobs.Keys.ShouldContain($"{photo.OwnerId}/{photo.Id}/thumb.jpg");
+        _blobs.Blobs.Keys.ShouldContain($"{photo.OwnerId}/{photo.Id}/preview.jpg");
+    }
+
+    [Fact]
+    public async Task Process_VideoProcessorThrows_FailsPhotoAndRequeuesJob()
+    {
+        var photo = await NewProcessedVideo();
+        var job = NewJob(photo.Id);
+        _video.ThrowOnProcess = new InvalidImageException("The stream is not a decodable video.");
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Queued);
+        job.Attempts.ShouldBe(1);
+        photo.State.ShouldBe(PhotoState.Failed);
     }
 }

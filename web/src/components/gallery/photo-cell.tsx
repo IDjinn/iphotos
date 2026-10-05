@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { CheckIcon, CircleIcon } from "lucide-react";
+import { CheckIcon, CircleIcon, PlayIcon } from "lucide-react";
 import type { CloudPhoto } from "@/data/cloud-photos-repository";
+import { formatDuration } from "@/lib/format";
 import { AuthImage } from "@/components/media/auth-image";
-import { CellBadge, CellButton, CellWrap, SelectButton } from "./gallery.styles";
+import { CellBadge, CellButton, CellWrap, SelectButton, VideoBadge } from "./gallery.styles";
 
 interface PhotoCellProps {
   photo: CloudPhoto;
@@ -18,6 +19,7 @@ interface PhotoCellProps {
 export function PhotoCell({ photo, size, selected, onOpen, onToggleSelect }: PhotoCellProps) {
   const [hovered, setHovered] = useState(false);
   const notReady = photo.state !== "Ready";
+  const isVideo = photo.mediaType === "Video";
 
   return (
     <CellWrap
@@ -53,6 +55,11 @@ export function PhotoCell({ photo, size, selected, onOpen, onToggleSelect }: Pho
         <CellBadge>Couldn&apos;t process</CellBadge>
       ) : notReady ? (
         <CellBadge>Processing…</CellBadge>
+      ) : isVideo ? (
+        <VideoBadge>
+          <PlayIcon aria-hidden fill="currentColor" />
+          {photo.durationSeconds ? formatDuration(photo.durationSeconds) : null}
+        </VideoBadge>
       ) : null}
     </CellWrap>
   );

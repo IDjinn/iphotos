@@ -63,11 +63,30 @@ public static class PhotoEndpoints
             [FromQuery] DateTimeOffset? to,
             [FromQuery] string? fileName,
             [FromQuery] string? camera,
+            [FromQuery] string? mediaType,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             CancellationToken cancellationToken = default) =>
         {
-            var filter = new PhotoFilter(principal.GetUserId(), from, to, fileName, camera, page, pageSize);
+            // Query binding for enums is case-sensitive; parse by hand so clients can
+            // send the camelCase values the API serializes ("video", "photo").
+            MediaType? parsedMediaType = null;
+            if (!string.IsNullOrWhiteSpace(mediaType))
+            {
+                if (!Enum.TryParse(mediaType, ignoreCase: true, out MediaType parsed)
+                    || !Enum.IsDefined(parsed))
+                {
+                    return Results.BadRequest(new
+                    {
+                        error = $"Unknown media type '{mediaType}'. Use 'photo' or 'video'.",
+                    });
+                }
+
+                parsedMediaType = parsed;
+            }
+
+            var filter = new PhotoFilter(
+                principal.GetUserId(), from, to, fileName, camera, page, pageSize, parsedMediaType);
             return Results.Ok(await photos.ListAsync(principal.GetUserId(), filter, cancellationToken));
         });
 

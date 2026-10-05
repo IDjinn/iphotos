@@ -25,10 +25,12 @@
 >   só-ano (ex. "Fotos de 2025") não semeiam — o EXIF do worker de variantes
 >   preenche lacunas depois (fill-if-missing; seed é autoritativo, nunca
 >   sobrescrito).
-> - **Vídeos** continuam ignorados, mas com contador próprio `videosIgnored` no job
->   (mostrado nos relatórios web/mobile) — importa saber que uma parte do Takeout
->   pode ser quase toda de vídeos. Parte real analisada (part 005, 8,6 GiB):
->   1.672 imagens (5,19 GiB), 394 vídeos (2,84 GiB), 1.502 sidecars.
+> - **Vídeos**: ✅ importados desde 2026-10-05 (doc 15) — `mp4 m4v mov webm avi 3gp`
+>   entram pelo mesmo `PhotoService` (poster/duração via ffmpeg no worker) e o
+>   sidecar do Takeout os semeia igual às fotos; contador novo `videosImported`
+>   no job. O contador `videosIgnored` (2026-10-04) permanece no contrato como
+>   legado (desde então permanece 0). Parte real analisada na época (part 005,
+>   8,6 GiB): 1.672 imagens (5,19 GiB), 394 vídeos (2,84 GiB), 1.502 sidecars.
 > - **Multi-parte**: cada parte (`takeout-…-1-00N.zip`) é um job independente —
 >   importar todas as partes; duplicadas entre partes viram `duplicated`.
 > - **Limites server-side vigentes** (nota: a tabela §3 abaixo descreve a fase

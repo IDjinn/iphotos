@@ -47,6 +47,7 @@ A evolução planejada adiciona, sem perder o caráter local-first:
 | [11-e2e-zero-knowledge.md](./11-e2e-zero-knowledge.md) | Modo E2E zero-knowledge | Estágios 03B–03F detalhados: cripto de cliente, chave de recuperação (D3), upload cifrado, restore, GC |
 | [12-hosting-custom.md](./12-hosting-custom.md) | Hosting custom (Offline estendido) | `StorageProvider` S3/WebDAV com credenciais do usuário + licença vitalícia |
 | [14-web-desktop.md](./14-web-desktop.md) | Web & Desktop | Segundo cliente (Next.js + Electron) consumindo o mesmo backend: galeria cloud, upload, ZIP, billing, settings |
+| [15-suporte-videos.md](./15-suporte-videos.md) | Suporte a vídeos | Ingestão em todos os caminhos (ZIP/multipart/presigned), poster + duração via ffmpeg, badge/player nos clientes |
 
 ## 3. Fases de implementação
 
@@ -97,8 +98,9 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
   `(OwnerId, TakenAt, dimensões aproximadas)` para marcar possíveis quase-duplicados,
   com resolução manual na UI (manter/descartar). Embeddings visuais (reaproveitar o
   runtime CLIP on-device do 05A) só se a dor persistir.
-- Vídeos: hoje ignorados no import (`videosIgnored`) e fora do backup; quando ganharem
-  suporte, reutilizam o mesmo mecanismo (SHA-256 + índice único `(OwnerId, ContentHash)`).
+- Vídeos: ✅ suportados no import e no upload (doc 15, 2026-10-05) — dedup via SHA-256
+  + índice único `(OwnerId, ContentHash)` reutilizado como previsto; o **backup da
+  câmera** continua foto-only (risco 4K/chunking no doc 03, etapa futura).
 
 ## 4. Dependências entre tópicos
 
@@ -129,6 +131,7 @@ docs, os estágios estão rotulados (ex.: 03A, 03B…).
 | 10 Billing & assinaturas | 5 | ✅ **Implementado** (2026-10-03): abstração `IBillingProvider` + provider sandbox (`test`) conforme decisão D5; produto único `iphotos.cloud.1tb.monthly` (1 TB = US$ 15/mês, catálogo por config), tabela `billing_purchases`, endpoints `/api/billing/products|verify|status|restore`, worker de expiração com grace de 3 dias, paywall `/settings/subscription`, plano em Settings/Account e gatilho 413 no backup. 19 testes unit + 5 integração. **Follow-up**: `GooglePlayBillingProvider`/Stripe + RTDN/webhooks (doc 10 §8) |
 | 13 IA off + previews + modo encriptado | — | ✅ **Implementado** (2026-08-20): master switch "Artificial intelligence" nas Settings (desliga CLIP local, labeling cloud, indexação automática e esconde labels/entradas de IA, sem apagar dados); pipeline local de thumbnails ~512px (`src/data/thumbnails.ts`, tabela `thumbnails`, `PhotoCell` usa preview com fallback); modo encriptado offline (`docs/plans/13-encrypted-mode.md`) — fotos cifradas AES-256-GCM com chave derivada de senha (PBKDF2 200k), removidas da galeria do sistema, galeria interna com previews descriptografados sob demanda, original decriptado ao abrir, cache de sessão purge no lock/background, disable decripta tudo de volta |
 | 14 Web & Desktop | 6 | ✅ **Implementado** (2026-10-03): cliente cloud completo em `web/` — Next.js + shadcn/ui + styled-components, Electron desktop com servidor embutido e instalador NSIS; CORS configurável no API (D16); contrato REST portado para `web/src/data`. Galeria virtualizada + viewer, upload (picker/drop/paste), ZIP import, billing sandbox, settings/tema. Verificação: unit 14/14, E2E Playwright 3/3, smoke real contra o backend (upload→worker→thumbnail autenticada). Detalhes no doc 14 §7 |
+| 15 Suporte a vídeos | — | ✅ **Implementado** (2026-10-05): vídeos aceitos em todos os caminhos de ingestão — import ZIP (sidecar Takeout já semeava), multipart e presigned; processamento `IVideoProcessor` com **ffmpeg/ffprobe** nos containers (api + worker) extrai dimensões/duração/`creation_time` e poster JPEG, que vira Preview/Thumbnail pelo pipeline ImageSharp; `photos.media_type` + `photos.duration_seconds` + `zip_import_jobs.videos_imported` (migração `AddVideoSupport`); serving inalterado (Range já habilitado); contrato `mediaType`/`durationSeconds` + filtro `GET /api/photos?mediaType=`; web com badge/player/`<video>`/upload de vídeo e mobile com badge + `CloudVideoPlayer` (download autenticado → expo-video). Backup da câmera segue foto-only (risco 4K no doc 03). Ver doc `15-suporte-videos.md` |
 
 > Atualizar esta tabela ao concluir cada estágio.
 

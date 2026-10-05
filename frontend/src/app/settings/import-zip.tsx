@@ -16,7 +16,7 @@ import { formatBytes } from '@/utils/format';
 
 const RULES: { icon: IconName; text: string }[] = [
   { icon: 'image-outline', text: 'Photos import as jpg, png, webp or heic (converted to jpeg).' },
-  { icon: 'videocam-off-outline', text: 'Videos and metadata files are skipped.' },
+  { icon: 'videocam-outline', text: 'Videos import as mp4, mov, webm, avi or 3gp.' },
   { icon: 'copy-outline', text: 'Duplicates are recognized and skipped automatically.' },
   { icon: 'layers-outline', text: 'Multi-part export? Import each zip — duplicates are handled.' },
 ];
@@ -117,8 +117,8 @@ export default function ImportZipScreen() {
                 <ThemedText variant="body">Photo archive</ThemedText>
               </View>
               <ThemedText variant="bodySmall" color="secondary">
-                Import a zip with photos — Google Takeout exports work as-is. Everything lands
-                directly in your cloud library.
+                Import a zip with photos and videos — Google Takeout exports work as-is.
+                Everything lands directly in your cloud library.
               </ThemedText>
               {RULES.map((rule) => (
                 <View key={rule.text} style={styles.ruleRow}>
@@ -176,7 +176,7 @@ export default function ImportZipScreen() {
                   {phase === 'uploading'
                     ? 'Uploading archive…'
                     : job && job.totalEntries > 0
-                      ? 'Importing photos…'
+                      ? 'Importing media…'
                       : 'Preparing import…'}
                 </ThemedText>
               </View>
@@ -325,11 +325,14 @@ export default function ImportZipScreen() {
   );
 }
 
-const REPORT_ROWS: { label: string; key: 'imported' | 'duplicated' | 'ignored' | 'videosIgnored' | 'failed' }[] = [
+const REPORT_ROWS: {
+  label: string;
+  key: 'imported' | 'videosImported' | 'duplicated' | 'ignored' | 'failed';
+}[] = [
   { label: 'Imported', key: 'imported' },
+  { label: 'Videos imported', key: 'videosImported' },
   { label: 'Duplicates skipped', key: 'duplicated' },
   { label: 'Files skipped', key: 'ignored' },
-  { label: 'Videos skipped', key: 'videosIgnored' },
   { label: 'Failed', key: 'failed' },
 ];
 

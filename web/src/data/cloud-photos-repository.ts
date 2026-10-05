@@ -8,6 +8,8 @@ import type { UploadByteProgress } from "@/data/api-client";
 
 export type PhotoState = "PendingUpload" | "PendingProcessing" | "Processing" | "Ready" | "Failed";
 export type VariantKind = "original" | "preview" | "thumbnail";
+/** What the backend indexed the asset as — videos get a poster frame as their variants. */
+export type CloudMediaType = "Photo" | "Video";
 
 export interface CloudVariant {
   kind: "Original" | "Preview" | "Thumbnail";
@@ -22,9 +24,12 @@ export interface CloudPhoto {
   ownerId: string;
   fileName: string;
   mimeType: string;
+  mediaType: CloudMediaType;
   sizeBytes: number;
   width?: number;
   height?: number;
+  /** Playback length in seconds; videos only. */
+  durationSeconds?: number;
   takenAt?: string;
   cameraMake?: string;
   cameraModel?: string;
@@ -65,6 +70,8 @@ export interface ListPhotosQuery {
   fileName?: string;
   /** Case-insensitive substring match on make/model. */
   camera?: string;
+  /** Restrict the listing to one media kind. */
+  mediaType?: CloudMediaType;
 }
 
 export interface UploadOutcome {

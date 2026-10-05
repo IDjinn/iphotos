@@ -31,6 +31,7 @@ builder.Services.AddSingleton<IExifExtractor, ImageSharpExifExtractor>();
 builder.Services.AddOptions<JwtOptions>().Configure<IConfiguration>((o, c) => c.GetSection(JwtOptions.SectionName).Bind(o));
 builder.Services.AddOptions<StorageOptions>().Configure<IConfiguration>((o, c) => c.GetSection(StorageOptions.SectionName).Bind(o));
 builder.Services.AddOptions<ImagingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(ImagingOptions.SectionName).Bind(o));
+builder.Services.AddOptions<VideoProcessorOptions>().Configure<IConfiguration>((o, c) => c.GetSection(VideoProcessorOptions.SectionName).Bind(o));
 builder.Services.AddOptions<Argon2HasherOptions>().Configure<IConfiguration>((o, c) => c.GetSection(Argon2HasherOptions.SectionName).Bind(o));
 builder.Services.AddOptions<ZipImportOptions>().Configure<IConfiguration>((o, c) => c.GetSection(ZipImportOptions.SectionName).Bind(o));
 builder.Services.AddOptions<BillingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(BillingOptions.SectionName).Bind(o));
@@ -40,6 +41,7 @@ builder.Services.AddOptions<CorsSettings>().Configure<IConfiguration>((o, c) => 
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<JwtOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<Argon2HasherOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<ImagingOptions>>().Value);
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<VideoProcessorOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<StorageOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<ZipImportOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<BillingOptions>>().Value);
@@ -79,6 +81,7 @@ builder.Services.AddInfrastructure();
 builder.Services.AddSingleton<IPasswordHasher, Argon2PasswordHasher>();
 builder.Services.AddSingleton<ITokenService, JwtTokenService>();
 builder.Services.AddSingleton<IHeifConverter, MagickHeifConverter>();
+builder.Services.AddSingleton<IVideoProcessor, FfmpegVideoProcessor>();
 // Purchase verification provider is picked at resolution time (late binding, like the
 // blob storage): "test" simulates purchases for dev/sandbox; real stores plug in here.
 builder.Services.AddSingleton<IBillingProvider>(sp =>

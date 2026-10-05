@@ -7,6 +7,8 @@ import { API_URL, ApiError, apiJson, authHeaders, getAccessToken } from '@/data/
 
 export type PhotoState = 'PendingUpload' | 'PendingProcessing' | 'Processing' | 'Ready' | 'Failed';
 export type VariantKind = 'original' | 'preview' | 'thumbnail';
+/** What the backend indexed the asset as — videos get a poster frame as their variants. */
+export type CloudMediaType = 'Photo' | 'Video';
 
 export interface CloudVariant {
   kind: 'Original' | 'Preview' | 'Thumbnail';
@@ -21,9 +23,12 @@ export interface CloudPhoto {
   ownerId: string;
   fileName: string;
   mimeType: string;
+  mediaType: CloudMediaType;
   sizeBytes: number;
   width?: number;
   height?: number;
+  /** Playback length in seconds; videos only. */
+  durationSeconds?: number;
   takenAt?: string;
   cameraMake?: string;
   cameraModel?: string;

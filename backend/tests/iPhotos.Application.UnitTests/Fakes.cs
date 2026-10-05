@@ -377,3 +377,24 @@ public sealed class FakeExifExtractor : IExifExtractor
     public Task<PhotoMetadata> ExtractAsync(Stream original, CancellationToken cancellationToken = default)
         => Task.FromResult(Metadata);
 }
+
+public sealed class FakeVideoProcessor : IVideoProcessor
+{
+    public Exception? ThrowOnProcess { get; set; }
+
+    public VideoInfo Info { get; set; } = new(1920, 1080, 12.5, null);
+
+    public Task<VideoProcessingResult> ProcessAsync(Stream video, CancellationToken cancellationToken = default)
+    {
+        if (ThrowOnProcess is not null)
+        {
+            throw ThrowOnProcess;
+        }
+
+        // Unique poster content per call — real extractions of distinct inputs never collide.
+        var bytes = Encoding.UTF8.GetBytes($"fake-poster-{Guid.NewGuid():N}");
+        return Task.FromResult(new VideoProcessingResult(
+            Info,
+            new VideoPoster(new MemoryStream(bytes), Info.Width, Info.Height, bytes.Length)));
+    }
+}
