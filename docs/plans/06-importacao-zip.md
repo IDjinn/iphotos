@@ -40,6 +40,26 @@
 > - **Fila**: worker acorda via Postgres LISTEN/NOTIFY (sem polling quente;
 >   fallback 30 s) — 09 §3.4.
 
+> **Revisão 2026-10-05b — progresso sobrevive ao reload (estado `Uploading`).** Duas
+> correções para "reabrir a página mostra como se nada estivesse sendo importado":
+> - **Novo estado `JobState.Uploading`** (antes de `Queued`): `POST /api/imports/zip`
+>   cria o registro do job **antes** do primeiro byte do corpo (client manda
+>   `jobId` próprio na query; duplicado → 409). Ao fim do staging o job faz
+>   `MarkQueued` + `pg_notify` explícito (o trigger só dispara em INSERT, e o
+>   INSERT inicial ainda não era executável pelo worker). Erro/desconexão no meio
+>   do stream apaga o blob parcial e marca o job como **falha permanente**
+>   ("upload interrupted") — bytes não são retomáveis. Na inicialização o worker
+>   falha permanentemente jobs `Uploading` com mais de 30 min (`FailStaleUploadsAsync`,
+>   cobre crash/restart da API no meio do upload).
+> - **Restore do painel web consertado (StrictMode)**: o efeito de montagem
+>   guardava `restoredRef` sincronamente; no double-mount do dev o segundo setup
+>   saía cedo e a resposta de `GET /api/imports` era descartada como "cancelled" —
+>   em `next dev` o painel nunca restaurava nada. Agora a promise é memoizada em
+>   ref (`restorePromiseRef ??=`): ambos os mounts aguardam a mesma resposta e o
+>   dedupe por `job.id` evita linhas duplicadas. Painel mapeia `Uploading` → linha
+>   "Receiving on server…" (badge + spinner, sem % — o servidor não conhece os
+>   bytes recebidos) e retoma o polling também nesse estado.
+
 > **Revisão 2026-10-04b — staging local (o zip não vai mais ao S3).** Até então o
 > zip bruto era replicado ao provider de blobs principal (S3) antes do 202: para
 > uma parte de 8,6 GiB o upload ao S3 levava dezenas de minutos com a UI presa em

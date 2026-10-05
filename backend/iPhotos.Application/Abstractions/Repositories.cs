@@ -64,6 +64,16 @@ public interface IZipImportRepository
 {
     Task<ZipImportJob> EnqueueAsync(ZipImportJob job, CancellationToken cancellationToken = default);
 
+    /// <summary>Persists mutations made to a tracked job (state transitions, counters).</summary>
+    Task SaveAsync(ZipImportJob job, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Wakes the import worker immediately (Postgres LISTEN/NOTIFY). Used when a
+    /// job becomes Queued outside of an INSERT — e.g. when an upload finishes
+    /// staging — since the queue trigger only fires on INSERT.
+    /// </summary>
+    Task NotifyJobsQueuedAsync(CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Atomically claims the oldest queued job (FOR UPDATE SKIP LOCKED in PostgreSQL),
     /// moving it to Processing. Returns null when the queue is empty.
@@ -71,6 +81,9 @@ public interface IZipImportRepository
     Task<ZipImportJob?> DequeueNextAsync(CancellationToken cancellationToken = default);
 
     Task<ZipImportJob?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default);
+
+    /// <summary>Finds a job by id regardless of owner — used to reject duplicate client-supplied ids.</summary>
+    Task<ZipImportJob?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lists the owner's most recent import jobs, newest first. Backs the web
@@ -84,6 +97,13 @@ public interface IZipImportRepository
     /// Safe by design: hash dedup turns already-imported entries into duplicates.
     /// </summary>
     Task<int> RequeueStuckAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Permanently fails Uploading jobs older than <paramref name="maxAge"/> —
+    /// their HTTP upload died with a previous API process, so the bytes are gone.
+    /// Runs at worker startup. Returns the number of jobs failed.
+    /// </summary>
+    Task<int> FailStaleUploadsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
 }
 
 public interface IBillingPurchaseRepository

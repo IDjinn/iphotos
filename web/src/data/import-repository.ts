@@ -9,7 +9,7 @@ import { ApiError, apiJson, apiUpload } from "@/data/api-client";
  * backend and tracks the import job until it finishes.
  */
 
-export type ZipImportState = "Queued" | "Processing" | "Done" | "Failed";
+export type ZipImportState = "Uploading" | "Queued" | "Processing" | "Done" | "Failed";
 
 export interface ZipImportJob {
   id: string;
@@ -58,13 +58,16 @@ export function createZipImportUpload(
   const controller = new AbortController();
   let stagingTimedOut = false;
 
+  // Client-generated id: the server persists the job row before the first byte
+  // streams, so the upload is visible (and restorable) from the very start.
+  const jobId = crypto.randomUUID();
   const jobIdPromise = (async (): Promise<string> => {
     const formData = new FormData();
     formData.append("file", file, file.name);
     let stagingWatchdog: ReturnType<typeof setTimeout> | undefined;
     try {
       const body = await apiUpload<{ jobId: string }>("/api/imports/zip", formData, {
-        params: { fileName: file.name },
+        params: { fileName: file.name, jobId },
         onProgress: (progress) => {
           if (
             progress.totalBytes > 0

@@ -31,6 +31,7 @@ public static class ImportEndpoints
             IDateTimeProvider dateTime,
             ILogger<Program> logger,
             string? fileName,
+            Guid? jobId,
             CancellationToken cancellationToken) =>
         {
             var options = optionsAccessor.Value;
@@ -58,20 +59,47 @@ public static class ImportEndpoints
                 displayFileName,
                 context.Request.ContentLength is { } length ? $" ({length} bytes)" : string.Empty);
 
-            var jobId = Guid.NewGuid();
-            var blobPath = BlobPaths.Import(ownerId, jobId);
-            long sizeBytes;
+            // The job row is created BEFORE the bytes stream in: a reload during a
+            // multi-gigabyte upload then still shows the archive (state Uploading).
+            // The client supplies the id so it can correlate; retrying with an id
+            // that already exists is a conflict, not a new import.
+            var id = jobId ?? Guid.NewGuid();
+            var existing = await imports.GetByIdAsync(id, cancellationToken);
+            if (existing is not null)
+            {
+                return Results.Conflict(new { error = $"An import job '{id}' already exists." });
+            }
+
+            var blobPath = BlobPaths.Import(ownerId, id);
             var stagingStarted = Stopwatch.GetTimestamp();
+            var job = ZipImportJob.CreateUploading(
+                ownerId, displayFileName, blobPath, dateTime.UtcNow,
+                context.Request.ContentLength is { } contentLength and > 0 ? contentLength : null);
+            job.Id = id;
+            await imports.EnqueueAsync(job, cancellationToken);
+
+            long sizeBytes;
             try
             {
                 await using var counted = new ZipUploadStream(fileBody, options.MaxZipBytes);
                 await stagingBlobs.PutAsync(blobPath, counted, cancellationToken);
                 sizeBytes = counted.BytesRead;
             }
-            catch
+            catch (Exception ex)
             {
-                // A partially staged archive is useless — drop it before surfacing the error.
+                // A partially staged archive is useless — drop it, and turn the
+                // Uploading row into a visible permanent failure (the client that
+                // was sending is gone; no retry can resume these bytes).
                 try { await stagingBlobs.DeleteAsync(blobPath, CancellationToken.None); } catch { /* best effort */ }
+                if (job.State == JobState.Uploading)
+                {
+                    job.FailUpload(
+                        ex is OperationCanceledException
+                            ? "Upload interrupted — the connection dropped before the archive finished arriving."
+                            : "Upload failed — the archive didn't finish arriving.",
+                        dateTime.UtcNow);
+                    try { await imports.SaveAsync(job, CancellationToken.None); } catch { /* best effort */ }
+                }
                 throw;
             }
 
@@ -82,9 +110,11 @@ public static class ImportEndpoints
                 sizeBytes,
                 Stopwatch.GetElapsedTime(stagingStarted).TotalMilliseconds);
 
-            var job = ZipImportJob.Create(ownerId, displayFileName, sizeBytes, blobPath, dateTime.UtcNow);
-            job.Id = jobId;
-            await imports.EnqueueAsync(job, cancellationToken);
+            // The INSERT trigger only notifies on first insert (state Uploading, not
+            // pickable) — wake the worker explicitly now that the job is Queued.
+            job.MarkQueued(sizeBytes, dateTime.UtcNow);
+            await imports.SaveAsync(job, cancellationToken);
+            await imports.NotifyJobsQueuedAsync(cancellationToken);
 
             return Results.Accepted($"/api/imports/{job.Id}", new { jobId = job.Id });
         })

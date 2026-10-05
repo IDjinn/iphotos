@@ -43,6 +43,7 @@ const newKey = () => crypto.randomUUID();
 type FileStatus =
   | "waiting"
   | "uploading"
+  | "receiving"
   | "queued"
   | "processing"
   | "done"
@@ -68,7 +69,15 @@ const jobToItem = (job: ZipImportJob): BatchItem => ({
 });
 
 const stateToStatus = (state: ZipImportJob["state"]): FileStatus =>
-  state === "Queued" ? "queued" : state === "Processing" ? "processing" : state === "Done" ? "done" : "failed";
+  state === "Uploading"
+    ? "receiving"
+    : state === "Queued"
+      ? "queued"
+      : state === "Processing"
+        ? "processing"
+        : state === "Done"
+          ? "done"
+          : "failed";
 
 const statusBadgeVariant = (status: FileStatus) =>
   status === "done"
@@ -81,6 +90,7 @@ const statusLabel = (status: FileStatus) =>
   ({
     waiting: "Waiting",
     uploading: "Uploading…",
+    receiving: "Receiving on server…",
     queued: "Queued on server",
     processing: "Importing…",
     done: "Finished",
@@ -95,7 +105,7 @@ function StatusIcon({ status }: { status: FileStatus }) {
   if (status === "failed" || status === "canceled") {
     return <CircleXIcon aria-hidden className="size-4 shrink-0 text-destructive" />;
   }
-  if (status === "uploading" || status === "processing") {
+  if (status === "uploading" || status === "receiving" || status === "processing") {
     return <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin text-muted-foreground" />;
   }
   if (status === "queued") {
@@ -118,7 +128,6 @@ export function ImportPanel() {
   // Keep the upload pump reading fresh state: item status changes made by poll
   // callbacks must be visible to the loop between uploads.
   const itemsRef = useRef(items);
-  const restoredRef = useRef(false);
 
   const updateItems = useCallback(
     (updater: (current: BatchItem[]) => BatchItem[]) => {
@@ -184,21 +193,31 @@ export function ImportPanel() {
   );
 
   // The import queue lives server-side, so a reload never loses it: seed the
-  // view from recent jobs and resume polling the ones still in flight.
+  // view from recent jobs and resume polling the ones still in flight. The
+  // request is memoized in a ref (not a done-flag) so StrictMode's double
+  // mount reuses the same fetch instead of discarding it as cancelled.
+  const restorePromiseRef = useRef<Promise<ZipImportJob[]> | null>(null);
   useEffect(() => {
-    if (restoredRef.current) return;
-    restoredRef.current = true;
+    restorePromiseRef.current ??= listZipImports().catch((caught: unknown) => {
+      restorePromiseRef.current = null;
+      throw caught;
+    });
     let cancelled = false;
-    listZipImports()
+    restorePromiseRef.current
       .then((jobs) => {
         if (cancelled) return;
         updateItems((current) => {
-          const known = new Set(current.map((item) => item.key));
-          const fresh = jobs.filter((job) => !known.has(job.id)).map(jobToItem);
+          const knownKeys = new Set(current.map((item) => item.key));
+          const knownJobs = new Set(
+            current.map((item) => item.job?.id).filter((id): id is string => id !== undefined),
+          );
+          const fresh = jobs
+            .filter((job) => !knownKeys.has(job.id) && !knownJobs.has(job.id))
+            .map(jobToItem);
           return fresh.length > 0 ? [...current, ...fresh] : current;
         });
         for (const job of jobs) {
-          if (job.state === "Queued" || job.state === "Processing") {
+          if (job.state === "Uploading" || job.state === "Queued" || job.state === "Processing") {
             void trackJob(job.id, job.id);
           }
         }

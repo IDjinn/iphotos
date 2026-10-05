@@ -196,6 +196,10 @@ public sealed class InMemoryZipImportRepository : IZipImportRepository
         return Task.FromResult(job);
     }
 
+    public Task SaveAsync(ZipImportJob job, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task NotifyJobsQueuedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
     public Task<ZipImportJob?> DequeueNextAsync(CancellationToken cancellationToken = default)
     {
         var job = Jobs.FirstOrDefault(j => j.State == JobState.Queued);
@@ -209,6 +213,9 @@ public sealed class InMemoryZipImportRepository : IZipImportRepository
 
     public Task<ZipImportJob?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default)
         => Task.FromResult(Jobs.FirstOrDefault(j => j.Id == id && j.OwnerId == ownerId));
+
+    public Task<ZipImportJob?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        => Task.FromResult(Jobs.FirstOrDefault(j => j.Id == id));
 
     public Task<IReadOnlyList<ZipImportJob>> ListRecentForOwnerAsync(
         Guid ownerId, int limit, CancellationToken cancellationToken = default)
@@ -224,6 +231,18 @@ public sealed class InMemoryZipImportRepository : IZipImportRepository
         foreach (var job in Jobs.Where(j => j.State == JobState.Processing))
         {
             job.State = JobState.Queued;
+            count++;
+        }
+
+        return Task.FromResult(count);
+    }
+
+    public Task<int> FailStaleUploadsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
+    {
+        var count = 0;
+        foreach (var job in Jobs.Where(j => j.State == JobState.Uploading && j.CreatedAt < DateTimeOffset.UtcNow - maxAge))
+        {
+            job.FailUpload("Upload interrupted — the connection dropped or the server restarted.", DateTimeOffset.UtcNow);
             count++;
         }
 

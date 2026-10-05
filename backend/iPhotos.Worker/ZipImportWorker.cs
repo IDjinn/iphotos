@@ -24,7 +24,9 @@ public sealed class ZipImportWorker(
             idleInterval.TotalSeconds, retryInterval.TotalSeconds);
 
         // A worker crash mid-import strands jobs in Processing; dedup makes re-running
-        // them safe, so requeue before starting the normal poll loop.
+        // them safe, so requeue before starting the normal poll loop. Uploads stranded
+        // in Uploading are different: their HTTP connection died with the old API
+        // process, so the bytes are gone — fail them visibly instead of stalling forever.
         try
         {
             using var startupScope = scopeFactory.CreateScope();
@@ -33,6 +35,12 @@ public sealed class ZipImportWorker(
             if (requeued > 0)
             {
                 logger.LogWarning("Requeued {Count} zip import job(s) stranded in Processing by a previous run", requeued);
+            }
+
+            var failedUploads = await imports.FailStaleUploadsAsync(TimeSpan.FromMinutes(30), stoppingToken);
+            if (failedUploads > 0)
+            {
+                logger.LogWarning("Failed {Count} zip import job(s) stranded in Uploading (upload connection lost)", failedUploads);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

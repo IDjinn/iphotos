@@ -2,6 +2,7 @@ namespace iPhotos.Domain;
 
 public enum JobState
 {
+    Uploading,
     Queued,
     Processing,
     Done,

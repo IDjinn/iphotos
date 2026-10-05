@@ -48,6 +48,52 @@ public sealed class ZipImportJob
         CreatedAt = now,
     };
 
+    /// <summary>
+    /// Creates a job for an archive whose bytes are still arriving. The row exists
+    /// from the first streamed byte so a page reload during a multi-gigabyte
+    /// upload still shows it (state Uploading).
+    /// </summary>
+    public static ZipImportJob CreateUploading(
+        Guid ownerId, string fileName, string blobPath, DateTimeOffset now, long? sizeBytes = null) => new()
+    {
+        Id = Guid.NewGuid(),
+        OwnerId = ownerId,
+        FileName = fileName,
+        SizeBytes = sizeBytes ?? 0,
+        BlobPath = blobPath,
+        State = JobState.Uploading,
+        MaxAttempts = DefaultMaxAttempts,
+        CreatedAt = now,
+    };
+
+    /// <summary>The archive finished staging; the worker may pick it up.</summary>
+    public void MarkQueued(long sizeBytes, DateTimeOffset now)
+    {
+        if (State != JobState.Uploading)
+        {
+            throw new InvalidOperationException($"Cannot queue a job in state {State}.");
+        }
+
+        SizeBytes = sizeBytes;
+        State = JobState.Queued;
+    }
+
+    /// <summary>
+    /// The upload never finished (client disconnected or was rejected mid-stream):
+    /// a worker retry makes no sense, so the job goes straight to Failed.
+    /// </summary>
+    public void FailUpload(string error, DateTimeOffset now)
+    {
+        if (State != JobState.Uploading)
+        {
+            throw new InvalidOperationException($"Cannot fail an upload in state {State}.");
+        }
+
+        LastError = error;
+        State = JobState.Failed;
+        ProcessedAt = now;
+    }
+
     public void Start()
     {
         if (State != JobState.Queued)

@@ -13,6 +13,16 @@ public sealed class ZipImportRepository(PhotosDbContext db) : IZipImportReposito
         return job;
     }
 
+    public async Task SaveAsync(ZipImportJob job, CancellationToken cancellationToken = default)
+    {
+        db.ZipImportJobs.Update(job);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task NotifyJobsQueuedAsync(CancellationToken cancellationToken = default)
+        => await db.Database.ExecuteSqlAsync(
+            $"SELECT pg_notify('iphotos_jobs_queued', 'zip_import_jobs')", cancellationToken);
+
     public async Task<ZipImportJob?> DequeueNextAsync(CancellationToken cancellationToken = default)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -44,6 +54,9 @@ public sealed class ZipImportRepository(PhotosDbContext db) : IZipImportReposito
     public Task<ZipImportJob?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default)
         => db.ZipImportJobs.FirstOrDefaultAsync(j => j.Id == id && j.OwnerId == ownerId, cancellationToken);
 
+    public Task<ZipImportJob?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        => db.ZipImportJobs.FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+
     public async Task<IReadOnlyList<ZipImportJob>> ListRecentForOwnerAsync(
         Guid ownerId, int limit, CancellationToken cancellationToken = default)
         => await db.ZipImportJobs
@@ -56,4 +69,16 @@ public sealed class ZipImportRepository(PhotosDbContext db) : IZipImportReposito
     public async Task<int> RequeueStuckAsync(CancellationToken cancellationToken = default)
         => await db.Database.ExecuteSqlAsync(
             $"UPDATE zip_import_jobs SET state = 'Queued' WHERE state = 'Processing'");
+
+    public async Task<int> FailStaleUploadsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
+    {
+        var cutoff = DateTimeOffset.UtcNow - maxAge;
+        return await db.Database.ExecuteSqlAsync($"""
+            UPDATE zip_import_jobs
+            SET state = 'Failed',
+                last_error = 'Upload interrupted — the connection dropped or the server restarted.',
+                processed_at = NOW()
+            WHERE state = 'Uploading' AND created_at < {cutoff}
+            """, cancellationToken);
+    }
 }
