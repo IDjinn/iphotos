@@ -30,6 +30,8 @@ public static class DependencyInjection
         services.AddSingleton<IImageVariantGenerator, ImageSharpVariantGenerator>();
         services.AddSingleton<IExifExtractor, ImageSharpExifExtractor>();
         services.AddSingleton<IVideoProcessor, FfmpegVideoProcessor>();
+        services.AddSingleton<IImageCompressor, ImageSharpImageCompressor>();
+        services.AddSingleton<IVideoCompressor, FfmpegVideoCompressor>();
         services.AddScoped<VariantProcessingHandler>();
         return services;
     }
