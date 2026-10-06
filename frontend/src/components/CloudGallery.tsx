@@ -56,7 +56,7 @@ function CloudPhotoCell({
   return (
     <Pressable style={styles.cell} onPress={onPress} accessibilityLabel={item.fileName}>
       <Image
-        source={thumbnailUri ? { uri: thumbnailUri } : null}
+        source={thumbnailUri}
         style={styles.cellImage}
         contentFit="cover"
         recyclingKey={item.id}

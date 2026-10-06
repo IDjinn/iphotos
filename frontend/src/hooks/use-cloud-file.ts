@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { authHeaders } from '@/data/api-client';
 import { ensureCloudFile, getCachedCloudFileUri } from '@/data/cloud-media-cache';
 import { fileUrl, type VariantKind } from '@/data/cloud-photos-repository';
 
@@ -8,6 +9,17 @@ interface CloudFileState {
   localUri: string | null;
   /** True once the download failed — callers should fall back to the remote URL. */
   failed: boolean;
+}
+
+/** expo-image source for a cloud variant: local cache needs no auth, the remote fallback does. */
+export interface CloudFileSource {
+  uri: string;
+  headers?: Record<string, string>;
+}
+
+function cloudFileSource(localUri: string | null, failed: boolean, photoId: string, kind: VariantKind): CloudFileSource | null {
+  if (localUri) return { uri: localUri };
+  return failed ? { uri: fileUrl(photoId, kind), headers: authHeaders() } : null;
 }
 
 /**
@@ -53,16 +65,16 @@ function useCloudFile(photoId: string, kind: VariantKind): CloudFileState {
  * first view; only falls back to the authenticated remote URL when the
  * download fails.
  */
-export function useCloudThumbnailUri(photoId: string): string | null {
+export function useCloudThumbnailUri(photoId: string): CloudFileSource | null {
   const { localUri, failed } = useCloudFile(photoId, 'thumbnail');
-  return localUri ?? (failed ? fileUrl(photoId, 'thumbnail') : null);
+  return cloudFileSource(localUri, failed, photoId, 'thumbnail');
 }
 
 /**
  * Cloud preview (2048px) for a viewer: the prefetched recent-window cache
  * first, the remote URL as fallback.
  */
-export function useCloudPreviewUri(photoId: string): string | null {
+export function useCloudPreviewUri(photoId: string): CloudFileSource | null {
   const { localUri, failed } = useCloudFile(photoId, 'preview');
-  return localUri ?? (failed ? fileUrl(photoId, 'preview') : null);
+  return cloudFileSource(localUri, failed, photoId, 'preview');
 }

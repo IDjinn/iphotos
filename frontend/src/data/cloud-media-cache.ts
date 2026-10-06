@@ -1,6 +1,6 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
-import { authHeaders } from '@/data/api-client';
+import { authHeaders, forceRefreshAccessToken } from '@/data/api-client';
 import { fileUrl, type CloudPhoto, type VariantKind } from '@/data/cloud-photos-repository';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -82,9 +82,17 @@ export async function ensureCloudFile(photoId: string, kind: VariantKind): Promi
   try {
     const { downloadAsync } = await import('expo-file-system/legacy');
     new Directory(cacheDirectory()).create({ idempotent: true, intermediates: true });
-    const result = await downloadAsync(fileUrl(photoId, kind), cacheFile(photoId, kind).uri, {
+    let result = await downloadAsync(fileUrl(photoId, kind), cacheFile(photoId, kind).uri, {
       headers: authHeaders(),
     });
+    if (result.status === 401) {
+      // This path bypasses axios, so an expired access token never reaches the
+      // client's refresh interceptor — refresh once (single-flight) and retry.
+      await forceRefreshAccessToken();
+      result = await downloadAsync(fileUrl(photoId, kind), cacheFile(photoId, kind).uri, {
+        headers: authHeaders(),
+      });
+    }
     if (result.status < 200 || result.status >= 300) {
       try {
         const file = cacheFile(photoId, kind);
