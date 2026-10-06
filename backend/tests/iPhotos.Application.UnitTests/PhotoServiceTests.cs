@@ -520,4 +520,101 @@ public class PhotoServiceTests
         await Should.ThrowAsync<NotFoundException>(
             () => NewService().CompleteUploadAsync(intruder.Id, ticket.Photo.Id));
     }
+
+    [Fact]
+    public async Task CreateUploadTicket_OversizeFile_CreatesMultipartSession()
+    {
+        var owner = NewUser(quota: 10L * 1024 * 1024 * 1024);
+        var options = new UploadOptions { DirectMultipartThresholdBytes = 100 };
+
+        var ticket = await NewService(options).CreateUploadTicketAsync(owner.Id, "big.mp4", "video/mp4", 1000, "hash-1");
+
+        ticket.MultipartUploadId.ShouldNotBeNull();
+        ticket.PartSizeBytes.ShouldBe(PhotoService.MultipartPartSizeBytes);
+        ticket.UploadUrl.ShouldBeNull();
+        _blobs.MultipartSessions.ShouldHaveSingleItem();
+        _blobs.PresignRequests.ShouldBeEmpty();
+        _photos.Photos.Single().MultipartUploadId.ShouldBe(ticket.MultipartUploadId);
+    }
+
+    [Fact]
+    public async Task CreateUploadTicket_SmallFile_KeepsSinglePutUrl()
+    {
+        var owner = NewUser();
+
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "p.jpg", "image/jpeg", 300, "hash-1");
+
+        ticket.MultipartUploadId.ShouldBeNull();
+        ticket.UploadUrl.ShouldNotBeNull();
+        _blobs.MultipartSessions.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateUploadTicket_MultipartUnsupportedByStorage_FallsBackToSinglePut()
+    {
+        var owner = NewUser(quota: 10L * 1024 * 1024 * 1024);
+        _blobs.MultipartEnabled = false;
+        var options = new UploadOptions { DirectMultipartThresholdBytes = 100 };
+
+        var ticket = await NewService(options).CreateUploadTicketAsync(owner.Id, "big.mp4", "video/mp4", 1000, "hash-1");
+
+        ticket.MultipartUploadId.ShouldBeNull();
+        ticket.UploadUrl.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task CompleteUpload_MultipartParts_SealsSessionAndMovesPhotoForward()
+    {
+        var owner = NewUser(quota: 10L * 1024 * 1024 * 1024);
+        var options = new UploadOptions { DirectMultipartThresholdBytes = 100 };
+        var service = NewService(options);
+        var ticket = await service.CreateUploadTicketAsync(owner.Id, "big.mp4", "video/mp4", 1000, "hash-1");
+        var partUrl = await service.CreatePartUrlAsync(owner.Id, ticket.Photo.Id, 1);
+        partUrl.ShouldNotBeNull();
+
+        var dto = await NewService(options).CompleteUploadAsync(owner.Id, ticket.Photo.Id,
+            new CompleteUploadRequest(ticket.MultipartUploadId,
+                [new BlobPartETag(1, "\"etag-1\""), new BlobPartETag(2, "\"etag-2\"")]));
+
+        dto.State.ShouldBe(PhotoState.PendingProcessing);
+        _blobs.CompletedSessions.ShouldHaveSingleItem();
+        _blobs.CompletedParts.Single().Parts.Select(p => p.PartNumber).ShouldBe([1, 2]);
+        _jobs.Jobs.ShouldHaveSingleItem();
+        _photos.Photos.Single().MultipartUploadId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task CompleteUpload_MultipartIdMismatch_ThrowsValidation()
+    {
+        var owner = NewUser(quota: 10L * 1024 * 1024 * 1024);
+        var options = new UploadOptions { DirectMultipartThresholdBytes = 100 };
+        await NewService(options).CreateUploadTicketAsync(owner.Id, "big.mp4", "video/mp4", 1000, "hash-1");
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService(options).CompleteUploadAsync(owner.Id, _photos.Photos.Single().Id,
+                new CompleteUploadRequest("forged-id", [new BlobPartETag(1, "\"e\"")])));
+    }
+
+    [Fact]
+    public async Task AbortUpload_MultipartSession_AbortsSessionAndDropsRow()
+    {
+        var owner = NewUser(quota: 10L * 1024 * 1024 * 1024);
+        var options = new UploadOptions { DirectMultipartThresholdBytes = 100 };
+        var ticket = await NewService(options).CreateUploadTicketAsync(owner.Id, "big.mp4", "video/mp4", 1000, "hash-1");
+
+        await NewService(options).AbortUploadAsync(owner.Id, ticket.Photo.Id);
+
+        _blobs.AbortedSessions.ShouldHaveSingleItem();
+        _photos.Photos.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CreatePartUrl_WithoutSession_ThrowsValidation()
+    {
+        var owner = NewUser();
+        var ticket = await NewService().CreateUploadTicketAsync(owner.Id, "p.jpg", "image/jpeg", 300, "hash-1");
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().CreatePartUrlAsync(owner.Id, ticket.Photo.Id, 1));
+    }
 }

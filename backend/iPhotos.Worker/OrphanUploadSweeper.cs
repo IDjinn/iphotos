@@ -52,6 +52,20 @@ public sealed class OrphanUploadSweeper(
         var stale = await photos.ListStalePendingUploadsAsync(now - maxAge, cancellationToken);
         foreach (var photo in stale)
         {
+            // Abort open multipart sessions first so S3 discards the uploaded parts —
+            // otherwise they keep billing until a lifecycle rule cleans them up.
+            if (photo.MultipartUploadId is not null)
+            {
+                try
+                {
+                    await blobs.AbortMultipartUploadAsync(photo.OriginalBlobPath, photo.MultipartUploadId, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Could not abort multipart session for photo {PhotoId}", photo.Id);
+                }
+            }
+
             try
             {
                 await blobs.DeleteAsync(photo.OriginalBlobPath, cancellationToken);

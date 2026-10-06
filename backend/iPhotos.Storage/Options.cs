@@ -60,6 +60,20 @@ public sealed class S3ProviderOptions
     /// <summary>Optional key prefix inside the bucket (all app objects live below it).</summary>
     public string Prefix { get; set; } = string.Empty;
 
+    /// <summary>Parallel part requests per multipart upload (transfer throughput knob).</summary>
+    public int ConcurrentServiceRequests { get; set; } = 8;
+
+    /// <summary>Multipart part size in bytes (32 MiB keeps a 100 GiB object under the
+    /// S3 10k-part limit).</summary>
+    public long PartSizeBytes { get; set; } = 32L * 1024 * 1024;
+
+    /// <summary>Automatic retries per failed S3 request (SDK standard retry mode).</summary>
+    public int MaxErrorRetry { get; set; } = 3;
+
+    /// <summary>Wall-clock budget for single-shot PutObject calls; multipart transfers
+    /// stream for minutes and stay bounded by the caller's cancellation token.</summary>
+    public int SinglePutTimeoutMinutes { get; set; } = 30;
+
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(Bucket)
         && !string.IsNullOrWhiteSpace(AccessKey)

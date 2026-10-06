@@ -47,4 +47,25 @@ public interface IObjectStore
     /// When <paramref name="contentType"/> is non-null the client must send the same Content-Type.
     /// </summary>
     Task<string?> TryPresignPutAsync(string key, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default);
+
+    /// <summary>Starts a direct-upload multipart session; null when the provider cannot
+    /// presign multipart uploads (clients then fall back to the single-shot PUT).</summary>
+    Task<string?> TryCreateMultipartUploadAsync(string key, string? contentType, CancellationToken cancellationToken = default) => null;
+
+    /// <summary>A presigned PUT URL for one part (1-based <paramref name="partNumber"/>) of an
+    /// open multipart session; null when the provider cannot presign multipart uploads.</summary>
+    Task<string?> TryPresignPartAsync(string key, string uploadId, int partNumber, TimeSpan expiry, CancellationToken cancellationToken = default) => null;
+
+    /// <summary>Seals an open multipart session from its uploaded parts.
+    /// Throws <see cref="NotSupportedException"/> when the provider cannot presign.</summary>
+    Task CompleteMultipartUploadAsync(string key, string uploadId, IReadOnlyList<MultipartPartETag> parts, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException($"Provider '{Id}' cannot complete multipart uploads.");
+
+    /// <summary>Cancels an open multipart session, discarding its uploaded parts.
+    /// Throws <see cref="NotSupportedException"/> when the provider cannot presign.</summary>
+    Task AbortMultipartUploadAsync(string key, string uploadId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException($"Provider '{Id}' cannot abort multipart uploads.");
 }
+
+/// <summary>A part confirmation returned by the client when completing a multipart upload.</summary>
+public sealed record MultipartPartETag(int PartNumber, string ETag);

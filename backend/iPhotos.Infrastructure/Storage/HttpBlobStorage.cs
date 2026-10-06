@@ -165,6 +165,85 @@ public sealed class HttpBlobStorage : IBlobStorage, IDisposable
         return body is null ? null : new BlobUploadUrl(body.Url, body.ExpiresAt);
     }
 
+    public async Task<string?> TryCreateMultipartUploadAsync(
+        string path, string? contentType, CancellationToken cancellationToken = default)
+    {
+        var query = $"key={Uri.EscapeDataString(ObjectKey.Normalize(path))}{_providerQuery}";
+        if (!string.IsNullOrEmpty(contentType))
+        {
+            query += $"&contentType={Uri.EscapeDataString(contentType)}";
+        }
+
+        using var response = await WithMetadataTimeout(
+            token => _http.PostAsync($"api/objects/multipart?{query}", content: null, token), cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotImplemented)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Error("multipart create", response);
+        }
+
+        var body = await response.Content
+            .ReadFromJsonAsync<MultipartCreateResponse>(cancellationToken: cancellationToken);
+        return body?.UploadId;
+    }
+
+    public async Task<BlobUploadUrl?> TryCreatePartUrlAsync(
+        string path, string uploadId, int partNumber, TimeSpan expiry, CancellationToken cancellationToken = default)
+    {
+        var query = $"key={Uri.EscapeDataString(ObjectKey.Normalize(path))}{_providerQuery}"
+            + $"&partNumber={partNumber}&expirySeconds={(long)expiry.TotalSeconds}";
+        using var response = await WithMetadataTimeout(
+            token => _http.PostAsync($"api/objects/multipart/{Uri.EscapeDataString(uploadId)}/part-url?{query}", content: null, token),
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotImplemented)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Error("multipart presign", response);
+        }
+
+        var body = await response.Content
+            .ReadFromJsonAsync<UploadUrlResponse>(cancellationToken: cancellationToken);
+        return body is null ? null : new BlobUploadUrl(body.Url, body.ExpiresAt);
+    }
+
+    public async Task CompleteMultipartUploadAsync(
+        string path, string uploadId, IReadOnlyList<BlobPartETag> parts, CancellationToken cancellationToken = default)
+    {
+        var query = $"key={Uri.EscapeDataString(ObjectKey.Normalize(path))}{_providerQuery}";
+        using var response = await WithMetadataTimeout(
+            token => _http.PostAsJsonAsync(
+                $"api/objects/multipart/{Uri.EscapeDataString(uploadId)}/complete?{query}",
+                parts.Select(p => new { partNumber = p.PartNumber, etag = p.ETag }),
+                token),
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw Error("multipart complete", response);
+        }
+    }
+
+    public async Task AbortMultipartUploadAsync(string path, string uploadId, CancellationToken cancellationToken = default)
+    {
+        var query = $"key={Uri.EscapeDataString(ObjectKey.Normalize(path))}{_providerQuery}";
+        using var response = await WithMetadataTimeout(
+            token => _http.DeleteAsync($"api/objects/multipart/{Uri.EscapeDataString(uploadId)}?{query}", token),
+            cancellationToken);
+        if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+        {
+            throw Error("multipart abort", response);
+        }
+    }
+
+    private sealed record MultipartCreateResponse(string UploadId, string Key, string Provider);
+
     private sealed record UploadUrlResponse(string Url, DateTimeOffset ExpiresAt);
 
     /// <summary>

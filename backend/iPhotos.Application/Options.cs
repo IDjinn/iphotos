@@ -52,6 +52,16 @@ public sealed class UploadOptions
 
     /// <summary>Paid plan: max video size in bytes; larger uploads are rejected. 0 disables the cap.</summary>
     public long PaidMaxVideoBytes { get; set; } = 30L * 1024 * 1024 * 1024; // 30 GiB
+
+    /// <summary>Direct uploads at or above this size use presigned multipart instead of a
+    /// single presigned PUT (S3 caps one PUT at 5 GB). Keep below the smallest paid video cap.</summary>
+    public long DirectMultipartThresholdBytes { get; set; } = 5L * 1024 * 1024 * 1024; // 5 GiB
+
+    /// <summary>Upload throughput assumed when sizing presigned PUT expiries for large files.</summary>
+    public double AssumedUploadMbps { get; set; } = 20;
+
+    /// <summary>Upper bound for any presigned PUT expiry, however large the file.</summary>
+    public int UploadUrlMaxExpiryHours { get; set; } = 24;
 }
 
 public sealed class VideoProcessorOptions

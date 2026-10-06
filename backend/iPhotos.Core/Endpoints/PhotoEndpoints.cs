@@ -52,9 +52,41 @@ public static class PhotoEndpoints
             Guid id,
             ClaimsPrincipal principal,
             PhotoService photos,
+            CompleteUploadRequest? request,
             CancellationToken cancellationToken) =>
-            Results.Ok(await photos.CompleteUploadAsync(principal.GetUserId(), id, cancellationToken)))
+            Results.Ok(await photos.CompleteUploadAsync(principal.GetUserId(), id, request, cancellationToken)))
+        .DisableAntiforgery()
         .WithName("CompleteUpload");
+
+        // Oversize direct uploads ride a multipart session: the client presigns each
+        // part through here and PUTs the bytes straight to storage. 501 = storage
+        // cannot presign multipart; the client falls back to the proxied upload.
+        group.MapPost("/{id:guid}/part-url", async (
+            Guid id,
+            ClaimsPrincipal principal,
+            PartUrlRequest request,
+            PhotoService photos,
+            CancellationToken cancellationToken) =>
+        {
+            var url = await photos.CreatePartUrlAsync(principal.GetUserId(), id, request.PartNumber, cancellationToken);
+            return url is null
+                ? Results.Json(new { error = "Direct multipart upload is not available." },
+                    statusCode: StatusCodes.Status501NotImplemented)
+                : Results.Ok(new PartUrlResponse(url.Url, request.PartNumber, url.ExpiresAt));
+        })
+        .DisableAntiforgery()
+        .WithName("CreatePartUrl");
+
+        group.MapPost("/{id:guid}/abort", async (
+            Guid id,
+            ClaimsPrincipal principal,
+            PhotoService photos,
+            CancellationToken cancellationToken) =>
+        {
+            await photos.AbortUploadAsync(principal.GetUserId(), id, cancellationToken);
+            return Results.NoContent();
+        })
+        .WithName("AbortUpload");
 
         group.MapGet("/", async (
             ClaimsPrincipal principal,

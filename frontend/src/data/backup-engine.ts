@@ -30,8 +30,13 @@ import type { PhotoAsset } from '@/data/types';
  */
 
 const UPLOAD_BATCH = 100;
-/** Parallel upload lanes — bounded so mobile networks and the API stay healthy. */
-const UPLOAD_CONCURRENCY = 3;
+/**
+ * Fast/slow upload lanes — photos move in parallel (small, cheap); videos share a
+ * smaller slow pool so a couple of multi-GiB transfers can't starve the photo
+ * backup. Overridable at build time via EXPO_PUBLIC_UPLOAD_*_LANES.
+ */
+const PHOTO_LANES = Math.max(1, Number(process.env.EXPO_PUBLIC_UPLOAD_PHOTO_LANES ?? 8));
+const VIDEO_LANES = Math.max(1, Number(process.env.EXPO_PUBLIC_UPLOAD_VIDEO_LANES ?? 2));
 
 export interface BackupProgress {
   phase: 'inventory' | 'hashing' | 'uploading' | 'done' | 'error';
@@ -182,18 +187,28 @@ export async function runBackup(onProgress: (progress: BackupProgress) => void):
     const assets = await fetchAssetsByIds(batch.map((row) => row.asset_id));
     const byId = new Map<string, PhotoAsset>(assets.map((asset) => [asset.id, asset]));
 
-    // Shared-cursor pool: each lane pulls the next row until the batch or a
-    // fatal condition ends the run.
-    let cursor = 0;
-    const runLane = async (): Promise<void> => {
-      while (!fatal) {
-        const index = cursor;
-        if (index >= batch.length) return;
-        cursor += 1;
-        if (await processRow(batch[index], byId)) return;
-      }
+    // Shared-cursor pools over the same batch: photo lanes drain the photo rows,
+    // video lanes the video rows (classified by the resolved asset's media type).
+    const photoRows: typeof batch = [];
+    const videoRows: typeof batch = [];
+    for (const row of batch) {
+      (byId.get(row.asset_id)?.mediaType === 'video' ? videoRows : photoRows).push(row);
+    }
+
+    const runRows = async (rows: typeof batch, laneCount: number): Promise<void> => {
+      let cursor = 0;
+      const runLane = async (): Promise<void> => {
+        while (!fatal) {
+          const index = cursor;
+          if (index >= rows.length) return;
+          cursor += 1;
+          if (await processRow(rows[index], byId)) return;
+        }
+      };
+      await Promise.all(Array.from({ length: laneCount }, runLane));
     };
-    await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, runLane));
+
+    await Promise.all([runRows(photoRows, PHOTO_LANES), runRows(videoRows, VIDEO_LANES)]);
   }
 
   if (fatal) {

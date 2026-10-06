@@ -58,6 +58,16 @@ public interface IVariantJobRepository
     /// moving it to Processing. Returns null when the queue is empty.
     /// </summary>
     Task<VariantJob?> DequeueNextAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Same claim as <see cref="DequeueNextAsync"/> but restricted to jobs whose photo
+    /// is of the given media kind — the worker's fast (photo) and slow (video) lanes
+    /// pull from disjoint slices of the same queue.
+    /// </summary>
+    Task<VariantJob?> DequeueNextAsync(MediaType kind, CancellationToken cancellationToken = default);
+
+    /// <summary>Persists mutations made to a job (state transitions, retry counters).</summary>
+    Task SaveAsync(VariantJob job, CancellationToken cancellationToken = default);
 }
 
 public interface IZipImportRepository

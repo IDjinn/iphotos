@@ -138,7 +138,20 @@ interface UploadTicketResponse {
   duplicated: boolean;
   uploadUrl?: string;
   expiresAt?: string;
+  /** Present when the backend routed the file to a presigned multipart session (> 5 GB). */
+  multipartUploadId?: string;
+  partSizeBytes?: number;
 }
+
+interface PartUrlResponse {
+  url: string;
+  partNumber: number;
+  expiresAt: string;
+}
+
+/** Each part PUT gets its own deadline so a dead connection can't stall the upload. */
+const PART_TIMEOUT_MS = 10 * 60_000;
+const PART_ATTEMPTS = 2;
 
 /**
  * Uploads a local photo. Preferred path: upload ticket → presigned PUT straight
@@ -178,6 +191,13 @@ async function uploadDirect(fileUri: string, options: UploadOptions): Promise<Up
     options.onProgress?.(1);
     return { photo: ticket.photo, duplicated: true };
   }
+  if (ticket.multipartUploadId && ticket.partSizeBytes) {
+    // The multipart path completes the session itself (parts are confirmed in
+    // the same call) and returns the finished photo.
+    const photo = await uploadMultipartDirect(fileUri, ticket, options);
+    options.onProgress?.(1);
+    return { photo, duplicated: false };
+  }
   if (!ticket.uploadUrl) {
     throw new ApiError(501, 'Direct upload is not available.');
   }
@@ -186,6 +206,85 @@ async function uploadDirect(fileUri: string, options: UploadOptions): Promise<Up
   const photo = await completeUpload(ticket.photo.id);
   options.onProgress?.(1);
   return { photo, duplicated: false };
+}
+
+/** Presigns and PUTs each part straight to storage, then completes the session.
+ * Aborts server-side on failure so uploaded parts don't linger in the bucket.
+ * Resolves with the completed photo (the complete call finalizes the upload). */
+async function uploadMultipartDirect(
+  fileUri: string,
+  ticket: UploadTicketResponse,
+  options: UploadOptions,
+): Promise<CloudPhoto> {
+  const { File } = await import('expo-file-system');
+  const { fetch } = await import('expo/fetch');
+  const uploadId = ticket.multipartUploadId!;
+  const partSize = ticket.partSizeBytes!;
+  const file = new File(fileUri);
+  const total = file.size ?? options.sizeBytes ?? 0;
+  if (total <= 0) {
+    throw new ApiError(0, 'Upload failed — could not read the file.');
+  }
+
+  try {
+    const parts: { partNumber: number; etag: string }[] = [];
+    let offset = 0;
+    let partNumber = 1;
+    while (offset < total) {
+      const end = Math.min(offset + partSize, total);
+      const presigned = await apiJson<PartUrlResponse>(`/api/photos/${ticket.photo.id}/part-url`, {
+        method: 'POST',
+        body: { partNumber },
+      });
+      const etag = await putPart(fetch, file.slice(offset, end, options.mimeType), presigned.url);
+      parts.push({ partNumber, etag });
+      offset = end;
+      partNumber += 1;
+      options.onProgress?.(offset / total);
+    }
+
+    return await apiJson<CloudPhoto>(`/api/photos/${ticket.photo.id}/complete`, {
+      method: 'POST',
+      body: { multipartUploadId: uploadId, parts },
+    });
+  } catch (error) {
+    // 401/413 are session/quota states the caller handles — don't mask them.
+    if (!(error instanceof ApiError && (error.status === 401 || error.status === 413))) {
+      await apiJson<void>(`/api/photos/${ticket.photo.id}/abort`, { method: 'POST' }).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+/** PUTs one part with retries and a per-part deadline; resolves with the stored ETag. */
+async function putPart(
+  fetchFn: typeof fetch,
+  body: Blob,
+  url: string,
+): Promise<string> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= PART_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PART_TIMEOUT_MS);
+    try {
+      const response = await fetchFn(url, {
+        method: 'PUT',
+        body,
+        signal: controller.signal,
+      });
+      if (response.ok) {
+        const etag = response.headers.get('ETag') ?? response.headers.get('etag');
+        if (etag) return etag;
+        throw new ApiError(0, 'Upload failed — storage did not confirm the part.');
+      }
+      lastError = new ApiError(response.status, `Part upload failed (${response.status}).`);
+    } catch (error) {
+      lastError = error instanceof ApiError ? error : new ApiError(0, 'Part upload failed — check your connection.');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError;
 }
 
 /** PUTs the raw file bytes to a presigned storage URL, reporting byte progress. */

@@ -1,3 +1,4 @@
+using iPhotos.Application.Common;
 using iPhotos.Domain;
 
 namespace iPhotos.Application;
@@ -64,8 +65,21 @@ public sealed record PhotoUploadResult(PhotoDto Photo, bool Duplicated);
 public sealed record UploadTicketRequest(string FileName, string ContentType, long SizeBytes, string ContentHash);
 
 /// <summary>Direct-upload ticket: reserve dedup/quota, then PUT the bytes straight to storage.
-/// <c>UploadUrl</c> is null for duplicates (nothing to upload).</summary>
-public sealed record UploadTicket(PhotoDto Photo, bool Duplicated, string? UploadUrl, DateTimeOffset? ExpiresAt);
+/// <c>UploadUrl</c> is null for duplicates (nothing to upload). Oversize files get a multipart
+/// session instead of a single presigned PUT (<c>MultipartUploadId</c> + <c>PartSizeBytes</c>).</summary>
+public sealed record UploadTicket(
+    PhotoDto Photo,
+    bool Duplicated,
+    string? UploadUrl,
+    DateTimeOffset? ExpiresAt,
+    string? MultipartUploadId = null,
+    long? PartSizeBytes = null);
+
+public sealed record PartUrlRequest(int PartNumber);
+
+public sealed record CompleteUploadRequest(string? MultipartUploadId, IReadOnlyList<BlobPartETag>? Parts);
+
+public sealed record PartUrlResponse(string Url, int PartNumber, DateTimeOffset ExpiresAt);
 
 public sealed record PhotoFilter(
     Guid OwnerId,

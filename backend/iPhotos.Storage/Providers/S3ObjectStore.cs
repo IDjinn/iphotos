@@ -25,12 +25,16 @@ public sealed class S3ObjectStore : IObjectStore
     {
         _bucket = options.Bucket;
         _prefix = NormalizePrefix(options.Prefix);
+        _partSize = Math.Clamp(options.PartSizeBytes, 5L * 1024 * 1024, 1024L * 1024 * 1024);
+        _singlePutTimeout = TimeSpan.FromMinutes(Math.Max(1, options.SinglePutTimeoutMinutes));
 
         var config = new AmazonS3Config
         {
             RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(options.Region),
             ForcePathStyle = options.ForcePathStyle,
             AuthenticationRegion = options.Region,
+            RetryMode = Amazon.Runtime.RequestRetryMode.Standard,
+            MaxErrorRetry = Math.Clamp(options.MaxErrorRetry, 0, 10),
             // No per-request timeout: large multipart parts stream for minutes and are
             // bounded by the CancellationToken passed to each call instead.
             Timeout = Timeout.InfiniteTimeSpan,
@@ -56,9 +60,12 @@ public sealed class S3ObjectStore : IObjectStore
         _transfer = new TransferUtility(_client, new TransferUtilityConfig
         {
             MinSizeBeforePartUpload = MultipartThresholdBytes,
-            ConcurrentServiceRequests = 4,
+            ConcurrentServiceRequests = Math.Clamp(options.ConcurrentServiceRequests, 1, 64),
         });
     }
+
+    private readonly long _partSize;
+    private readonly TimeSpan _singlePutTimeout;
 
     /// <summary>Non-seekable bodies are spilled to a seekable temp file before this runs,
     /// so the decision is purely a size one in practice.</summary>
@@ -99,7 +106,7 @@ public sealed class S3ObjectStore : IObjectStore
                     Key = FullKey(key),
                     InputStream = payload,
                     AutoCloseStream = false,
-                    PartSize = 32L * 1024 * 1024,
+                    PartSize = _partSize,
                     MpuObjectSize = payload.Length,
                 }, cancellationToken);
                 return new ObjectWriteResult(payload.Length, null);
@@ -115,7 +122,11 @@ public sealed class S3ObjectStore : IObjectStore
                 UseChunkEncoding = false,
             };
 
-            var response = await _client.PutObjectAsync(request, cancellationToken);
+            // Single-shot PUTs get a wall-clock budget so a dead connection surfaces
+            // instead of hanging on a caller token that never fires.
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            budget.CancelAfter(_singlePutTimeout);
+            var response = await _client.PutObjectAsync(request, budget.Token);
             return new ObjectWriteResult(response.ContentLength > 0 ? response.ContentLength : payload.Length, response.ETag);
         }
         catch (AmazonS3Exception e)
@@ -218,6 +229,93 @@ public sealed class S3ObjectStore : IObjectStore
         }
 
         return Task.FromResult<string?>(url);
+    }
+
+    public async Task<string?> TryCreateMultipartUploadAsync(string key, string? contentType, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _client.InitiateMultipartUploadAsync(new InitiateMultipartUploadRequest
+            {
+                BucketName = _bucket,
+                Key = FullKey(key),
+                ContentType = contentType,
+            }, cancellationToken);
+            return response.UploadId;
+        }
+        catch (AmazonS3Exception e)
+        {
+            throw new ProviderException($"S3 multipart create failed ({e.ErrorCode}).", e);
+        }
+    }
+
+    public Task<string?> TryPresignPartAsync(string key, string uploadId, int partNumber, TimeSpan expiry, CancellationToken cancellationToken = default)
+    {
+        if (partNumber is < 1 or > 10000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(partNumber));
+        }
+
+        try
+        {
+            var url = _client.GetPreSignedURL(new GetPreSignedUrlRequest
+            {
+                BucketName = _bucket,
+                Key = FullKey(key),
+                Verb = Amazon.S3.HttpVerb.PUT,
+                Expires = DateTime.UtcNow + expiry,
+                UploadId = uploadId,
+                PartNumber = partNumber,
+            });
+            if (_isHttpEndpoint && url.StartsWith("https://", StringComparison.Ordinal))
+            {
+                url = "http://" + url["https://".Length..];
+            }
+
+            return Task.FromResult<string?>(url);
+        }
+        catch (AmazonS3Exception e)
+        {
+            throw new ProviderException($"S3 multipart presign failed ({e.ErrorCode}).", e);
+        }
+    }
+
+    public async Task CompleteMultipartUploadAsync(string key, string uploadId, IReadOnlyList<MultipartPartETag> parts, CancellationToken cancellationToken = default)
+    {
+        if (parts.Count == 0)
+        {
+            throw new ProviderException("S3 multipart complete failed (no parts uploaded).");
+        }
+
+        try
+        {
+            await _client.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+            {
+                BucketName = _bucket,
+                Key = FullKey(key),
+                UploadId = uploadId,
+                PartETags = parts
+                    .OrderBy(p => p.PartNumber)
+                    .Select(p => new PartETag(p.PartNumber, p.ETag))
+                    .ToList(),
+            }, cancellationToken);
+        }
+        catch (AmazonS3Exception e)
+        {
+            throw new ProviderException($"S3 multipart complete failed ({e.ErrorCode}).", e);
+        }
+    }
+
+    public async Task AbortMultipartUploadAsync(string key, string uploadId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _client.AbortMultipartUploadAsync(_bucket, FullKey(key), uploadId, cancellationToken);
+        }
+        catch (AmazonS3Exception e)
+        {
+            throw new ProviderException($"S3 multipart abort failed ({e.ErrorCode}).", e);
+        }
     }
 
     private string FullKey(string key)

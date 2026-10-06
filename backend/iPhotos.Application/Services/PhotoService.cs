@@ -80,10 +80,31 @@ public sealed class PhotoService(
     IDateTimeProvider dateTime,
     Microsoft.Extensions.Options.IOptions<UploadOptions> uploadOptions)
 {
-    /// <summary>Lifetime of presigned PUT URLs handed out by upload tickets.</summary>
-    private static readonly TimeSpan UploadUrlLifetime = TimeSpan.FromMinutes(15);
+    /// <summary>Floor for presigned PUT expiries handed out by upload tickets.</summary>
+    private static readonly TimeSpan UploadUrlMinLifetime = TimeSpan.FromMinutes(15);
+
+    /// <summary>Client-side multipart part size for direct uploads (each part except the
+    /// last must be at least 5 MiB per the S3 contract; 32 MiB keeps a 30 GiB video at
+    /// ~960 parts).</summary>
+    public const long MultipartPartSizeBytes = 32L * 1024 * 1024;
 
     private UploadOptions UploadLimits => uploadOptions.Value;
+
+    /// <summary>
+    /// Presigned PUT URLs must outlive the upload itself: slow connections uploading
+    /// multi-GiB videos blow past a fixed 15-minute window. Scales with the file size
+    /// at the assumed throughput, bounded by a configured ceiling.
+    /// </summary>
+    private TimeSpan ComputeUploadUrlExpiry(long sizeBytes)
+    {
+        var assumedBytesPerSecond = UploadLimits.AssumedUploadMbps * 1024 * 1024 / 8;
+        var scaled = assumedBytesPerSecond > 0
+            ? TimeSpan.FromSeconds(sizeBytes / assumedBytesPerSecond)
+            : UploadUrlMinLifetime;
+        var max = TimeSpan.FromHours(Math.Max(1, UploadLimits.UploadUrlMaxExpiryHours));
+        var expiry = scaled > UploadUrlMinLifetime ? scaled : UploadUrlMinLifetime;
+        return expiry > max ? max : expiry;
+    }
 
     /// <summary>
     /// Paid plans reject files above their cap. Free plans never reject here —
@@ -159,19 +180,67 @@ public sealed class PhotoService(
             SupportedMediaTypes.KindOf(contentType));
         photo.OriginalBlobPath = BlobPaths.Original(ownerId, photo.Id, fileName);
 
-        // The ticket reserves the quota by persisting the PendingUpload row; the presigned
-        // PUT lets the client place the bytes in storage without proxying them through here.
-        var uploadUrl = await blobStorage.TryCreateUploadUrlAsync(
-                photo.OriginalBlobPath, UploadUrlLifetime, contentType, cancellationToken)
-            ?? throw new NotSupportedException("Direct upload is not supported by the configured blob storage.");
+        // The ticket reserves the quota by persisting the PendingUpload row. Oversize
+        // files (> 5 GB) cannot ride a single presigned PUT (the S3 hard cap), so they
+        // get a multipart session whose parts the client presigns one by one; smaller
+        // files keep the plain presigned PUT with bytes never crossing this API.
+        var expiry = ComputeUploadUrlExpiry(sizeBytes);
+        string? multipartId = null;
+        if (sizeBytes >= UploadLimits.DirectMultipartThresholdBytes)
+        {
+            multipartId = await blobStorage.TryCreateMultipartUploadAsync(
+                photo.OriginalBlobPath, contentType, cancellationToken);
+            photo.MultipartUploadId = multipartId;
+        }
+
+        string? uploadUrl = null;
+        if (multipartId is null)
+        {
+            uploadUrl = (await blobStorage.TryCreateUploadUrlAsync(
+                    photo.OriginalBlobPath, expiry, contentType, cancellationToken))
+                ?.Url
+                ?? throw new NotSupportedException("Direct upload is not supported by the configured blob storage.");
+        }
 
         await photos.AddAsync(photo, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new UploadTicket(ToDto(photo, []), Duplicated: false, uploadUrl.Url, uploadUrl.ExpiresAt);
+        return new UploadTicket(
+            ToDto(photo, []), Duplicated: false, uploadUrl, dateTime.UtcNow + expiry,
+            multipartId, multipartId is null ? null : MultipartPartSizeBytes);
     }
 
-    public async Task<PhotoDto> CompleteUploadAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
+    /// <summary>Presigns one part of an open multipart direct upload; null when the
+    /// storage cannot presign multipart uploads.</summary>
+    public async Task<BlobUploadUrl?> CreatePartUrlAsync(
+        Guid ownerId,
+        Guid photoId,
+        int partNumber,
+        CancellationToken cancellationToken = default)
+    {
+        if (partNumber is < 1 or > 10000)
+        {
+            throw new ValidationException("Part number must be between 1 and 10000.");
+        }
+
+        var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
+
+        if (photo.State != PhotoState.PendingUpload)
+        {
+            throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.");
+        }
+
+        var uploadId = photo.MultipartUploadId
+            ?? throw new ValidationException($"Photo '{photoId}' has no multipart upload session.");
+
+        return await blobStorage.TryCreatePartUrlAsync(
+            photo.OriginalBlobPath, uploadId, partNumber, ComputeUploadUrlExpiry(photo.SizeBytes), cancellationToken);
+    }
+
+    /// <summary>Aborts an in-flight direct upload: cancels any multipart session and
+    /// drops the reserved row immediately.</summary>
+    public async Task AbortUploadAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
     {
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
             ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
@@ -181,11 +250,64 @@ public sealed class PhotoService(
             throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.");
         }
 
+        if (photo.MultipartUploadId is not null)
+        {
+            try
+            {
+                await blobStorage.AbortMultipartUploadAsync(
+                    photo.OriginalBlobPath, photo.MultipartUploadId, cancellationToken);
+            }
+            catch (NotSupportedException)
+            {
+                // Provider without multipart support — nothing to abort.
+            }
+        }
+
+        try
+        {
+            await blobStorage.DeleteAsync(photo.OriginalBlobPath, cancellationToken);
+        }
+        catch (FileNotFoundException)
+        {
+            // Nothing was uploaded yet.
+        }
+
+        await photos.DeleteAsync(photo, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<PhotoDto> CompleteUploadAsync(
+        Guid ownerId,
+        Guid photoId,
+        CompleteUploadRequest? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
+
+        if (photo.State != PhotoState.PendingUpload)
+        {
+            throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.");
+        }
+
+        if (request?.MultipartUploadId is not null && request.Parts is { Count: > 0 })
+        {
+            var expected = photo.MultipartUploadId;
+            if (expected is not null && expected != request.MultipartUploadId)
+            {
+                throw new ValidationException($"Multipart upload id does not match photo '{photoId}'.");
+            }
+
+            await blobStorage.CompleteMultipartUploadAsync(
+                photo.OriginalBlobPath, request.MultipartUploadId, request.Parts, cancellationToken);
+        }
+
         if (!await blobStorage.ExistsAsync(photo.OriginalBlobPath, cancellationToken))
         {
             throw new NotFoundException($"The file for photo '{photoId}' has not been uploaded yet.");
         }
 
+        photo.MultipartUploadId = null;
         photo.MarkUploadedForProcessing(dateTime.UtcNow);
         await jobs.EnqueueAsync(photo.Id, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);

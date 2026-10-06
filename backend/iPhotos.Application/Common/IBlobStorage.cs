@@ -20,7 +20,28 @@ public interface IBlobStorage
     /// or null when the backing storage cannot presign direct uploads.
     /// </summary>
     Task<BlobUploadUrl?> TryCreateUploadUrlAsync(string path, TimeSpan expiry, string? contentType, CancellationToken cancellationToken = default);
+
+    /// <summary>Starts a direct multipart session; null when the backing storage cannot
+    /// presign multipart uploads (clients fall back to the single-shot PUT).</summary>
+    Task<string?> TryCreateMultipartUploadAsync(string path, string? contentType, CancellationToken cancellationToken = default)
+        => Task.FromResult<string?>(null);
+
+    /// <summary>A presigned PUT URL for one part (1-based) of an open multipart session;
+    /// null when the backing storage cannot presign multipart uploads.</summary>
+    Task<BlobUploadUrl?> TryCreatePartUrlAsync(string path, string uploadId, int partNumber, TimeSpan expiry, CancellationToken cancellationToken = default)
+        => Task.FromResult<BlobUploadUrl?>(null);
+
+    /// <summary>Seals an open multipart session from its uploaded parts.</summary>
+    Task CompleteMultipartUploadAsync(string path, string uploadId, IReadOnlyList<BlobPartETag> parts, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Multipart uploads are not supported by the configured blob storage.");
+
+    /// <summary>Cancels an open multipart session, discarding its uploaded parts.</summary>
+    Task AbortMultipartUploadAsync(string path, string uploadId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Multipart uploads are not supported by the configured blob storage.");
 }
 
 /// <summary>A direct-upload URL minted by the backing storage service.</summary>
 public sealed record BlobUploadUrl(string Url, DateTimeOffset ExpiresAt);
+
+/// <summary>A part confirmation reported by the client when completing a multipart upload.</summary>
+public sealed record BlobPartETag(int PartNumber, string ETag);

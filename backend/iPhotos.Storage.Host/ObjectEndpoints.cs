@@ -19,6 +19,13 @@ public static class ObjectEndpoints
         // POST /api/objects/upload-url?key=...&provider=...&contentType=... (presigned PUT URL).
         app.MapPost("/api/objects/url", CreateUrlAsync);
         app.MapPost("/api/objects/upload-url", CreateUploadUrlAsync);
+
+        // Direct multipart sessions (providers that presign): create → per-part presigned
+        // PUTs → complete (or abort). All API-key protected like every object route.
+        app.MapPost("/api/objects/multipart", CreateMultipartAsync);
+        app.MapPost("/api/objects/multipart/{uploadId}/part-url", CreatePartUrlAsync);
+        app.MapPost("/api/objects/multipart/{uploadId}/complete", CompleteMultipartAsync);
+        app.MapDelete("/api/objects/multipart/{uploadId}", AbortMultipartAsync);
     }
 
     private static async Task<IResult> PutAsync(
@@ -181,6 +188,150 @@ public static class ObjectEndpoints
         return Results.Ok(new ObjectUrlResponse(url, normalized, store.Id, null, contentType, expiresAt));
     }
 
+    private static async Task<IResult> CreateMultipartAsync(
+        HttpContext context,
+        string? key,
+        string? provider,
+        string? contentType,
+        IObjectStoreFactoryAccessor accessor,
+        ILogger<Program> logger)
+    {
+        if (!accessor.IsApiKeyValid(context))
+        {
+            return Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return Results.Json(new { error = "Query parameter 'key' is required." }, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var store = accessor.Resolve(provider);
+        var normalized = ObjectKey.Normalize(key);
+        var uploadId = await store.TryCreateMultipartUploadAsync(normalized, contentType, context.RequestAborted);
+        if (uploadId is null)
+        {
+            return Results.Json(
+                new { error = $"Provider '{store.Id}' cannot presign multipart uploads." },
+                statusCode: StatusCodes.Status501NotImplemented);
+        }
+
+        logger.LogInformation("PRESIGN MULTIPART CREATE {Provider}:{Key}", store.Id, normalized);
+        return Results.Ok(new MultipartCreateResponse(uploadId, normalized, store.Id));
+    }
+
+    private static async Task<IResult> CreatePartUrlAsync(
+        HttpContext context,
+        string uploadId,
+        string? key,
+        string? provider,
+        int? partNumber,
+        long? expirySeconds,
+        IObjectStoreFactoryAccessor accessor,
+        ILogger<Program> logger)
+    {
+        if (!accessor.IsApiKeyValid(context))
+        {
+            return Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(key) || partNumber is not (>= 1 and <= 10000))
+        {
+            return Results.Json(
+                new { error = "Query parameters 'key' and 'partNumber' (1-10000) are required." },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var store = accessor.Resolve(provider);
+        var normalized = ObjectKey.Normalize(key);
+        var maxExpiry = (long)TimeSpan.FromDays(7).TotalSeconds;
+        var expiry = expirySeconds is > 0 && expirySeconds <= maxExpiry
+            ? TimeSpan.FromSeconds(expirySeconds.Value)
+            : TimeSpan.FromHours(24);
+        var url = await store.TryPresignPartAsync(normalized, uploadId, partNumber.Value, expiry, context.RequestAborted);
+        if (url is null)
+        {
+            return Results.Json(
+                new { error = $"Provider '{store.Id}' cannot presign multipart uploads." },
+                statusCode: StatusCodes.Status501NotImplemented);
+        }
+
+        logger.LogInformation("PRESIGN MULTIPART PART {Provider}:{Key} #{Part}", store.Id, normalized, partNumber);
+        return Results.Ok(new MultipartPartUrlResponse(url, partNumber.Value, accessor.Now + expiry));
+    }
+
+    private static async Task<IResult> CompleteMultipartAsync(
+        HttpContext context,
+        string uploadId,
+        string? key,
+        string? provider,
+        IObjectStoreFactoryAccessor accessor,
+        ILogger<Program> logger)
+    {
+        if (!accessor.IsApiKeyValid(context))
+        {
+            return Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return Results.Json(new { error = "Query parameter 'key' is required." }, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        List<MultipartPartETag>? parts;
+        try
+        {
+            parts = await context.Request.ReadFromJsonAsync<List<MultipartPartETag>>(context.RequestAborted);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            parts = null;
+        }
+
+        if (parts is null || parts.Count == 0)
+        {
+            return Results.Json(
+                new { error = "Body must be a non-empty array of { partNumber, etag }." },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var store = accessor.Resolve(provider);
+        var normalized = ObjectKey.Normalize(key);
+        await store.CompleteMultipartUploadAsync(normalized, uploadId, parts, context.RequestAborted);
+        logger.LogInformation("MULTIPART COMPLETE {Provider}:{Key} ({Parts} parts)", store.Id, normalized, parts.Count);
+
+        var expiresAt = accessor.Now + accessor.Options.UrlExpiry;
+        var url = await BuildGetUrlAsync(context, accessor, store, normalized, expiresAt);
+        return Results.Json(
+            new ObjectUrlResponse(url, normalized, store.Id, null, null, expiresAt),
+            statusCode: StatusCodes.Status201Created);
+    }
+
+    private static async Task<IResult> AbortMultipartAsync(
+        HttpContext context,
+        string uploadId,
+        string? key,
+        string? provider,
+        IObjectStoreFactoryAccessor accessor,
+        ILogger<Program> logger)
+    {
+        if (!accessor.IsApiKeyValid(context))
+        {
+            return Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return Results.Json(new { error = "Query parameter 'key' is required." }, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var store = accessor.Resolve(provider);
+        var normalized = ObjectKey.Normalize(key);
+        await store.AbortMultipartUploadAsync(normalized, uploadId, context.RequestAborted);
+        logger.LogInformation("MULTIPART ABORT {Provider}:{Key}", store.Id, normalized);
+        return Results.NoContent();
+    }
+
     private static async Task<string> BuildGetUrlAsync(
         HttpContext context,
         IObjectStoreFactoryAccessor accessor,
@@ -216,4 +367,8 @@ public static class ObjectEndpoints
         long? SizeBytes,
         string? ContentType,
         DateTimeOffset ExpiresAt);
+
+    private sealed record MultipartCreateResponse(string UploadId, string Key, string Provider);
+
+    private sealed record MultipartPartUrlResponse(string Url, int PartNumber, DateTimeOffset ExpiresAt);
 }

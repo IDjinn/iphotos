@@ -167,6 +167,9 @@ public sealed class InMemoryVariantJobRepository : IVariantJobRepository
 {
     public List<VariantJob> Jobs { get; } = [];
 
+    /// <summary>Photo id → media kind; defaults to Photo when unregistered.</summary>
+    public Dictionary<Guid, MediaType> MediaByPhoto { get; } = [];
+
     public Task<VariantJob> EnqueueAsync(Guid photoId, CancellationToken cancellationToken = default)
     {
         var job = VariantJob.Create(photoId, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
@@ -184,6 +187,20 @@ public sealed class InMemoryVariantJobRepository : IVariantJobRepository
 
         return Task.FromResult(job);
     }
+
+    public Task<VariantJob?> DequeueNextAsync(MediaType kind, CancellationToken cancellationToken = default)
+    {
+        var job = Jobs.FirstOrDefault(j => j.State == JobState.Queued
+            && MediaByPhoto.GetValueOrDefault(j.PhotoId, MediaType.Photo) == kind);
+        if (job is not null)
+        {
+            job.Start();
+        }
+
+        return Task.FromResult(job);
+    }
+
+    public Task SaveAsync(VariantJob job, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
 public sealed class InMemoryZipImportRepository : IZipImportRepository
@@ -356,6 +373,49 @@ public sealed class FakeBlobStorage : IBlobStorage
         PresignRequests.Add(path);
         return Task.FromResult<BlobUploadUrl?>(
             UploadUrl is null ? null : new BlobUploadUrl($"{UploadUrl}?key={Uri.EscapeDataString(path)}", DateTimeOffset.UtcNow + expiry));
+    }
+
+    /// <summary>Null simulates a provider that cannot presign multipart uploads.</summary>
+    public bool MultipartEnabled { get; set; } = true;
+
+    public List<string> MultipartSessions { get; } = [];
+    public List<string> CompletedSessions { get; } = [];
+    public List<string> AbortedSessions { get; } = [];
+    public List<(string Path, IReadOnlyList<BlobPartETag> Parts)> CompletedParts { get; } = [];
+
+    public Task<string?> TryCreateMultipartUploadAsync(string path, string? contentType, CancellationToken cancellationToken = default)
+    {
+        if (!MultipartEnabled)
+        {
+            return Task.FromResult<string?>(null);
+        }
+
+        var uploadId = $"mp-{Guid.NewGuid():N}";
+        MultipartSessions.Add(uploadId);
+        return Task.FromResult<string?>(uploadId);
+    }
+
+    public Task<BlobUploadUrl?> TryCreatePartUrlAsync(
+        string path, string uploadId, int partNumber, TimeSpan expiry, CancellationToken cancellationToken = default)
+        => Task.FromResult<BlobUploadUrl?>(
+            MultipartSessions.Contains(uploadId)
+                ? new BlobUploadUrl($"https://storage.test/part/{uploadId}/{partNumber}", DateTimeOffset.UtcNow + expiry)
+                : null);
+
+    public Task CompleteMultipartUploadAsync(
+        string path, string uploadId, IReadOnlyList<BlobPartETag> parts, CancellationToken cancellationToken = default)
+    {
+        CompletedSessions.Add(uploadId);
+        CompletedParts.Add((path, parts));
+        Blobs[path] = [1, 2, 3];
+        return Task.CompletedTask;
+    }
+
+    public Task AbortMultipartUploadAsync(string path, string uploadId, CancellationToken cancellationToken = default)
+    {
+        AbortedSessions.Add(uploadId);
+        MultipartSessions.Remove(uploadId);
+        return Task.CompletedTask;
     }
 }
 

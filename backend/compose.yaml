@@ -44,6 +44,12 @@ services:
       Providers__S3__SecretKey: ${IPHOTOS_S3_SECRET_KEY:-}
       Providers__S3__ForcePathStyle: ${IPHOTOS_S3_FORCE_PATH_STYLE:-true} # true for Wasabi/MinIO/B2/R2; false for AWS proper
       Providers__S3__Prefix: ${IPHOTOS_S3_PREFIX:-}
+      # Transfer throughput knobs: parallel parts per upload, part size, retries
+      # and the wall-clock budget for single-shot PUTs.
+      Providers__S3__ConcurrentServiceRequests: ${IPHOTOS_S3_CONCURRENT_REQUESTS:-8}
+      Providers__S3__PartSizeBytes: ${IPHOTOS_S3_PART_SIZE_BYTES:-33554432}
+      Providers__S3__MaxErrorRetry: ${IPHOTOS_S3_MAX_ERROR_RETRY:-3}
+      Providers__S3__SinglePutTimeoutMinutes: ${IPHOTOS_S3_SINGLE_PUT_TIMEOUT_MINUTES:-30}
     volumes:
       - storage-data:/var/lib/iphotos/objects
     # Loopback-only: the storage service is an internal dependency of api/worker.
@@ -80,6 +86,11 @@ services:
       Upload__FreeMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_MAX_VIDEO_BYTES:-1073741824}
       Upload__PaidMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_MAX_IMAGE_BYTES:-524288000}
       Upload__PaidMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_MAX_VIDEO_BYTES:-32212254720}
+      # Presigned PUT expiries scale with the file size at this assumed throughput.
+      Upload__AssumedUploadMbps: ${IPHOTOS_UPLOAD__ASSUMED_MBPS:-20}
+      Upload__UploadUrlMaxExpiryHours: ${IPHOTOS_UPLOAD__MAX_URL_EXPIRY_HOURS:-24}
+      # Direct uploads at or above this size use presigned multipart (S3 caps one PUT at 5 GB).
+      Upload__DirectMultipartThresholdBytes: ${IPHOTOS_UPLOAD__MULTIPART_THRESHOLD_BYTES:-5368709120}
     # No volume: blobs live in the storage service.
     # Reachable on the LAN (large zip imports bypass the Cloudflare 100 MB body
     # cap via the LAN address); remote traffic keeps flowing through the
@@ -107,6 +118,12 @@ services:
       # archives from the storage host's filesystem provider, never from S3.
       StorageService__StagingProvider: ${IPHOTOS_STORAGE_STAGING_PROVIDER:-filesystem}
       Worker__PollIntervalSeconds: "0.5"
+      # Fast lanes (photos, cheap) + slow lanes (videos, ffmpeg) processing in
+      # parallel; per-job wall-clock budgets prevent a hung job from pinning a lane.
+      Worker__PhotoLaneConcurrency: ${IPHOTOS_WORKER__PHOTO_LANES:-8}
+      Worker__VideoLaneConcurrency: ${IPHOTOS_WORKER__VIDEO_LANES:-2}
+      Worker__PhotoJobTimeoutMinutes: ${IPHOTOS_WORKER__PHOTO_JOB_TIMEOUT_MINUTES:-10}
+      Worker__VideoJobTimeoutMinutes: ${IPHOTOS_WORKER__VIDEO_JOB_TIMEOUT_MINUTES:-60}
     # No volume: blobs live in the storage service.
 
   # Named Cloudflare tunnel: stable public hostname api.lucas-romero.com -> api:8080.

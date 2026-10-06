@@ -63,6 +63,10 @@ public sealed class Photo
     public PhotoState State { get; set; }
     public string? LastError { get; set; }
     public string OriginalBlobPath { get; set; } = string.Empty;
+
+    /// <summary>Direct-upload multipart session id while the bytes are still incoming
+    /// (PendingUpload only); the orphan sweeper aborts stale sessions with it.</summary>
+    public string? MultipartUploadId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
