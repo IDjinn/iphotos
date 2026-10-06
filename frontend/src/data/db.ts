@@ -104,6 +104,14 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS idx_inventory_state ON backup_inventory(state);
   CREATE INDEX IF NOT EXISTS idx_inventory_hash ON backup_inventory(content_hash);
   `,
+  `
+  CREATE TABLE IF NOT EXISTS sync_rules (
+    folder TEXT PRIMARY KEY NOT NULL,
+    mode TEXT NOT NULL CHECK(mode IN ('include','exclude')),
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_inventory_folder ON backup_inventory(folder);
+  `,
 ];
 
 db.execSync('PRAGMA journal_mode = WAL;');

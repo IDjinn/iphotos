@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -21,6 +21,7 @@ import { cloudCacheModeChanged } from '@/data/cloud-media-cache';
 import { countLabeledAssets } from '@/data/labels-repository';
 import type { UploadQuality } from '@/data/user-preferences';
 import { getUserPreferences, updateUserPreferences } from '@/data/user-preferences';
+import { getPendingFolderDecisions } from '@/data/sync-rules-repository';
 import { resolveActiveModel } from '@/stores/ai-model';
 import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useAccountStore } from '@/stores/account';
@@ -103,6 +104,14 @@ export default function SettingsScreen() {
   const uploadQuality = useSettingsStore((s) => s.uploadQuality);
   const setUploadQuality = useSettingsStore((s) => s.setUploadQuality);
   const [qualityCaps, setQualityCaps] = useState<{ imageCapBytes: number; videoCapBytes: number } | null>(null);
+
+  // Folders still awaiting a backup decision (doc 04 §5) — badge on the row.
+  const [heldFolderCount, setHeldFolderCount] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      setHeldFolderCount(getPendingFolderDecisions().size);
+    }, [])
+  );
 
   const changeUploadQuality = (mode: UploadQuality) => {
     if (mode === uploadQuality) return;
@@ -357,6 +366,32 @@ export default function SettingsScreen() {
             ) : (
               <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
             )}
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.row,
+              { backgroundColor: colors.surface, marginTop: 8 },
+              pressed && { opacity: 0.75 },
+            ]}
+            onPress={() => {
+              haptic('light');
+              router.push('/settings/backup/folders');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Backup folders"
+          >
+            <Icon name="folder-open-outline" size={22} color={colors.icon} />
+            <View style={styles.rowText}>
+              <ThemedText variant="body" style={styles.rowLabel}>
+                Backup folders
+              </ThemedText>
+              <ThemedText variant="bodySmall" color="secondary">
+                {heldFolderCount > 0
+                  ? `${heldFolderCount} new folder${heldFolderCount === 1 ? '' : 's'} to review`
+                  : 'Choose which folders are backed up'}
+              </ThemedText>
+            </View>
+            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
           </Pressable>
           <Pressable
             style={({ pressed }) => [

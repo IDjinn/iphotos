@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { getUsage, type CloudUsage } from '@/data/cloud-photos-repository';
 import { isExpoGo } from '@/data/native-crypto';
 import type { BackupProgress } from '@/data/backup-engine';
+import { getHeldFolderViews, type BackupFolderView } from '@/data/backup-folders';
 import { useAccountStore } from '@/stores/account';
 import { useBackupStore } from '@/stores/backup';
 import { useTheme } from '@/theme/context';
@@ -87,6 +88,7 @@ export default function BackupSettingsScreen() {
   // flow is meaningless there — the screen turns into a cloud-only view.
   const cloudOnly = isExpoGo;
   const [usage, setUsage] = useState<CloudUsage | null>(null);
+  const [heldFolders, setHeldFolders] = useState<BackupFolderView[]>([]);
 
   useEffect(() => {
     if (cloudOnly) return;
@@ -97,13 +99,17 @@ export default function BackupSettingsScreen() {
     return unsubscribe;
   }, [refreshStats, cloudOnly]);
 
-  // Refresh cloud usage on focus, so a finished ZIP import shows up at once.
+  // Refresh cloud usage on focus (Expo Go view), so a finished ZIP import
+  // shows up at once; native builds refresh the held-folder badge instead.
   useFocusEffect(
     useCallback(() => {
-      if (!cloudOnly) return;
-      void getUsage()
-        .then(setUsage)
-        .catch(() => setUsage(null));
+      if (cloudOnly) {
+        void getUsage().then(setUsage).catch(() => setUsage(null));
+        return;
+      }
+      void getHeldFolderViews()
+        .then(setHeldFolders)
+        .catch(() => setHeldFolders([]));
     }, [cloudOnly])
   );
 
@@ -276,6 +282,52 @@ export default function BackupSettingsScreen() {
             {backup.lastError}
           </ThemedText>
         ) : null}
+
+        {heldFolders.length > 0 ? (
+          <Pressable
+            style={({ pressed }) => [styles.card, { backgroundColor: colors.accentSoft }, pressed && { opacity: 0.75 }]}
+            onPress={() => {
+              haptic('light');
+              router.push('/settings/backup/folders');
+            }}
+            accessibilityLabel="Review new folders"
+          >
+            <View style={styles.cardRow}>
+              <Icon name="alert-circle-outline" size={22} color={colors.accent} />
+              <View style={styles.cardText}>
+                <ThemedText variant="body" color="accent">
+                  {heldFolders.length} new folder{heldFolders.length === 1 ? '' : 's'} detected
+                </ThemedText>
+                <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                  {heldFolders[0].title}
+                  {heldFolders.length > 1 ? ` and ${heldFolders.length - 1} more` : ''} — choose whether to back them up
+                </ThemedText>
+              </View>
+              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+            </View>
+          </Pressable>
+        ) : null}
+
+        <Pressable
+          style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+          onPress={() => {
+            haptic('light');
+            router.push('/settings/backup/folders');
+          }}
+          accessibilityLabel="Backup folders"
+        >
+          <View style={styles.cardRow}>
+            <Icon name="folder-open-outline" size={22} color={colors.icon} />
+            <View style={styles.cardText}>
+              <ThemedText variant="body">Backup folders</ThemedText>
+              <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                Choose which folders enter the backup
+              </ThemedText>
+            </View>
+            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+          </View>
+        </Pressable>
+
         {backup.quotaExceeded ? (
           <Pressable
             style={({ pressed }) => [styles.card, { backgroundColor: colors.accentSoft }, pressed && { opacity: 0.75 }]}

@@ -2,6 +2,7 @@ import { File } from 'expo-file-system';
 
 import {
   getHashTargets,
+  invalidateFolderStats,
   markExcluded,
   markFailed,
   markHashing,
@@ -12,17 +13,35 @@ import {
   type ScanEntry,
 } from './backup-inventory-repository';
 import { sha256File } from './file-hash';
+import {
+  FOLDER_HOLD_EXCLUSION_REASON,
+  FOLDER_RULE_EXCLUSION_REASON,
+  UNSUPPORTED_FORMAT_EXCLUSION_REASON,
+  decideFolder,
+} from './folder-rules';
 import { getLockedIds } from './locked-repository';
-import { fetchAssetsByIds, forEachFolderAsset, listDeviceFolders } from './media-repository';
+import { fetchAssetsByIds, forEachFolderAsset, listDeviceFolders, type DeviceFolder } from './media-repository';
+import {
+  getKnownFolders,
+  getNewFolderPolicy,
+  getPendingFolderDecisions,
+  getSyncRule,
+  holdFolderItems,
+  listSyncRules,
+  saveKnownFolders,
+  savePendingFolderDecisions,
+} from './sync-rules-repository';
 import { prepareForUpload } from './upload-prepare';
 
 /**
- * Inventory scan service — docs/plans/03-backup-e2e.md §3.2 (stage 03A).
+ * Inventory scan service — docs/plans/03-backup-e2e.md §3.2 (stage 03A) and
+ * docs/plans/04-pastas-sync-ignore.md §2.3 (folder rules).
  * `runInventoryScan` walks the media store folder by folder recording
- * size+mtime metadata (no hashing — cheap, safe on every open);
- * `hashPendingItems` computes the cached SHA-256 in batches. Photos and
- * videos are both backed up; the backend transcodes HEIC-like formats and
- * accepts the video containers it lists as supported.
+ * size+mtime metadata (no hashing — cheap, safe on every open), applying the
+ * folder sync rules (locked → excluded before this, explicit rule → policy →
+ * default include); `hashPendingItems` computes the cached SHA-256 in batches.
+ * Photos and videos are both backed up; the backend transcodes HEIC-like
+ * formats and accepts the video containers it lists as supported.
  */
 
 export interface ScanProgress {
@@ -40,14 +59,50 @@ function fileSizeOf(uri: string): number {
 }
 
 /**
- * Full metadata scan: upserts every unlocked photo (folder attribution
- * included) and drops rows for assets that left the device. Network-free.
- * Smart albums overlap, so an asset in several albums keeps the last folder
- * seen — acceptable for 03A; doc 04 §2.1 revisits the folder key.
+ * Walks one folder's assets into scan entries. Excluded folders are still
+ * walked (metadata-only) so their rows survive `removeAbsent` and new items
+ * are recorded as already out of the cycle.
+ */
+async function scanFolderIntoInventory(
+  folder: DeviceFolder,
+  lockedIds: Set<string>,
+  present: Set<string>,
+  options: { folderExcluded: boolean; exclusionReason: string | null },
+  onAsset?: () => void
+): Promise<void> {
+  await forEachFolderAsset(folder.id, (assets) => {
+    const entries: ScanEntry[] = [];
+    for (const asset of assets) {
+      if ((asset.mediaType !== 'photo' && asset.mediaType !== 'video') || lockedIds.has(asset.id)) continue;
+      present.add(asset.id);
+      entries.push({
+        assetId: asset.id,
+        sizeBytes: fileSizeOf(asset.uri),
+        mtimeMs: asset.modificationTime,
+        folder: folder.id,
+        folderExcluded: options.folderExcluded,
+        exclusionReason: options.exclusionReason,
+      });
+    }
+    upsertFromScan(entries);
+    onAsset?.();
+  });
+}
+
+/**
+ * Full metadata scan: upserts every unlocked photo (folder attribution and
+ * sync-rule decision included) and drops rows for assets that left the
+ * device. Network-free. Smart albums overlap, so an asset in several albums
+ * keeps the last folder seen — the stable folder key is the media-store
+ * album id (doc 04 §2.1), consistent across scans of the same device.
  */
 export async function runInventoryScan(onProgress?: (progress: ScanProgress) => void): Promise<void> {
   recoverTransientStates();
   const lockedIds = getLockedIds();
+  const rules = listSyncRules();
+  const policy = getNewFolderPolicy();
+  const knownFolders = getKnownFolders();
+  const pendingDecisions = getPendingFolderDecisions();
   const folders = await listDeviceFolders();
   const total = folders.reduce((sum, folder) => sum + folder.assetCount, 0);
   const present = new Set<string>();
@@ -55,25 +110,50 @@ export async function runInventoryScan(onProgress?: (progress: ScanProgress) => 
   onProgress?.({ scanned, total });
 
   for (const folder of folders) {
-    await forEachFolderAsset(folder.id, (assets) => {
-      const entries: ScanEntry[] = [];
-      for (const asset of assets) {
-        if ((asset.mediaType !== 'photo' && asset.mediaType !== 'video') || lockedIds.has(asset.id)) continue;
-        present.add(asset.id);
-        entries.push({
-          assetId: asset.id,
-          sizeBytes: fileSizeOf(asset.uri),
-          mtimeMs: asset.modificationTime,
-          folder: folder.id,
-        });
-      }
-      upsertFromScan(entries);
-      scanned += assets.length;
-      onProgress?.({ scanned, total });
+    const action = decideFolder({
+      rule: rules[folder.id] ?? null,
+      isNew: !knownFolders.has(folder.id) && !pendingDecisions.has(folder.id),
+      policy,
     });
+    if (action === 'include') {
+      await scanFolderIntoInventory(folder, lockedIds, present, { folderExcluded: false, exclusionReason: null });
+      knownFolders.add(folder.id);
+    } else {
+      const exclusionReason = action === 'hold' ? FOLDER_HOLD_EXCLUSION_REASON : FOLDER_RULE_EXCLUSION_REASON;
+      await scanFolderIntoInventory(folder, lockedIds, present, { folderExcluded: true, exclusionReason });
+      if (action === 'hold') {
+        pendingDecisions.add(folder.id);
+        holdFolderItems(folder.id);
+      } else {
+        knownFolders.add(folder.id);
+      }
+    }
+    scanned += folder.assetCount;
+    onProgress?.({ scanned, total });
   }
 
+  saveKnownFolders(knownFolders);
+  savePendingFolderDecisions(pendingDecisions);
+  invalidateFolderStats();
   removeAbsent(present);
+}
+
+/**
+ * Re-scans a single folder after a rule change (doc 04 §4): reconciles the
+ * device reality with the new decision without touching other folders and
+ * without pruning absent rows (the next full scan owns that).
+ */
+export async function runFolderScan(folderId: string): Promise<void> {
+  const lockedIds = getLockedIds();
+  const folders = await listDeviceFolders();
+  const folder = folders.find((f) => f.id === folderId);
+  if (!folder) return;
+  const excluded = getSyncRule(folderId) === 'exclude';
+  await scanFolderIntoInventory(folder, lockedIds, new Set<string>(), {
+    folderExcluded: excluded,
+    exclusionReason: excluded ? FOLDER_RULE_EXCLUSION_REASON : null,
+  });
+  invalidateFolderStats();
 }
 
 export interface HashProgress {
@@ -113,7 +193,7 @@ export async function hashPendingItems(
       markHashing(target.asset_id);
       const prepared = await prepareForUpload(asset);
       if (!prepared) {
-        markExcluded(target.asset_id, 'unsupported format');
+        markExcluded(target.asset_id, UNSUPPORTED_FORMAT_EXCLUSION_REASON);
         hashed += 1;
         onProgress?.({ hashed, total });
         continue;

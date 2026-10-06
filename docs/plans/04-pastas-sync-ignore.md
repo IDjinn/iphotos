@@ -106,16 +106,54 @@ Resumo: 4 de 5 pastas · 21,4 GB no backup
 
 ## 7. Tarefas
 
-- [ ] 4.1 Verificar campos da API legacy p/ chave estável de pasta; expor
+- [x] 4.1 Verificar campos da API legacy p/ chave estável de pasta; expor
       `getFoldersWithStats()` em `media-repository.ts`
-- [ ] 4.2 Migração `sync_rules` + repository (`sync-rules-repository.ts`)
-- [ ] 4.3 Integrar precedência no scan do inventário (03A)
-- [ ] 4.4 Tela `settings/backup/folders` (lista, toggles, busca, filtros, resumo)
-- [ ] 4.5 Estatísticas lazy + cache (por pasta: count/bytes)
-- [ ] 4.6 Fluxo include→exclude com modal manter/remover da nuvem
-- [ ] 4.7 `newFolderPolicy` + card de pastas novas (doc 07)
-- [ ] 4.8 Testes: mudança de regra não re-hashea inalterados; exclusão gera
+- [x] 4.2 Migração `sync_rules` + repository (`sync-rules-repository.ts`)
+- [x] 4.3 Integrar precedência no scan do inventário (03A)
+- [x] 4.4 Tela `settings/backup/folders` (lista, toggles, busca, filtros, resumo)
+- [x] 4.5 Estatísticas lazy + cache (por pasta: count/bytes)
+- [x] 4.6 Fluxo include→exclude com modal manter/remover da nuvem
+- [x] 4.7 `newFolderPolicy` + card de pastas novas (doc 07)
+- [x] 4.8 Testes: mudança de regra não re-hashea inalterados; exclusão gera
       tombstones apenas quando pedido
+
+## 7.1 Notas da implementação (2026-10-06)
+
+- **Chave estável de pasta (4.1)**: o id do álbum do MediaStore (`DeviceFolder.id`,
+  já gravado em `backup_inventory.folder`) é a chave — estável no dispositivo;
+  título fica só para exibição. A função prevista virou duas: `getFolderStats()`
+  (rollup SQL `GROUP BY folder` no `backup-inventory-repository`) e
+  `getBackupFolderViews()` (view-model em `backup-folders.ts`, junta pastas do
+  dispositivo + stats + regras + pendências).
+- **Migração v13 (4.2)**: `sync_rules(folder PK, mode include|exclude, updated_at)`
+  + índice `idx_inventory_folder`. A coluna extra `remote_photo_id` prevista no
+  plano não foi necessária — `blob_key` já armazena o id remoto da foto
+  (`markUploaded(assetId, hash, photoId)` grava nele).
+- **Precedência no scan (4.3)**: `decideFolder()` (módulo puro `folder-rules.ts`):
+  trancada → regra específica → política de pasta nova → include. O estado
+  "aguardando decisão" (§5) usa `excluded` com `last_error='awaiting folder
+  decision'` em vez de um estado novo na máquina — hashing e upload nunca o
+  pegam. Pastas excluídas continuam sendo percorridas (só metadados) para as
+  linhas sobreviverem ao `removeAbsent` e novos itens já nascerem fora do ciclo;
+  `uploaded` nelas não muda de estado (blobs ficam na nuvem) e arquivo alterado
+  só perde o hash (sem re-upload enquanto excluída).
+- **Reconciliação (4.6)**: `setSyncRule` reconcilia na hora — include repõe as
+  linhas `excluded` de razão própria pela regra (hash válido vai direto a
+  `queued`, sem re-hash; 4.8 coberto por `stateAfterInclude` nos testes), exclude
+  tira do ciclo tudo que não subiu. **O modal oferece apenas "Keep in cloud"** —
+  a remoção remota com tombstones + graça de 30 dias é o estágio 03E (doc 03 §8);
+  a cópia do modal diz isso explicitamente. Repositório nunca chama DELETE.
+- **Política de pasta nova (4.7)**: `newFolderPolicy` fixo em `ask` nesta etapa
+  (setter/picker ficam para o doc 07); `knownFolders` em kv, semeado do
+  inventário na primeira leitura — upgrade não reclassifica pastas existentes,
+  só pastas genuinamente novas passam pelo fluxo de decisão. Card "N new folders
+  detected" em `settings/backup` + badge na row "Backup folders" das Settings.
+- **Testes (4.8)**: primeira suíte do app — vitest (bun, `bun run test`,
+  `vitest.config.mts`) sobre o módulo puro `folder-rules.ts`: precedência,
+  razões reversíveis e o mapeamento sem re-hash. Repositório/SQL validados por
+  typecheck (expo-sqlite não roda em node).
+- **Lint**: os erros novos são zero; os erros do `useBackupEta`
+  (`react-hooks/refs`/`purity`) são pré-existentes (dívida do roadmap §5.2).
 
 ## 8. Critérios de aceite
 

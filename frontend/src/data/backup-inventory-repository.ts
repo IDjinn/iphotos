@@ -44,6 +44,9 @@ export interface ScanEntry {
   sizeBytes: number;
   mtimeMs: number;
   folder: string | null;
+  /** Folder is out of the backup cycle (rule or awaiting decision, doc 04). */
+  folderExcluded?: boolean;
+  exclusionReason?: string | null;
 }
 
 const LEGACY_UPLOADED_IDS_KEY = 'backup.uploadedIds.v1';
@@ -112,30 +115,105 @@ export interface ScanUpsertResult {
   changed: number;
 }
 
+/** Per-folder rollup of the inventory — feeds the backup folders screen (doc 04 §3). */
+export interface FolderStat {
+  folder: string;
+  items: number;
+  bytes: number;
+  uploaded: number;
+  uploadedBytes: number;
+  outOfCycle: number;
+  waiting: number;
+}
+
 /**
- * Reconciles one scan batch with the inventory: new assets become `pending`;
- * assets whose size+mtime changed go back to `pending` with a cleared hash
- * (the bytes changed, so the old hash is void); unchanged assets only get
- * their folder refreshed — their cached hash is never recomputed.
+ * Cached rollup so opening the folders screen is instant even with 50k rows —
+ * it never scans the media library. Short TTL covers drift while a backup is
+ * running; scans and rule changes invalidate explicitly.
+ */
+const FOLDER_STATS_TTL_MS = 10_000;
+let folderStatsCache: { at: number; data: FolderStat[] } | null = null;
+
+export function getFolderStats(): FolderStat[] {
+  if (folderStatsCache && Date.now() - folderStatsCache.at < FOLDER_STATS_TTL_MS) return folderStatsCache.data;
+  const rows = db.getAllSync<
+    { folder: string; items: number; bytes: number; uploaded: number; uploadedBytes: number; outOfCycle: number; waiting: number }
+  >(
+    `SELECT folder,
+            COUNT(*) AS items,
+            COALESCE(SUM(size_bytes), 0) AS bytes,
+            SUM(CASE WHEN state = 'uploaded' THEN 1 ELSE 0 END) AS uploaded,
+            COALESCE(SUM(CASE WHEN state = 'uploaded' THEN size_bytes ELSE 0 END), 0) AS uploadedBytes,
+            SUM(CASE WHEN state = 'excluded' THEN 1 ELSE 0 END) AS outOfCycle,
+            SUM(CASE WHEN state IN ('pending', 'hashing', 'queued', 'uploading', 'failed') THEN 1 ELSE 0 END) AS waiting
+     FROM backup_inventory
+     WHERE folder IS NOT NULL
+     GROUP BY folder`
+  );
+  const data = rows.map((row) => ({ ...row }));
+  folderStatsCache = { at: Date.now(), data };
+  return data;
+}
+
+export function invalidateFolderStats(): void {
+  folderStatsCache = null;
+}
+/**
+ * Reconciles one scan batch with the inventory: new assets become `pending`
+ * (or `excluded` when the folder is out of the cycle); assets whose size+mtime
+ * changed go back to `pending` with a cleared hash (the bytes changed, so the
+ * old hash is void); unchanged assets only get their folder refreshed — their
+ * cached hash is never recomputed. Rows in an excluded folder stay out of the
+ * cycle: already-uploaded ones keep their state (blobs remain in the cloud),
+ * in-cycle ones are pulled out with the folder's exclusion reason.
  */
 export function upsertFromScan(entries: ScanEntry[]): ScanUpsertResult {
   if (entries.length === 0) return { added: 0, changed: 0 };
   const result: ScanUpsertResult = { added: 0, changed: 0 };
   db.withTransactionSync(() => {
     for (const entry of entries) {
-      const existing = db.getFirstSync<Pick<InventoryRow, 'size_bytes' | 'mtime_ms' | 'state'>>(
-        'SELECT size_bytes, mtime_ms, state FROM backup_inventory WHERE asset_id = ?',
-        [entry.assetId]
-      );
+      const existing = db.getFirstSync<
+        Pick<InventoryRow, 'size_bytes' | 'mtime_ms' | 'state'>
+      >('SELECT size_bytes, mtime_ms, state FROM backup_inventory WHERE asset_id = ?', [entry.assetId]);
       if (!existing) {
+        const excluded = entry.folderExcluded === true;
         db.runSync(
-          'INSERT INTO backup_inventory (asset_id, size_bytes, mtime_ms, folder, state) VALUES (?, ?, ?, ?, ?)',
-          [entry.assetId, entry.sizeBytes, entry.mtimeMs, entry.folder, 'pending']
+          'INSERT INTO backup_inventory (asset_id, size_bytes, mtime_ms, folder, state, last_error) VALUES (?, ?, ?, ?, ?, ?)',
+          [entry.assetId, entry.sizeBytes, entry.mtimeMs, entry.folder, excluded ? 'excluded' : 'pending', excluded ? (entry.exclusionReason ?? null) : null]
         );
         result.added += 1;
         continue;
       }
       const changed = existing.size_bytes !== entry.sizeBytes || existing.mtime_ms !== entry.mtimeMs;
+      if (entry.folderExcluded) {
+        if (existing.state === 'uploaded') {
+          // Out of the cycle; a changed file voids the cached hash so a future
+          // re-include re-hashes the new bytes instead of deduping against them.
+          if (changed) {
+            db.runSync(
+              `UPDATE backup_inventory
+               SET size_bytes = ?, mtime_ms = ?, folder = ?, content_hash = NULL
+               WHERE asset_id = ?`,
+              [entry.sizeBytes, entry.mtimeMs, entry.folder, entry.assetId]
+            );
+            result.changed += 1;
+          } else {
+            db.runSync('UPDATE backup_inventory SET folder = ? WHERE asset_id = ?', [entry.folder, entry.assetId]);
+          }
+        } else if (existing.state !== 'excluded') {
+          db.runSync(
+            `UPDATE backup_inventory
+             SET size_bytes = ?, mtime_ms = ?, folder = ?, state = 'excluded', last_error = ?,
+                 content_hash = CASE WHEN ? THEN content_hash ELSE NULL END
+             WHERE asset_id = ?`,
+            [entry.sizeBytes, entry.mtimeMs, entry.folder, entry.exclusionReason ?? null, changed ? 0 : 1, entry.assetId]
+          );
+          result.changed += 1;
+        } else {
+          db.runSync('UPDATE backup_inventory SET folder = ? WHERE asset_id = ?', [entry.folder, entry.assetId]);
+        }
+        continue;
+      }
       if (changed && existing.state !== 'excluded') {
         // Excluded stays excluded even when the file changes — folder rules
         // (doc 04) own that state, not file churn.

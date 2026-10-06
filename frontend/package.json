@@ -11,6 +11,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "doctor": "npx expo-doctor"
   },
   "dependencies": {
@@ -63,7 +64,8 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.1",
     "jpeg-js": "^0.4.4",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.3"
   },
   "trustedDependencies": [
     "protobufjs",
