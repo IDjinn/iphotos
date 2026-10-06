@@ -75,6 +75,11 @@ services:
       # Browser origins allowed to call the API (web app dev server, desktop shell).
       Cors__AllowedOrigins__0: ${IPHOTOS_CORS_ORIGIN_WEB:-http://localhost:3000}
       Cors__AllowedOrigins__1: ${IPHOTOS_CORS_ORIGIN_DESKTOP:-http://127.0.0.1:3210}
+      # Per-file upload caps in bytes (free plan compresses oversize files; paid rejects).
+      Upload__FreeMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_MAX_IMAGE_BYTES:-16777216}
+      Upload__FreeMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_MAX_VIDEO_BYTES:-1073741824}
+      Upload__PaidMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_MAX_IMAGE_BYTES:-524288000}
+      Upload__PaidMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_MAX_VIDEO_BYTES:-32212254720}
     # No volume: blobs live in the storage service.
     # Reachable on the LAN (large zip imports bypass the Cloudflare 100 MB body
     # cap via the LAN address); remote traffic keeps flowing through the

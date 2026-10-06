@@ -74,11 +74,31 @@ public sealed class PhotoService(
     IImageVariantGenerator variantGenerator,
     IExifExtractor exifExtractor,
     IVideoProcessor videoProcessor,
+    IImageCompressor imageCompressor,
+    IVideoCompressor videoCompressor,
     IUnitOfWork unitOfWork,
-    IDateTimeProvider dateTime)
+    IDateTimeProvider dateTime,
+    Microsoft.Extensions.Options.IOptions<UploadOptions> uploadOptions)
 {
     /// <summary>Lifetime of presigned PUT URLs handed out by upload tickets.</summary>
     private static readonly TimeSpan UploadUrlLifetime = TimeSpan.FromMinutes(15);
+
+    private UploadOptions UploadLimits => uploadOptions.Value;
+
+    /// <summary>
+    /// Paid plans reject files above their cap. Free plans never reject here —
+    /// oversize files are compressed/transcoded downstream to the free cap.
+    /// </summary>
+    private void EnsurePlanLimit(string plan, bool isVideo, long sizeBytes)
+    {
+        if (plan == "free") return;
+        var cap = isVideo ? UploadLimits.PaidMaxVideoBytes : UploadLimits.PaidMaxImageBytes;
+        if (cap > 0 && sizeBytes > cap)
+        {
+            throw new ValidationException(
+                $"{(isVideo ? "Video" : "Image")} exceeds the {cap / (1024 * 1024)} MB limit of your plan.");
+        }
+    }
 
     public async Task<UploadTicket> CreateUploadTicketAsync(
         Guid ownerId,
@@ -98,6 +118,19 @@ public sealed class PhotoService(
         if (sizeBytes <= 0)
         {
             throw new ValidationException("File size must be greater than zero.");
+        }
+
+        // Direct upload never sees the bytes, so free-plan compression cannot
+        // happen here: the ticket ceiling is the plan cap in both tiers.
+        var plan = (await users.GetByIdAsync(ownerId, cancellationToken)
+            ?? throw new NotFoundException($"User '{ownerId}' was not found.")).Plan;
+        var ticketCap = SupportedMediaTypes.KindOf(contentType) == MediaType.Video
+            ? (plan == "free" ? UploadLimits.FreeMaxVideoBytes : UploadLimits.PaidMaxVideoBytes)
+            : (plan == "free" ? UploadLimits.FreeMaxImageBytes : UploadLimits.PaidMaxImageBytes);
+        if (ticketCap > 0 && sizeBytes > ticketCap)
+        {
+            throw new ValidationException(
+                $"File exceeds the {ticketCap / (1024 * 1024)} MB upload limit of your plan.");
         }
 
         if (string.IsNullOrWhiteSpace(contentHash))
@@ -181,7 +214,24 @@ public sealed class PhotoService(
         }
 
         var content2 = EnsureSeekable(content);
-        var hash = contentHasher.ComputeHash(content2);
+        var user = await users.GetByIdAsync(ownerId, cancellationToken)
+            ?? throw new NotFoundException($"User '{ownerId}' was not found.");
+
+        EnsurePlanLimit(user.Plan, isVideo: false, content2.Length);
+
+        // Free-plan oversize images are compressed to the plan cap; the stored
+        // bytes (and their dedup hash) are the compressed result.
+        long storedLength = content2.Length;
+        Stream stored = content2;
+        var freeImageCap = UploadLimits.FreeMaxImageBytes;
+        if (user.Plan == "free" && freeImageCap > 0 && storedLength > freeImageCap)
+        {
+            stored = await imageCompressor.CompressToFitAsync(content2, freeImageCap, cancellationToken);
+            storedLength = stored.Length;
+        }
+
+        stored.Position = 0;
+        var hash = contentHasher.ComputeHash(stored);
 
         var existing = await photos.FindByContentHashAsync(ownerId, hash, cancellationToken);
         if (existing is not null)
@@ -189,17 +239,14 @@ public sealed class PhotoService(
             return new PhotoUploadResult(ToDto(existing, []), Duplicated: true);
         }
 
-        var user = await users.GetByIdAsync(ownerId, cancellationToken)
-            ?? throw new NotFoundException($"User '{ownerId}' was not found.");
-
         var usage = await photos.GetUsageAsync(ownerId, cancellationToken);
-        if (usage.UsedBytes + content2.Length > user.StorageQuotaBytes)
+        if (usage.UsedBytes + storedLength > user.StorageQuotaBytes)
         {
             throw new QuotaExceededException(
-                $"Upload of {content2.Length} bytes would exceed the storage quota of {user.StorageQuotaBytes} bytes.");
+                $"Upload of {storedLength} bytes would exceed the storage quota of {user.StorageQuotaBytes} bytes.");
         }
 
-        var photo = Photo.Create(ownerId, hash, fileName, contentType, content2.Length, dateTime.UtcNow);
+        var photo = Photo.Create(ownerId, hash, fileName, contentType, storedLength, dateTime.UtcNow);
         photo.OriginalBlobPath = BlobPaths.Original(ownerId, photo.Id, fileName);
         if (seed is { HasAny: true })
         {
@@ -211,15 +258,15 @@ public sealed class PhotoService(
         // Variant jobs remain only for the direct-upload flow, where the backend never
         // sees the bytes.
         photo.MarkProcessing(dateTime.UtcNow);
-        var metadata = await exifExtractor.ExtractAsync(content2, cancellationToken);
+        var metadata = await exifExtractor.ExtractAsync(stored, cancellationToken);
 
-        content2.Position = 0;
-        var preview = await variantGenerator.GenerateAsync(content2, VariantKind.Preview, cancellationToken);
-        content2.Position = 0;
-        var thumbnail = await variantGenerator.GenerateAsync(content2, VariantKind.Thumbnail, cancellationToken);
-        content2.Position = 0;
+        stored.Position = 0;
+        var preview = await variantGenerator.GenerateAsync(stored, VariantKind.Preview, cancellationToken);
+        stored.Position = 0;
+        var thumbnail = await variantGenerator.GenerateAsync(stored, VariantKind.Thumbnail, cancellationToken);
+        stored.Position = 0;
 
-        await blobStorage.PutAsync(photo.OriginalBlobPath, content2, cancellationToken);
+        await blobStorage.PutAsync(photo.OriginalBlobPath, stored, cancellationToken);
         var previewPath = BlobPaths.Preview(ownerId, photo.Id);
         var thumbnailPath = BlobPaths.Thumbnail(ownerId, photo.Id);
         await blobStorage.PutAsync(previewPath, preview.Content, cancellationToken);
@@ -269,6 +316,7 @@ public sealed class PhotoService(
         CancellationToken cancellationToken)
     {
         var tempPath = Path.Combine(Path.GetTempPath(), $"iphotos-upload-{Guid.NewGuid():N}{Path.GetExtension(fileName)}");
+        string? compressedPath = null;
         try
         {
             await using (var target = File.Create(tempPath))
@@ -276,7 +324,28 @@ public sealed class PhotoService(
                 await content.CopyToAsync(target, cancellationToken);
             }
 
-            await using var videoFile = File.OpenRead(tempPath);
+            var user = await users.GetByIdAsync(ownerId, cancellationToken)
+                ?? throw new NotFoundException($"User '{ownerId}' was not found.");
+
+            EnsurePlanLimit(user.Plan, isVideo: true, new FileInfo(tempPath).Length);
+
+            // Free-plan oversize videos are transcoded to the plan cap; the stored
+            // bytes (and their dedup hash) are the transcoded result.
+            if (user.Plan == "free" && UploadLimits.FreeMaxVideoBytes > 0
+                && new FileInfo(tempPath).Length > UploadLimits.FreeMaxVideoBytes)
+            {
+                await using var source = File.OpenRead(tempPath);
+                var transcoded = await videoCompressor.CompressToFitAsync(
+                    source, UploadLimits.FreeMaxVideoBytes, cancellationToken);
+                compressedPath = Path.Combine(Path.GetTempPath(), $"iphotos-upload-{Guid.NewGuid():N}.mp4");
+                await using (var target = File.Create(compressedPath))
+                {
+                    await transcoded.CopyToAsync(target, cancellationToken);
+                }
+                await transcoded.DisposeAsync();
+            }
+
+            await using var videoFile = File.OpenRead(compressedPath ?? tempPath);
             var hash = contentHasher.ComputeHash(videoFile);
 
             var existing = await photos.FindByContentHashAsync(ownerId, hash, cancellationToken);
@@ -284,9 +353,6 @@ public sealed class PhotoService(
             {
                 return new PhotoUploadResult(ToDto(existing, []), Duplicated: true);
             }
-
-            var user = await users.GetByIdAsync(ownerId, cancellationToken)
-                ?? throw new NotFoundException($"User '{ownerId}' was not found.");
 
             var usage = await photos.GetUsageAsync(ownerId, cancellationToken);
             if (usage.UsedBytes + videoFile.Length > user.StorageQuotaBytes)
@@ -351,6 +417,7 @@ public sealed class PhotoService(
         finally
         {
             File.Delete(tempPath);
+            if (compressedPath is not null) File.Delete(compressedPath);
         }
     }
 

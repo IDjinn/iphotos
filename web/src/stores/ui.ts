@@ -65,14 +65,27 @@ export interface EnqueueResult {
   rejected: number;
 }
 
-/** Contract limits (docs/plans/09 §3.2): photo/video mime types, 200 MB per file. */
-const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+/**
+ * Per-file caps, mirroring the backend `Upload` section (docs/plans/09 §3.2).
+ * Both come from NEXT_PUBLIC env so future edits need no code change; a limit
+ * of 0 (or unset `MAX_VIDEO_BYTES`) disables the cap — videos are unlimited
+ * for now.
+ */
+const MAX_IMAGE_BYTES = Number(process.env.NEXT_PUBLIC_MAX_IMAGE_BYTES) || 200 * 1024 * 1024;
+const MAX_VIDEO_BYTES = Number(process.env.NEXT_PUBLIC_MAX_VIDEO_BYTES) || 0;
+
+function formatMb(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
 
 function validateUpload(file: File): string | null {
   const isImage = file.type.startsWith("image/");
   const isVideo = file.type.startsWith("video/");
   if (!isImage && !isVideo) return "Only photos and videos can be uploaded.";
-  if (file.size > MAX_UPLOAD_BYTES) return isVideo ? "Videos can be up to 200 MB." : "Photos can be up to 200 MB.";
+  const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+  if (maxBytes > 0 && file.size > maxBytes) {
+    return `${isVideo ? "Videos" : "Photos"} can be up to ${formatMb(maxBytes)}.`;
+  }
   return null;
 }
 
@@ -142,6 +155,6 @@ export const useUploadQueueStore = create<UploadQueueState>((set) => ({
 
 function rejectionCopy(count: number): string {
   return count === 1
-    ? "1 file was skipped — only images up to 200 MB are accepted."
-    : `${count} files were skipped — only images up to 200 MB are accepted.`;
+    ? "1 file was skipped — only photos and videos are accepted."
+    : `${count} files were skipped — only photos and videos are accepted.`;
 }

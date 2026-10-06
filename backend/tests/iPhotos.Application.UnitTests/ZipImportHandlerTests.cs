@@ -45,7 +45,10 @@ public class ZipImportHandlerTests
             // EXIF-neutral: these tests verify sidecar/date-folder seeding only.
             new FakeExifExtractor { Metadata = new PhotoMetadata(0, 0, null, null, null, null, null) },
             _video,
-            _uow, new StubDateTimeProvider(Now));
+            new FakeImageCompressor(),
+            new FakeVideoCompressor(),
+            _uow, new StubDateTimeProvider(Now),
+            Microsoft.Extensions.Options.Options.Create(new UploadOptions()));
 
     private ZipImportJob NewJob(byte[] zipBytes)
     {

@@ -21,10 +21,16 @@ describe("upload queue validation", () => {
     const file = new File([new Uint8Array(10)], "doc.pdf", { type: "application/pdf" });
     const result = useUploadQueueStore.getState().enqueue([file]);
     expect(result).toEqual({ accepted: 0, rejected: 1 });
-    expect(useUploadQueueStore.getState().lastRejection).toContain("only images up to 200 MB");
+    expect(useUploadQueueStore.getState().lastRejection).toContain("only photos and videos");
   });
 
-  it("rejects files over the contract size cap", () => {
+  it("accepts video files without a size cap", () => {
+    const file = new File([new Uint8Array(10)], "clip.mp4", { type: "video/mp4" });
+    const result = useUploadQueueStore.getState().enqueue([file]);
+    expect(result).toEqual({ accepted: 1, rejected: 0 });
+  });
+
+  it("rejects images over the configured size cap", () => {
     const file = pngFile("big.png", 200 * 1024 * 1024 + 1);
     const result = useUploadQueueStore.getState().enqueue([file]);
     expect(result.rejected).toBe(1);

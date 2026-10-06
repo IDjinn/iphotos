@@ -37,6 +37,23 @@ public sealed class ImagingOptions
     public int PreviewQuality { get; set; } = 80;
 }
 
+public sealed class UploadOptions
+{
+    public const string SectionName = "Upload";
+
+    /// <summary>Free plan: max image size in bytes. Larger images are compressed server-side to fit.</summary>
+    public long FreeMaxImageBytes { get; set; } = 16L * 1024 * 1024; // 16 MB
+
+    /// <summary>Free plan: max video size in bytes. Larger videos are transcoded server-side to fit.</summary>
+    public long FreeMaxVideoBytes { get; set; } = 1L * 1024 * 1024 * 1024; // 1 GiB
+
+    /// <summary>Paid plan: max image size in bytes; larger uploads are rejected. 0 disables the cap.</summary>
+    public long PaidMaxImageBytes { get; set; } = 500L * 1024 * 1024; // 500 MB
+
+    /// <summary>Paid plan: max video size in bytes; larger uploads are rejected. 0 disables the cap.</summary>
+    public long PaidMaxVideoBytes { get; set; } = 30L * 1024 * 1024 * 1024; // 30 GiB
+}
+
 public sealed class VideoProcessorOptions
 {
     public const string SectionName = "VideoProcessor";

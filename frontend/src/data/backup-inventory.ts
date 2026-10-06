@@ -20,8 +20,9 @@ import { prepareForUpload } from './upload-prepare';
  * Inventory scan service — docs/plans/03-backup-e2e.md §3.2 (stage 03A).
  * `runInventoryScan` walks the media store folder by folder recording
  * size+mtime metadata (no hashing — cheap, safe on every open);
- * `hashPendingItems` computes the cached SHA-256 in batches. Photos only:
- * the backup engine and the backend accept images exclusively.
+ * `hashPendingItems` computes the cached SHA-256 in batches. Photos and
+ * videos are both backed up; the backend transcodes HEIC-like formats and
+ * accepts the video containers it lists as supported.
  */
 
 export interface ScanProgress {
@@ -57,7 +58,7 @@ export async function runInventoryScan(onProgress?: (progress: ScanProgress) => 
     await forEachFolderAsset(folder.id, (assets) => {
       const entries: ScanEntry[] = [];
       for (const asset of assets) {
-        if (asset.mediaType !== 'photo' || lockedIds.has(asset.id)) continue;
+        if ((asset.mediaType !== 'photo' && asset.mediaType !== 'video') || lockedIds.has(asset.id)) continue;
         present.add(asset.id);
         entries.push({
           assetId: asset.id,

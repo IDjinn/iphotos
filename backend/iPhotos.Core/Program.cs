@@ -25,6 +25,8 @@ builder.Services.AddSingleton<IDateTimeProvider, UtcDateTimeProvider>();
 builder.Services.AddSingleton<IContentHasher, Sha256ContentHasher>();
 builder.Services.AddSingleton<IImageVariantGenerator, ImageSharpVariantGenerator>();
 builder.Services.AddSingleton<IExifExtractor, ImageSharpExifExtractor>();
+builder.Services.AddSingleton<IImageCompressor, ImageSharpImageCompressor>();
+builder.Services.AddSingleton<IVideoCompressor, FfmpegVideoCompressor>();
 
 // Options are bound lazily (resolved from the final IConfiguration) so test hosts
 // created via WebApplicationFactory can override appsettings after Program starts.
@@ -37,6 +39,7 @@ builder.Services.AddOptions<ZipImportOptions>().Configure<IConfiguration>((o, c)
 builder.Services.AddOptions<BillingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(BillingOptions.SectionName).Bind(o));
 builder.Services.AddOptions<TestBillingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(TestBillingOptions.SectionName).Bind(o));
 builder.Services.AddOptions<CorsSettings>().Configure<IConfiguration>((o, c) => c.GetSection(CorsSettings.SectionName).Bind(o));
+builder.Services.AddOptions<UploadOptions>().Configure<IConfiguration>((o, c) => c.GetSection(UploadOptions.SectionName).Bind(o));
 
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<JwtOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<Argon2HasherOptions>>().Value);
@@ -112,11 +115,19 @@ builder.Services.AddRateLimiter(options =>
         }));
 });
 
-// Uploads: allow photos up to ~200 MB.
+// Uploads: the request body cap follows the paid-plan caps in Upload:*
+// (free-plan oversize files are compressed server-side, so the body must
+// admit the original bytes; a 0 cap means "unlimited").
+var uploadLimits = builder.Configuration.GetSection(UploadOptions.SectionName).Get<UploadOptions>() ?? new UploadOptions();
+var maxUploadBytes = new[] { uploadLimits.PaidMaxImageBytes, uploadLimits.PaidMaxVideoBytes }.Max();
+if (maxUploadBytes <= 0)
+{
+    maxUploadBytes = long.MaxValue;
+}
 builder.Services.Configure<FormOptions>(options =>
-    options.MultipartBodyLengthLimit = 200L * 1024 * 1024);
+    options.MultipartBodyLengthLimit = maxUploadBytes);
 builder.WebHost.ConfigureKestrel(options =>
-    options.Limits.MaxRequestBodySize = 200L * 1024 * 1024);
+    options.Limits.MaxRequestBodySize = maxUploadBytes);
 
 var app = builder.Build();
 

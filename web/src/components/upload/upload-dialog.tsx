@@ -25,7 +25,8 @@ import { DropZone, EmptyHint, RejectionNote, TaskList, TaskRow } from "./upload-
 /**
  * Upload dialog: every file input path converges here — picker button,
  * drag-and-drop across the whole surface, and clipboard paste — with one
- * shared validation path (images up to 200 MB).
+ * shared validation path (photos and videos; size caps come from NEXT_PUBLIC_*
+ * env and videos are unlimited by default).
  */
 export function UploadDialog() {
   const open = useUploadDialogStore((s) => s.open);
@@ -63,9 +64,9 @@ export function UploadDialog() {
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && hide()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Upload photos</DialogTitle>
+          <DialogTitle>Upload photos and videos</DialogTitle>
           <DialogDescription>
-            Drop images here, paste from the clipboard, or browse your files.
+            Drop photos or videos here, paste from the clipboard, or browse your files.
           </DialogDescription>
         </DialogHeader>
         <DropZone

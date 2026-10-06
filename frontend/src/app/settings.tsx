@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
@@ -7,6 +15,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import type { CloudCacheMode } from '@/data/cloud-media-cache';
+import { cloudCacheModeChanged } from '@/data/cloud-media-cache';
 import { countLabeledAssets } from '@/data/labels-repository';
 import { resolveActiveModel } from '@/stores/ai-model';
 import { useAiLabelingStore } from '@/stores/ai-labeling';
@@ -38,6 +48,12 @@ const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: IconName }[] = [
   { mode: 'dark', label: 'Dark', icon: 'moon-outline' },
 ];
 
+const CLOUD_CACHE_OPTIONS: { mode: CloudCacheMode; label: string; icon: IconName }[] = [
+  { mode: 'default', label: 'Default', icon: 'albums-outline' },
+  { mode: 'limited', label: 'Limited', icon: 'server-outline' },
+  { mode: 'all', label: 'Everything', icon: 'cloud-done-outline' },
+];
+
 function formatCount(count: number): string {
   return count.toLocaleString('en-US');
 }
@@ -64,6 +80,18 @@ export default function SettingsScreen() {
   const setThemeMode = useSettingsStore((s) => s.setThemeMode);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
+  const cloudCacheMode = useSettingsStore((s) => s.cloudCacheMode);
+  const setCloudCacheMode = useSettingsStore((s) => s.setCloudCacheMode);
+  const cloudCacheLimitMb = useSettingsStore((s) => s.cloudCacheLimitMb);
+  const setCloudCacheLimitMb = useSettingsStore((s) => s.setCloudCacheLimitMb);
+  const [cacheLimitInput, setCacheLimitInput] = useState(() => String(cloudCacheLimitMb));
+
+  const onCacheLimitChange = (text: string) => {
+    setCacheLimitInput(text);
+    const mb = parseInt(text, 10);
+    if (Number.isFinite(mb) && mb > 0) setCloudCacheLimitMb(mb);
+  };
+
   const account = useAccountStore();
   const plan = useAccountStore((s) => s.plan);
   const refreshPlan = useAccountStore((s) => s.refreshPlan);
@@ -292,6 +320,56 @@ export default function SettingsScreen() {
             </View>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
           </Pressable>
+        </Section>
+
+        <Section title="Cloud cache">
+          <View style={styles.themeRow}>
+            {CLOUD_CACHE_OPTIONS.map((option) => {
+              const active = cloudCacheMode === option.mode;
+              return (
+                <Pressable
+                  key={option.mode}
+                  style={[
+                    styles.themeOption,
+                    { backgroundColor: active ? colors.accentSoft : colors.surface },
+                    { borderColor: active ? colors.accent : 'transparent' },
+                  ]}
+                  onPress={() => {
+                    haptic('light');
+                    setCloudCacheMode(option.mode);
+                    cloudCacheModeChanged();
+                  }}
+                >
+                  <Icon name={option.icon} size={20} color={active ? colors.accent : colors.textSecondary} />
+                  <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
+                    {option.label}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+          <ThemedText variant="bodySmall" color="secondary" style={styles.sectionHint}>
+            {cloudCacheMode === 'default'
+              ? 'Caches every cloud thumbnail plus previews of your 100 most recent photos'
+              : cloudCacheMode === 'limited'
+                ? 'Caches cloud media up to a total size, evicting the oldest files first'
+                : 'Caches every cloud thumbnail and preview with no size limit'}
+          </ThemedText>
+          {cloudCacheMode === 'limited' ? (
+            <View style={[styles.row, { backgroundColor: colors.surface, marginTop: 10 }]}>
+              <Icon name="server-outline" size={22} color={colors.icon} />
+              <ThemedText variant="body" style={styles.rowLabel}>
+                Cache limit (MB)
+              </ThemedText>
+              <TextInput
+                value={cacheLimitInput}
+                onChangeText={onCacheLimitChange}
+                keyboardType="number-pad"
+                style={[styles.cacheInput, { borderColor: colors.outline, color: colors.text }]}
+                accessibilityLabel="Cache limit in megabytes"
+              />
+            </View>
+          ) : null}
         </Section>
 
         <Section title="Appearance">
@@ -535,6 +613,16 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
   section: { paddingHorizontal: 16, marginTop: 20 },
   sectionTitle: { marginBottom: 10 },
+  sectionHint: { marginTop: 10 },
+  cacheInput: {
+    width: 72,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    textAlign: 'right',
+    fontSize: 14,
+  },
   themeRow: { flexDirection: 'row', gap: 8 },
   themeOption: {
     flex: 1,

@@ -6,14 +6,14 @@ import * as MediaLibrary from 'expo-media-library/legacy';
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
 import { CloudVideoPlayer } from '@/components/CloudVideoPlayer';
-import { authHeaders } from '@/data/api-client';
+import { prefetchRecentPreviews } from '@/data/cloud-media-cache';
 import {
   deletePhoto,
   downloadFile,
-  fileUrl,
   listPhotos,
   type CloudPhoto,
 } from '@/data/cloud-photos-repository';
+import { useCloudThumbnailUri } from '@/hooks/use-cloud-file';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 import { formatDuration } from '@/utils/format';
@@ -38,6 +38,53 @@ interface CloudGalleryProps {
   /** Shown instead of the default "run a backup" hint when the cloud is empty. */
   emptyHint?: string;
   contentContainerStyle?: { paddingBottom: number };
+}
+
+/** Grid cell rendering the cached thumbnail, downloading it on first view. */
+function CloudPhotoCell({
+  item,
+  isReadyVideo,
+  colors,
+  onPress,
+}: {
+  item: CloudPhoto;
+  isReadyVideo: boolean;
+  colors: ReturnType<typeof useTheme>['colors'];
+  onPress: () => void;
+}) {
+  const thumbnailUri = useCloudThumbnailUri(item.id);
+  return (
+    <Pressable style={styles.cell} onPress={onPress} accessibilityLabel={item.fileName}>
+      <Image
+        source={thumbnailUri ? { uri: thumbnailUri } : null}
+        style={styles.cellImage}
+        contentFit="cover"
+        recyclingKey={item.id}
+        onError={(event) => {
+          if (__DEV__) console.warn(`[gallery] thumbnail failed for ${item.id}: ${event.error}`);
+        }}
+      />
+      {item.state !== 'Ready' ? (
+        <View style={[styles.stateBadge, { backgroundColor: colors.background }]}>
+          {item.state === 'Failed' ? (
+            <Icon name="alert-circle" size={14} color={colors.danger} />
+          ) : (
+            <ActivityIndicator size="small" color={colors.accent} />
+          )}
+        </View>
+      ) : null}
+      {isReadyVideo ? (
+        <>
+          <View style={styles.videoBadge} pointerEvents="none">
+            <Icon name="play" size={13} color={colors.textInverse} />
+          </View>
+          {item.durationSeconds ? (
+            <Text style={styles.duration}>{formatDuration(item.durationSeconds)}</Text>
+          ) : null}
+        </>
+      ) : null}
+    </Pressable>
+  );
 }
 
 /**
@@ -99,6 +146,15 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
       cancelled = true;
     };
   }, [mediaFilter, order]);
+
+  // Warm the persistent caches: previews of the newest photos are prefetched
+  // so opening them is instant; thumbnails cache themselves on first render.
+  useEffect(() => {
+    if (state.status !== 'ready' || state.page !== 1 || order !== 'desc' || mediaFilter !== 'All') return;
+    void prefetchRecentPreviews(state.items).catch(() => {
+      // Best-effort prefetch — the gallery still works over the network.
+    });
+  }, [state, mediaFilter, order]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -280,41 +336,14 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
         ListFooterComponent={
           state.loadingMore ? <ActivityIndicator color={colors.accent} style={styles.footer} /> : null
         }
-        renderItem={({ item }) => {
-        const isReadyVideo = item.state === 'Ready' && item.mediaType === 'Video';
-        return (
-          <Pressable style={styles.cell} onPress={() => openPhoto(item)} accessibilityLabel={item.fileName}>
-            <Image
-              source={{ uri: fileUrl(item.id, 'thumbnail'), headers: authHeaders() }}
-              style={styles.cellImage}
-              contentFit="cover"
-              recyclingKey={item.id}
-              onError={(event) => {
-                if (__DEV__) console.warn(`[gallery] thumbnail failed for ${item.id}: ${event.error}`);
-              }}
-            />
-            {item.state !== 'Ready' ? (
-              <View style={[styles.stateBadge, { backgroundColor: colors.background }]}>
-                {item.state === 'Failed' ? (
-                  <Icon name="alert-circle" size={14} color={colors.danger} />
-                ) : (
-                  <ActivityIndicator size="small" color={colors.accent} />
-                )}
-              </View>
-            ) : null}
-            {isReadyVideo ? (
-              <>
-                <View style={styles.videoBadge} pointerEvents="none">
-                  <Icon name="play" size={13} color={colors.textInverse} />
-                </View>
-                {item.durationSeconds ? (
-                  <Text style={styles.duration}>{formatDuration(item.durationSeconds)}</Text>
-                ) : null}
-              </>
-            ) : null}
-          </Pressable>
-        );
-        }}
+        renderItem={({ item }) => (
+          <CloudPhotoCell
+            item={item}
+            isReadyVideo={item.state === 'Ready' && item.mediaType === 'Video'}
+            colors={colors}
+            onPress={() => openPhoto(item)}
+          />
+        )}
       />
       <CloudVideoPlayer photo={playing} onClose={() => setPlaying(null)} />
     </>

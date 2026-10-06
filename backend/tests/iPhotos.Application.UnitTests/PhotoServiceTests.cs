@@ -20,9 +20,16 @@ public class PhotoServiceTests
     private readonly Sha256ContentHasher _hasher = new();
     private readonly FakeVideoProcessor _video = new();
 
-    private PhotoService NewService() => new(
+    private PhotoService NewService(
+        UploadOptions? uploadOptions = null,
+        IImageCompressor? imageCompressor = null,
+        IVideoCompressor? videoCompressor = null) => new(
         _photos, _variants, _jobs, _users, _blobs, _hasher, new FakeImageVariantGenerator(),
-        new FakeExifExtractor(), _video, _uow, new StubDateTimeProvider(Now));
+        new FakeExifExtractor(), _video,
+        imageCompressor ?? new FakeImageCompressor(),
+        videoCompressor ?? new FakeVideoCompressor(),
+        _uow, new StubDateTimeProvider(Now),
+        Microsoft.Extensions.Options.Options.Create(uploadOptions ?? new UploadOptions()));
 
     private User NewUser(long quota = 1_000_000) =>
         User.Create($"user-{Guid.NewGuid():N}@example.com", "hash", null, quota, Now) is { } user
@@ -175,6 +182,46 @@ public class PhotoServiceTests
 
         await Should.ThrowAsync<QuotaExceededException>(
             () => NewService().UploadAsync(owner.Id, "big.jpg", "image/jpeg", JpegBytes(100)));
+    }
+
+    [Fact]
+    public async Task Upload_PaidPlanImageOverCap_Throws()
+    {
+        var owner = NewUser();
+        owner.Plan = "paid";
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService(new UploadOptions { PaidMaxImageBytes = 10 }).UploadAsync(
+                owner.Id, "big.jpg", "image/jpeg", JpegBytes(100)));
+    }
+
+    [Fact]
+    public async Task Upload_FreePlanImageOverCap_IsCompressedToCap()
+    {
+        var owner = NewUser();
+        Stream Compress(Stream image, long maxBytes) => new MemoryStream(new byte[maxBytes]);
+
+        var result = await NewService(
+            new UploadOptions { FreeMaxImageBytes = 50 },
+            new FakeImageCompressor(Compress)).UploadAsync(
+            owner.Id, "big.jpg", "image/jpeg", JpegBytes(100));
+
+        result.Photo.SizeBytes.ShouldBe(50);
+    }
+
+    [Fact]
+    public async Task Upload_FreePlanVideoOverCap_IsTranscodedToCap()
+    {
+        var owner = NewUser(quota: 1_000_000);
+        Stream Transcode(Stream video, long maxBytes) => new MemoryStream(new byte[maxBytes]);
+
+        var result = await NewService(
+            new UploadOptions { FreeMaxVideoBytes = 20 },
+            videoCompressor: new FakeVideoCompressor(Transcode)).UploadAsync(
+            owner.Id, "clip.mp4", "video/mp4",
+            new MemoryStream(Encoding.UTF8.GetBytes("a-video-much-longer-than-the-cap")));
+
+        result.Photo.SizeBytes.ShouldBe(20);
     }
 
     [Fact]

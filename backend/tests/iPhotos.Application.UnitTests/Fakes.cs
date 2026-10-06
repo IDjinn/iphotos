@@ -417,3 +417,21 @@ public sealed class FakeVideoProcessor : IVideoProcessor
             new VideoPoster(new MemoryStream(bytes), Info.Width, Info.Height, bytes.Length)));
     }
 }
+
+public sealed class FakeImageCompressor(Func<Stream, long, Stream>? impl = null) : IImageCompressor
+{
+    public Task<Stream> CompressToFitAsync(Stream image, long maxBytes, CancellationToken cancellationToken = default)
+    {
+        image.Position = 0;
+        return Task.FromResult(impl?.Invoke(image, maxBytes) ?? image);
+    }
+}
+
+public sealed class FakeVideoCompressor(Func<Stream, long, Stream>? impl = null) : IVideoCompressor
+{
+    public Task<Stream> CompressToFitAsync(Stream video, long maxBytes, CancellationToken cancellationToken = default)
+    {
+        video.Position = 0;
+        return Task.FromResult(impl?.Invoke(video, maxBytes) ?? video);
+    }
+}
