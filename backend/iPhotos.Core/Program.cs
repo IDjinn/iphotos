@@ -25,8 +25,6 @@ builder.Services.AddSingleton<IDateTimeProvider, UtcDateTimeProvider>();
 builder.Services.AddSingleton<IContentHasher, Sha256ContentHasher>();
 builder.Services.AddSingleton<IImageVariantGenerator, ImageSharpVariantGenerator>();
 builder.Services.AddSingleton<IExifExtractor, ImageSharpExifExtractor>();
-builder.Services.AddSingleton<IImageCompressor, ImageSharpImageCompressor>();
-builder.Services.AddSingleton<IVideoCompressor, FfmpegVideoCompressor>();
 
 // Options are bound lazily (resolved from the final IConfiguration) so test hosts
 // created via WebApplicationFactory can override appsettings after Program starts.
@@ -100,6 +98,7 @@ builder.Services.AddSingleton<IBillingProvider>(sp =>
 });
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PhotoService>();
+builder.Services.AddScoped<UserPreferencesService>();
 builder.Services.AddScoped<ZipImportHandler>();
 builder.Services.AddScoped<BillingService>();
 
@@ -115,11 +114,17 @@ builder.Services.AddRateLimiter(options =>
         }));
 });
 
-// Uploads: the request body cap follows the paid-plan caps in Upload:*
-// (free-plan oversize files are compressed server-side, so the body must
-// admit the original bytes; a 0 cap means "unlimited").
+// Uploads: the request body cap follows the largest per-file cap in Upload:*
+// (saver modes compress after the upload, so the body must admit the original
+// bytes; a 0 cap means "unlimited").
 var uploadLimits = builder.Configuration.GetSection(UploadOptions.SectionName).Get<UploadOptions>() ?? new UploadOptions();
-var maxUploadBytes = new[] { uploadLimits.PaidMaxImageBytes, uploadLimits.PaidMaxVideoBytes }.Max();
+var maxUploadBytes = new[]
+{
+    uploadLimits.FreeSaverMaxImageBytes, uploadLimits.FreeSaverMaxVideoBytes,
+    uploadLimits.FreeOriginalMaxImageBytes, uploadLimits.FreeOriginalMaxVideoBytes,
+    uploadLimits.PaidSaverMaxImageBytes, uploadLimits.PaidSaverMaxVideoBytes,
+    uploadLimits.PaidOriginalMaxImageBytes, uploadLimits.PaidOriginalMaxVideoBytes,
+}.Max();
 if (maxUploadBytes <= 0)
 {
     maxUploadBytes = long.MaxValue;
@@ -146,6 +151,7 @@ app.MapAuthEndpoints();
 app.MapPhotoEndpoints();
 app.MapImportEndpoints();
 app.MapBillingEndpoints();
+app.MapUserPreferenceEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", utcNow = DateTimeOffset.UtcNow }));
 
 await app.Services.MigrateDatabaseAsync();

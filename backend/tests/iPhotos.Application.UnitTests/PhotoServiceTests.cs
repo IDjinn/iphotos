@@ -20,14 +20,9 @@ public class PhotoServiceTests
     private readonly Sha256ContentHasher _hasher = new();
     private readonly FakeVideoProcessor _video = new();
 
-    private PhotoService NewService(
-        UploadOptions? uploadOptions = null,
-        IImageCompressor? imageCompressor = null,
-        IVideoCompressor? videoCompressor = null) => new(
+    private PhotoService NewService(UploadOptions? uploadOptions = null) => new(
         _photos, _variants, _jobs, _users, _blobs, _hasher, new FakeImageVariantGenerator(),
         new FakeExifExtractor(), _video,
-        imageCompressor ?? new FakeImageCompressor(),
-        videoCompressor ?? new FakeVideoCompressor(),
         _uow, new StubDateTimeProvider(Now),
         Microsoft.Extensions.Options.Options.Create(uploadOptions ?? new UploadOptions()));
 
@@ -184,44 +179,79 @@ public class PhotoServiceTests
             () => NewService().UploadAsync(owner.Id, "big.jpg", "image/jpeg", JpegBytes(100)));
     }
 
+    // ── Upload quality matrix (plan × quality caps) ──────────────────────────
+
     [Fact]
-    public async Task Upload_PaidPlanImageOverCap_Throws()
+    public async Task Upload_PaidOriginalImageOverCap_Throws()
     {
         var owner = NewUser();
         owner.Plan = "paid";
+        owner.UploadQuality = UploadQualities.Original;
 
         await Should.ThrowAsync<ValidationException>(
-            () => NewService(new UploadOptions { PaidMaxImageBytes = 10 }).UploadAsync(
+            () => NewService(new UploadOptions { PaidOriginalMaxImageBytes = 10 }).UploadAsync(
                 owner.Id, "big.jpg", "image/jpeg", JpegBytes(100)));
     }
 
     [Fact]
-    public async Task Upload_FreePlanImageOverCap_IsCompressedToCap()
+    public async Task Upload_FreeOriginalImageOverCap_Throws()
     {
         var owner = NewUser();
-        Stream Compress(Stream image, long maxBytes) => new MemoryStream(new byte[maxBytes]);
+        owner.UploadQuality = UploadQualities.Original;
 
-        var result = await NewService(
-            new UploadOptions { FreeMaxImageBytes = 50 },
-            new FakeImageCompressor(Compress)).UploadAsync(
-            owner.Id, "big.jpg", "image/jpeg", JpegBytes(100));
-
-        result.Photo.SizeBytes.ShouldBe(50);
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService(new UploadOptions { FreeOriginalMaxImageBytes = 10 }).UploadAsync(
+                owner.Id, "big.jpg", "image/jpeg", JpegBytes(100)));
     }
 
     [Fact]
-    public async Task Upload_FreePlanVideoOverCap_IsTranscodedToCap()
+    public async Task Upload_FreeSaverImageOverCap_IsStoredAsIsForWorkerCompression()
     {
-        var owner = NewUser(quota: 1_000_000);
-        Stream Transcode(Stream video, long maxBytes) => new MemoryStream(new byte[maxBytes]);
+        var owner = NewUser(); // default quality: storage saver
 
-        var result = await NewService(
-            new UploadOptions { FreeMaxVideoBytes = 20 },
-            videoCompressor: new FakeVideoCompressor(Transcode)).UploadAsync(
-            owner.Id, "clip.mp4", "video/mp4",
-            new MemoryStream(Encoding.UTF8.GetBytes("a-video-much-longer-than-the-cap")));
+        var result = await NewService(new UploadOptions { FreeSaverMaxImageBytes = 50 }).UploadAsync(
+            owner.Id, "big.jpg", "image/jpeg", JpegBytes(100));
 
-        result.Photo.SizeBytes.ShouldBe(20);
+        // The bytes cross the API untouched now; the variant worker compresses them.
+        result.Photo.SizeBytes.ShouldBe(100);
+        _photos.Photos.Single().StoredQuality.ShouldBe(UploadQualities.Original);
+    }
+
+    [Fact]
+    public async Task Upload_PaidSaverImageOverCap_IsAccepted()
+    {
+        var owner = NewUser();
+        owner.Plan = "paid";
+
+        var result = await NewService(new UploadOptions { PaidSaverMaxImageBytes = 50 }).UploadAsync(
+            owner.Id, "big.jpg", "image/jpeg", JpegBytes(100));
+
+        result.Photo.SizeBytes.ShouldBe(100);
+    }
+
+    [Fact]
+    public async Task Upload_FreeOriginalVideoOverCap_Throws()
+    {
+        var owner = NewUser();
+        owner.UploadQuality = UploadQualities.Original;
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService(new UploadOptions { FreeOriginalMaxVideoBytes = 20 }).UploadAsync(
+                owner.Id, "clip.mp4", "video/mp4",
+                new MemoryStream(Encoding.UTF8.GetBytes("a-video-much-longer-than-the-cap"))));
+    }
+
+    [Fact]
+    public async Task Upload_FreeSaverVideoOverCap_IsStoredAsIsForWorkerTranscode()
+    {
+        var owner = NewUser();
+        var content = Encoding.UTF8.GetBytes("a-video-much-longer-than-the-cap");
+
+        var result = await NewService(new UploadOptions { FreeSaverMaxVideoBytes = 20 }).UploadAsync(
+            owner.Id, "clip.mp4", "video/mp4", new MemoryStream(content));
+
+        result.Photo.SizeBytes.ShouldBe(content.Length);
+        _photos.Photos.Single().StoredQuality.ShouldBe(UploadQualities.Original);
     }
 
     [Fact]
@@ -453,6 +483,30 @@ public class PhotoServiceTests
 
         await Should.ThrowAsync<ValidationException>(
             () => NewService().CreateUploadTicketAsync(owner.Id, "x.jpg", "image/jpeg", 100, " "));
+    }
+
+    [Fact]
+    public async Task CreateUploadTicket_OriginalQualityOverCap_Throws()
+    {
+        var owner = NewUser();
+        owner.UploadQuality = UploadQualities.Original;
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService(new UploadOptions { FreeOriginalMaxImageBytes = 100 })
+                .CreateUploadTicketAsync(owner.Id, "big.jpg", "image/jpeg", 500, "hash-1"));
+    }
+
+    [Fact]
+    public async Task CreateUploadTicket_SaverQuality_AcceptsOversizeWithinQuota()
+    {
+        var owner = NewUser(quota: 10_000);
+
+        var ticket = await NewService(new UploadOptions { FreeSaverMaxImageBytes = 100 })
+            .CreateUploadTicketAsync(owner.Id, "big.jpg", "image/jpeg", 5_000, "hash-1");
+
+        // Saver compression happens in the worker, so the ticket cap doesn't apply.
+        ticket.Duplicated.ShouldBeFalse();
+        ticket.UploadUrl.ShouldNotBeNull();
     }
 
     [Fact]

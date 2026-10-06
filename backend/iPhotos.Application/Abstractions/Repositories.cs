@@ -38,6 +38,14 @@ public interface IPhotoRepository
 
     /// <summary>Raw usage for the owner: total bytes (originals + variants) plus asset counts.</summary>
     Task<UsageStats> GetUsageAsync(Guid ownerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ready photos whose stored bytes don't match the given upload quality and can be
+    /// rewritten by the worker: for storage-saver, original-quality photos over the saver
+    /// caps (original mode has no actionable mismatches — compressed bytes are final).
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListQualityMismatchIdsAsync(
+        Guid ownerId, string uploadQuality, long imageCapBytes, long videoCapBytes, CancellationToken cancellationToken = default);
 }
 
 public interface IVariantRepository

@@ -11,8 +11,9 @@ namespace iPhotos.Worker;
 public static class DependencyInjection
 {
     /// <summary>
-    /// Registers the variant processing pipeline (EXIF indexing + preview/thumbnail
-    /// generation). Used by the Worker host and by integration test hosts.
+    /// Registers the variant processing pipeline (storage-saver application + EXIF
+    /// indexing + preview/thumbnail generation). Used by the Worker host and by
+    /// integration test hosts.
     /// </summary>
     public static IServiceCollection AddVariantProcessing(this IServiceCollection services)
     {
@@ -24,6 +25,8 @@ public static class DependencyInjection
             (options, configuration) => configuration.GetSection(ImagingOptions.SectionName).Bind(options));
         services.AddOptions<VideoProcessorOptions>().Configure<IConfiguration>(
             (options, configuration) => configuration.GetSection(VideoProcessorOptions.SectionName).Bind(options));
+        services.AddOptions<UploadOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(UploadOptions.SectionName).Bind(options));
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<ImagingOptions>>().Value);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<VideoProcessorOptions>>().Value);
 
@@ -32,6 +35,7 @@ public static class DependencyInjection
         services.AddSingleton<IVideoProcessor, FfmpegVideoProcessor>();
         services.AddSingleton<IImageCompressor, ImageSharpImageCompressor>();
         services.AddSingleton<IVideoCompressor, FfmpegVideoCompressor>();
+        services.AddSingleton<IContentHasher, Sha256ContentHasher>();
         services.AddScoped<VariantProcessingHandler>();
         return services;
     }

@@ -166,3 +166,13 @@ public sealed record BillingStatusDto(
     BillingSubscriptionState State,
     long QuotaBytes,
     DateTimeOffset? ExpiresAt);
+
+/// <summary>Account-wide upload quality plus the effective per-file caps for the
+/// current (plan, quality) mode and how many stored photos can be rewritten to match.</summary>
+public sealed record UserPreferencesDto(
+    string UploadQuality,
+    int MismatchedPhotoCount,
+    long ImageCapBytes,
+    long VideoCapBytes);
+
+public sealed record UpdateUserPreferencesRequest(string UploadQuality, bool ApplyToExisting = false);

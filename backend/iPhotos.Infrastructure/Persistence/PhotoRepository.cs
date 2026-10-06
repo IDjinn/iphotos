@@ -116,6 +116,28 @@ public sealed class PhotoRepository(PhotosDbContext db) : IPhotoRepository
 
         return new UsageStats(usedBytes, photoCount, variantCount);
     }
+
+    public async Task<IReadOnlyList<Guid>> ListQualityMismatchIdsAsync(
+        Guid ownerId,
+        string uploadQuality,
+        long imageCapBytes,
+        long videoCapBytes,
+        CancellationToken cancellationToken = default)
+    {
+        if (uploadQuality != UploadQualities.StorageSaver)
+        {
+            return [];
+        }
+
+        return await db.Photos
+            .Where(p => p.OwnerId == ownerId
+                && p.State == PhotoState.Ready
+                && p.StoredQuality == UploadQualities.Original
+                && ((p.MediaType == MediaType.Photo && p.SizeBytes > imageCapBytes)
+                    || (p.MediaType == MediaType.Video && p.SizeBytes > videoCapBytes)))
+            .Select(p => p.Id)
+            .ToListAsync(cancellationToken);
+    }
 }
 
 public sealed class VariantRepository(PhotosDbContext db) : IVariantRepository

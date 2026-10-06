@@ -23,7 +23,9 @@
 - Auth **e-mail + senha** (Argon2id no servidor) + JWT — D11 supersede a premissa
   OPAQUE do doc 03 §10 para o v1.
 - Upload com **dedup por SHA-256 por conta** (mesmo algoritmo do inventário 03A),
-  quota por usuário (default 15 GiB → HTTP 413), limite de upload 200 MB.
+  quota por usuário (default 15 GiB → HTTP 413). O limite por arquivo depende do
+  **plano × qualidade de upload** (2026-10-06, §3.5): modos "original" rejeitam
+  acima do cap; modos "storage saver" comprimem/transcodificam no worker.
 - API em `http://localhost:5205`; OpenAPI em `/openapi/v1.json` (dev); health `/health`.
 
 ## 2. Base URL por ambiente
@@ -140,7 +142,10 @@ varridos pelo worker após `OrphanSweep:MaxAgeHours` (default 24 h).
 **Restrições do upload:** mime `image/jpeg` | `image/png` | `image/webp` (HEIC não —
 converter no cliente com `expo-image-manipulator`) e, desde 2026-10-05 (doc 15),
 `video/mp4` | `video/quicktime` | `video/webm` | `video/x-msvideo` | `video/3gpp`;
-≤ 200 MB; quota excedida → **413**.
+quota excedida → **413**. O limite por arquivo vem da matriz plano × qualidade
+(§3.5): em modos "original" arquivos acima do cap → **400** (no multipart e no
+ticket); em modos "storage saver" o upload é aceito e o worker comprime depois —
+o teto real é a quota.
 
 **Listagem:** além dos filtros `from/to/fileName/camera`, `GET /api/photos` aceita
 `?mediaType=photo|video` (case-insensitive; valor inválido → 400) e os parâmetros de
@@ -257,6 +262,44 @@ Outro owner nunca aparece na lista (escopo por owner no repositório).
 - **Nota de rede**: túneis Cloudflare (free/quick) limitam upload a ~100 MB — zips
   grandes exigem acesso direto/LAN à API. O blob do zip é descartado do storage ao
   fim do job.
+
+### 3.5 Preferências da conta — `/api/me/preferences` (2026-10-06, todos exigem Bearer)
+
+> Qualidade de upload no estilo Google Fotos: a escolha vive **na conta**
+> (`users.upload_quality`), vale para todos os devices e para o import de ZIP, e é
+> aplicada **no servidor** — o worker comprime/transcodifica, o cliente nunca o faz.
+
+| Modo | Fotos | Vídeos | Acima do cap |
+|---|---|---|---|
+| free + `original` | até 64 MB | até 1 GB | **400** |
+| free + `storageSaver` | >16 MB → comprime a ≤16 MB | >1 GB → transcodifica a ≤1 GB **+ 1080p** | comprime no worker |
+| pago + `original` | até 500 MB | até 30 GB | **400** |
+| pago + `storageSaver` | >250 MB → comprime a ≤250 MB | >10 GB 1080p → transcodifica | comprime no worker |
+
+- Default por plano (migration): free → `storageSaver`, pago → `original` — preserva
+  o comportamento anterior à escolha. A preferência sobrevive a upgrade/downgrade de
+  plano (os caps resolvem dinamicamente do plano atual).
+- A compressão storage-saver roda no **worker** (passo anterior às variantes, dentro
+  do job de `variant_jobs`): o resultado comprimido vira o original armazenado
+  (blob, hash, tamanho e mime atualizados — imagens viram JPEG, vídeos MP4) e os
+  bytes enviados são descartados, exatamente como a antiga compressão in-flight do
+  plano free. O rewrite é **one-way** (não há como restaurar o original descartado).
+- Mismatch ("colisão") acionável = foto `Ready` com `stored_quality = original`
+  acima do cap saver do modo atual. No modo `original` o mismatch acionável é
+  sempre 0 (bytes comprimidos são finais).
+- `Upload:SaverVideoMaxHeight` (default 1080) limita a altura dos vídeos
+  transcodificados em modo saver (o CRF ladder continua decidindo a qualidade).
+
+| Endpoint | Body | Sucesso | Erros típicos |
+|---|---|---|---|
+| `GET /api/me/preferences` | — | **200** `{ uploadQuality, mismatchedPhotoCount, imageCapBytes, videoCapBytes }` (caps efetivos do plano × qualidade atual) | 404 sem token válido |
+| `PUT /api/me/preferences` | `{ "uploadQuality": "original"\|"storageSaver", "applyToExisting": false }` | **200** mesmo DTO já refletindo a nova qualidade. Com `applyToExisting: true`, reenfileira o job de variantes de cada mismatch (rewrite em massa pelo worker) | **400** qualidade desconhecida |
+
+> Fluxo do cliente (web e app): `PUT` com `applyToExisting: false` → o DTO traz
+> `mismatchedPhotoCount` da nova qualidade → se > 0, confirmar com o usuário
+> ("atualizar existentes" vs "manter como estão") → `PUT` repetido com
+> `applyToExisting: true`. Idempotente: repetir o PUT não duplica reescritas além
+> dos jobs já enfileirados (fotos `Ready` ainda fora do conform).
 
 ## 4. Mapeamento para as seams do app
 

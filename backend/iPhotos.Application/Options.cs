@@ -1,3 +1,5 @@
+using iPhotos.Domain;
+
 namespace iPhotos.Application;
 
 public sealed class JwtOptions
@@ -41,17 +43,38 @@ public sealed class UploadOptions
 {
     public const string SectionName = "Upload";
 
-    /// <summary>Free plan: max image size in bytes. Larger images are compressed server-side to fit.</summary>
-    public long FreeMaxImageBytes { get; set; } = 16L * 1024 * 1024; // 16 MB
+    // ── Storage-saver modes: files over the cap are accepted and compressed/transcoded
+    //    to fit by the variant worker (videos also downscaled to SaverVideoMaxHeight). ──
 
-    /// <summary>Free plan: max video size in bytes. Larger videos are transcoded server-side to fit.</summary>
-    public long FreeMaxVideoBytes { get; set; } = 1L * 1024 * 1024 * 1024; // 1 GiB
+    /// <summary>Free plan + storage saver: max image size in bytes.</summary>
+    public long FreeSaverMaxImageBytes { get; set; } = 16L * 1024 * 1024; // 16 MB
 
-    /// <summary>Paid plan: max image size in bytes; larger uploads are rejected. 0 disables the cap.</summary>
-    public long PaidMaxImageBytes { get; set; } = 500L * 1024 * 1024; // 500 MB
+    /// <summary>Free plan + storage saver: max video size in bytes.</summary>
+    public long FreeSaverMaxVideoBytes { get; set; } = 1L * 1024 * 1024 * 1024; // 1 GiB
 
-    /// <summary>Paid plan: max video size in bytes; larger uploads are rejected. 0 disables the cap.</summary>
-    public long PaidMaxVideoBytes { get; set; } = 30L * 1024 * 1024 * 1024; // 30 GiB
+    /// <summary>Paid plan + storage saver: max image size in bytes.</summary>
+    public long PaidSaverMaxImageBytes { get; set; } = 250L * 1024 * 1024; // 250 MB
+
+    /// <summary>Paid plan + storage saver: max video size in bytes.</summary>
+    public long PaidSaverMaxVideoBytes { get; set; } = 10L * 1024 * 1024 * 1024; // 10 GiB
+
+    // ── Original-quality modes: files over the cap are rejected outright. ──
+
+    /// <summary>Free plan + original quality: max image size in bytes; larger uploads are rejected. 0 disables the cap.</summary>
+    public long FreeOriginalMaxImageBytes { get; set; } = 64L * 1024 * 1024; // 64 MB
+
+    /// <summary>Free plan + original quality: max video size in bytes; larger uploads are rejected. 0 disables the cap.</summary>
+    public long FreeOriginalMaxVideoBytes { get; set; } = 1L * 1024 * 1024 * 1024; // 1 GiB
+
+    /// <summary>Paid plan + original quality: max image size in bytes; larger uploads are rejected. 0 disables the cap.</summary>
+    public long PaidOriginalMaxImageBytes { get; set; } = 500L * 1024 * 1024; // 500 MB
+
+    /// <summary>Paid plan + original quality: max video size in bytes; larger uploads are rejected. 0 disables the cap.</summary>
+    public long PaidOriginalMaxVideoBytes { get; set; } = 30L * 1024 * 1024 * 1024; // 30 GiB
+
+    /// <summary>Height ceiling applied when transcoding videos in storage-saver modes
+    /// (0 keeps the source resolution).</summary>
+    public int SaverVideoMaxHeight { get; set; } = 1080;
 
     /// <summary>Direct uploads at or above this size use presigned multipart instead of a
     /// single presigned PUT (S3 caps one PUT at 5 GB). Keep below the smallest paid video cap.</summary>
@@ -62,6 +85,21 @@ public sealed class UploadOptions
 
     /// <summary>Upper bound for any presigned PUT expiry, however large the file.</summary>
     public int UploadUrlMaxExpiryHours { get; set; } = 24;
+
+    /// <summary>Billing stores the product id on Plan, so any non-free value is a paid tier.</summary>
+    public static bool IsFreePlan(string plan) => plan == "free";
+
+    /// <summary>Effective (image, video) per-file caps for a (plan, upload quality) mode.
+    /// In saver modes the caps only trigger compression — oversize files are accepted.</summary>
+    public (long ImageBytes, long VideoBytes) CapsFor(string plan, string uploadQuality)
+    {
+        var free = IsFreePlan(plan);
+        return uploadQuality == UploadQualities.Original
+            ? (free ? FreeOriginalMaxImageBytes : PaidOriginalMaxImageBytes,
+               free ? FreeOriginalMaxVideoBytes : PaidOriginalMaxVideoBytes)
+            : (free ? FreeSaverMaxImageBytes : PaidSaverMaxImageBytes,
+               free ? FreeSaverMaxVideoBytes : PaidSaverMaxVideoBytes);
+    }
 }
 
 public sealed class VideoProcessorOptions

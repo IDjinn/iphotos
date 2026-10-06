@@ -81,11 +81,17 @@ services:
       # Browser origins allowed to call the API (web app dev server, desktop shell).
       Cors__AllowedOrigins__0: ${IPHOTOS_CORS_ORIGIN_WEB:-http://localhost:3000}
       Cors__AllowedOrigins__1: ${IPHOTOS_CORS_ORIGIN_DESKTOP:-http://127.0.0.1:3210}
-      # Per-file upload caps in bytes (free plan compresses oversize files; paid rejects).
-      Upload__FreeMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_MAX_IMAGE_BYTES:-16777216}
-      Upload__FreeMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_MAX_VIDEO_BYTES:-1073741824}
-      Upload__PaidMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_MAX_IMAGE_BYTES:-524288000}
-      Upload__PaidMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_MAX_VIDEO_BYTES:-32212254720}
+      # Per-file upload caps in bytes per (plan × upload quality): "original" modes
+      # reject oversize files; "saver" modes compress/transcode them to fit in the worker.
+      Upload__FreeSaverMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_SAVER_MAX_IMAGE_BYTES:-16777216}
+      Upload__FreeSaverMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_SAVER_MAX_VIDEO_BYTES:-1073741824}
+      Upload__PaidSaverMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_SAVER_MAX_IMAGE_BYTES:-262144000}
+      Upload__PaidSaverMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_SAVER_MAX_VIDEO_BYTES:-10737418240}
+      Upload__FreeOriginalMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_ORIGINAL_MAX_IMAGE_BYTES:-67108864}
+      Upload__FreeOriginalMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_ORIGINAL_MAX_VIDEO_BYTES:-1073741824}
+      Upload__PaidOriginalMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_ORIGINAL_MAX_IMAGE_BYTES:-524288000}
+      Upload__PaidOriginalMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_ORIGINAL_MAX_VIDEO_BYTES:-32212254720}
+      Upload__SaverVideoMaxHeight: ${IPHOTOS_UPLOAD__SAVER_VIDEO_MAX_HEIGHT:-1080}
       # Presigned PUT expiries scale with the file size at this assumed throughput.
       Upload__AssumedUploadMbps: ${IPHOTOS_UPLOAD__ASSUMED_MBPS:-20}
       Upload__UploadUrlMaxExpiryHours: ${IPHOTOS_UPLOAD__MAX_URL_EXPIRY_HOURS:-24}
@@ -117,6 +123,17 @@ services:
       # Same staging provider as the api: the worker reads (and deletes) raw zip
       # archives from the storage host's filesystem provider, never from S3.
       StorageService__StagingProvider: ${IPHOTOS_STORAGE_STAGING_PROVIDER:-filesystem}
+      # The worker applies the storage-saver caps (§3.5), so it needs the same
+      # Upload matrix as the api — keep these in sync.
+      Upload__FreeSaverMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_SAVER_MAX_IMAGE_BYTES:-16777216}
+      Upload__FreeSaverMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_SAVER_MAX_VIDEO_BYTES:-1073741824}
+      Upload__PaidSaverMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_SAVER_MAX_IMAGE_BYTES:-262144000}
+      Upload__PaidSaverMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_SAVER_MAX_VIDEO_BYTES:-10737418240}
+      Upload__FreeOriginalMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_ORIGINAL_MAX_IMAGE_BYTES:-67108864}
+      Upload__FreeOriginalMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_ORIGINAL_MAX_VIDEO_BYTES:-1073741824}
+      Upload__PaidOriginalMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_ORIGINAL_MAX_IMAGE_BYTES:-524288000}
+      Upload__PaidOriginalMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_ORIGINAL_MAX_VIDEO_BYTES:-32212254720}
+      Upload__SaverVideoMaxHeight: ${IPHOTOS_UPLOAD__SAVER_VIDEO_MAX_HEIGHT:-1080}
       Worker__PollIntervalSeconds: "0.5"
       # Fast lanes (photos, cheap) + slow lanes (videos, ffmpeg) processing in
       # parallel; per-job wall-clock budgets prevent a hung job from pinning a lane.

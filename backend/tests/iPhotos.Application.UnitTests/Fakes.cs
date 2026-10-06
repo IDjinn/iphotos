@@ -141,6 +141,29 @@ public sealed class InMemoryPhotoRepository : IPhotoRepository
         var owned = Photos.Where(p => p.OwnerId == ownerId).ToList();
         return Task.FromResult(new UsageStats(owned.Sum(p => p.SizeBytes), owned.Count, 0));
     }
+
+    public Task<IReadOnlyList<Guid>> ListQualityMismatchIdsAsync(
+        Guid ownerId,
+        string uploadQuality,
+        long imageCapBytes,
+        long videoCapBytes,
+        CancellationToken cancellationToken = default)
+    {
+        if (uploadQuality != UploadQualities.StorageSaver)
+        {
+            return Task.FromResult<IReadOnlyList<Guid>>([]);
+        }
+
+        var mismatches = Photos
+            .Where(p => p.OwnerId == ownerId
+                && p.State == PhotoState.Ready
+                && p.StoredQuality == UploadQualities.Original
+                && ((p.MediaType == MediaType.Photo && p.SizeBytes > imageCapBytes)
+                    || (p.MediaType == MediaType.Video && p.SizeBytes > videoCapBytes)))
+            .Select(p => p.Id)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<Guid>>(mismatches);
+    }
 }
 
 public sealed class InMemoryVariantRepository : IVariantRepository
@@ -480,18 +503,27 @@ public sealed class FakeVideoProcessor : IVideoProcessor
 
 public sealed class FakeImageCompressor(Func<Stream, long, Stream>? impl = null) : IImageCompressor
 {
+    public int CallCount { get; private set; }
+
     public Task<Stream> CompressToFitAsync(Stream image, long maxBytes, CancellationToken cancellationToken = default)
     {
+        CallCount++;
         image.Position = 0;
         return Task.FromResult(impl?.Invoke(image, maxBytes) ?? image);
     }
 }
 
-public sealed class FakeVideoCompressor(Func<Stream, long, Stream>? impl = null) : IVideoCompressor
+public sealed class FakeVideoCompressor(Func<Stream, long, int, Stream>? impl = null) : IVideoCompressor
 {
-    public Task<Stream> CompressToFitAsync(Stream video, long maxBytes, CancellationToken cancellationToken = default)
+    public int CallCount { get; private set; }
+
+    public int? LastMaxHeight { get; private set; }
+
+    public Task<Stream> CompressToFitAsync(Stream video, long maxBytes, int maxHeight = 0, CancellationToken cancellationToken = default)
     {
+        CallCount++;
+        LastMaxHeight = maxHeight;
         video.Position = 0;
-        return Task.FromResult(impl?.Invoke(video, maxBytes) ?? video);
+        return Task.FromResult(impl?.Invoke(video, maxBytes, maxHeight) ?? video);
     }
 }

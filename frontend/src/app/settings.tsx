@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,8 @@ import { ThemedText } from '@/components/ThemedText';
 import type { CloudCacheMode } from '@/data/cloud-media-cache';
 import { cloudCacheModeChanged } from '@/data/cloud-media-cache';
 import { countLabeledAssets } from '@/data/labels-repository';
+import type { UploadQuality } from '@/data/user-preferences';
+import { getUserPreferences, updateUserPreferences } from '@/data/user-preferences';
 import { resolveActiveModel } from '@/stores/ai-model';
 import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useAccountStore } from '@/stores/account';
@@ -52,6 +55,11 @@ const CLOUD_CACHE_OPTIONS: { mode: CloudCacheMode; label: string; icon: IconName
   { mode: 'default', label: 'Default', icon: 'albums-outline' },
   { mode: 'limited', label: 'Limited', icon: 'server-outline' },
   { mode: 'all', label: 'Everything', icon: 'cloud-done-outline' },
+];
+
+const UPLOAD_QUALITY_OPTIONS: { mode: UploadQuality; label: string; icon: IconName }[] = [
+  { mode: 'original', label: 'Original', icon: 'diamond-outline' },
+  { mode: 'storageSaver', label: 'Storage saver', icon: 'save-outline' },
 ];
 
 function formatCount(count: number): string {
@@ -92,9 +100,68 @@ export default function SettingsScreen() {
     if (Number.isFinite(mb) && mb > 0) setCloudCacheLimitMb(mb);
   };
 
+  const uploadQuality = useSettingsStore((s) => s.uploadQuality);
+  const setUploadQuality = useSettingsStore((s) => s.setUploadQuality);
+  const [qualityCaps, setQualityCaps] = useState<{ imageCapBytes: number; videoCapBytes: number } | null>(null);
+
+  const changeUploadQuality = (mode: UploadQuality) => {
+    if (mode === uploadQuality) return;
+    haptic('light');
+    const previous = uploadQuality;
+    setUploadQuality(mode);
+    void (async () => {
+      try {
+        const saved = await updateUserPreferences(mode, false);
+        setQualityCaps({ imageCapBytes: saved.imageCapBytes, videoCapBytes: saved.videoCapBytes });
+        if (saved.mismatchedPhotoCount > 0) {
+          const count = formatCount(saved.mismatchedPhotoCount);
+          Alert.alert(
+            'Update existing photos?',
+            `${count} ${saved.mismatchedPhotoCount === 1 ? 'photo is' : 'photos are'} stored in a different quality and can be rewritten to match.`,
+            [
+              { text: 'Keep existing', style: 'cancel' },
+              {
+                text: `Update ${count}`,
+                onPress: () => {
+                  void updateUserPreferences(mode, true).catch(() => {});
+                },
+              },
+            ]
+          );
+        }
+      } catch {
+        setUploadQuality(previous);
+      }
+    })();
+  };
+
+  const uploadQualityHint = qualityCaps
+    ? uploadQuality === 'storageSaver'
+      ? `Photos over ${formatBytes(qualityCaps.imageCapBytes)} and videos over ${formatBytes(
+          qualityCaps.videoCapBytes
+        )} are compressed server-side (videos to 1080p)`
+      : `Photos up to ${formatBytes(qualityCaps.imageCapBytes)} and videos up to ${formatBytes(
+          qualityCaps.videoCapBytes
+        )} are stored exactly as uploaded`
+    : 'Applies to new uploads on every device signed in to your account';
+
   const account = useAccountStore();
   const plan = useAccountStore((s) => s.plan);
   const refreshPlan = useAccountStore((s) => s.refreshPlan);
+
+  // The upload-quality choice lives on the account — sync the local cache.
+  useEffect(() => {
+    if (account.mode !== 'cloud') return;
+    getUserPreferences()
+      .then((prefs) => {
+        setUploadQuality(prefs.uploadQuality);
+        setQualityCaps({ imageCapBytes: prefs.imageCapBytes, videoCapBytes: prefs.videoCapBytes });
+      })
+      .catch(() => {});
+    // account.mode/setUploadQuality are stable for the screen's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account.mode]);
+
   const backup = useBackupStore();
   const thumbnails = useThumbnailsStore();
   const encryptedMode = useEncryptedModeStore();
@@ -321,6 +388,37 @@ export default function SettingsScreen() {
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
           </Pressable>
         </Section>
+
+        {account.mode === 'cloud' ? (
+          <Section title="Upload quality">
+            <View style={styles.themeRow}>
+              {UPLOAD_QUALITY_OPTIONS.map((option) => {
+                const active = uploadQuality === option.mode;
+                return (
+                  <Pressable
+                    key={option.mode}
+                    style={[
+                      styles.themeOption,
+                      { backgroundColor: active ? colors.accentSoft : colors.surface },
+                      { borderColor: active ? colors.accent : 'transparent' },
+                    ]}
+                    onPress={() => changeUploadQuality(option.mode)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Upload quality: ${option.label}`}
+                  >
+                    <Icon name={option.icon} size={20} color={active ? colors.accent : colors.textSecondary} />
+                    <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
+                      {option.label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <ThemedText variant="bodySmall" color="secondary" style={styles.sectionHint}>
+              {uploadQualityHint}
+            </ThemedText>
+          </Section>
+        ) : null}
 
         <Section title="Cloud cache">
           <View style={styles.themeRow}>

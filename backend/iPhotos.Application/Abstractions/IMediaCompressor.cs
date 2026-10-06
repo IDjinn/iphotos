@@ -13,11 +13,12 @@ public interface IImageCompressor
 }
 
 /// <summary>
-/// Transcodes a video so it fits within a byte budget (quality ladder);
-/// the returned stream is positioned at 0 and is seekable. Throws
-/// <see cref="InvalidImageException"/> when the budget is unreachable.
+/// Transcodes a video so it fits within a byte budget (quality ladder); when
+/// <paramref name="maxHeight"/> is greater than zero the output is also downscaled
+/// to at most that height. The returned stream is positioned at 0 and is seekable.
+/// Throws <see cref="InvalidImageException"/> when the budget is unreachable.
 /// </summary>
 public interface IVideoCompressor
 {
-    Task<Stream> CompressToFitAsync(Stream video, long maxBytes, CancellationToken cancellationToken = default);
+    Task<Stream> CompressToFitAsync(Stream video, long maxBytes, int maxHeight = 0, CancellationToken cancellationToken = default);
 }

@@ -18,8 +18,23 @@ public sealed partial class User
 
     public string Plan { get; set; } = "free";
     public long StorageQuotaBytes { get; set; }
+
+    /// <summary>Account-wide upload quality choice; caps resolve from (plan, quality).</summary>
+    public string UploadQuality { get; set; } = UploadQualities.StorageSaver;
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    public void SetUploadQuality(string quality, DateTimeOffset now)
+    {
+        if (!UploadQualities.IsValid(quality))
+        {
+            throw new ArgumentException($"Unknown upload quality '{quality}'.", nameof(quality));
+        }
+
+        UploadQuality = quality;
+        UpdatedAt = now;
+    }
 
     public static User Create(string email, string passwordHash, string? displayName, long storageQuotaBytes, DateTimeOffset now)
     {

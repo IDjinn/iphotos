@@ -64,6 +64,10 @@ public sealed class Photo
     public string? LastError { get; set; }
     public string OriginalBlobPath { get; set; } = string.Empty;
 
+    /// <summary>Quality of the currently stored bytes (UploadQualities.Original until the
+    /// worker applies storage-saver compression/transcoding).</summary>
+    public string StoredQuality { get; set; } = UploadQualities.Original;
+
     /// <summary>Direct-upload multipart session id while the bytes are still incoming
     /// (PendingUpload only); the orphan sweeper aborts stale sessions with it.</summary>
     public string? MultipartUploadId { get; set; }
@@ -183,6 +187,17 @@ public sealed class Photo
         GpsLongitude = gpsLongitude;
         Title = NullIfEmpty(title);
         Description = NullIfEmpty(description);
+    }
+
+    /// <summary>
+    /// Marks the stored bytes as storage-saver processed: the original upload was
+    /// replaced by the compressed/transcoded result (hash, size and mime updated
+    /// alongside by the caller).
+    /// </summary>
+    public void MarkSaverStored(DateTimeOffset now)
+    {
+        StoredQuality = UploadQualities.StorageSaver;
+        Touch(now);
     }
 
     private static string? NullIfEmpty(string? value) =>

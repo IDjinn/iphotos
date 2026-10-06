@@ -30,6 +30,7 @@ public sealed class PhotosDbContext(DbContextOptions<PhotosDbContext> options) :
             entity.Property(u => u.DisplayName).HasMaxLength(200);
             entity.Property(u => u.PasswordHash).IsRequired();
             entity.Property(u => u.Plan).HasMaxLength(50).IsRequired();
+            entity.Property(u => u.UploadQuality).HasMaxLength(20).IsRequired();
             entity.Property(u => u.KdfParams).HasColumnType("jsonb");
         });
 
@@ -59,6 +60,7 @@ public sealed class PhotosDbContext(DbContextOptions<PhotosDbContext> options) :
             entity.Property(p => p.Description).HasMaxLength(2000);
             entity.Property(p => p.State).HasConversion<string>().HasMaxLength(20);
             entity.Property(p => p.LastError).HasMaxLength(2000);
+            entity.Property(p => p.StoredQuality).HasMaxLength(20).IsRequired();
 
             // Dedup: same content for the same owner is stored once.
             entity.HasIndex(p => new { p.OwnerId, p.ContentHash }).IsUnique();

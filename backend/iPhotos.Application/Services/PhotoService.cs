@@ -74,8 +74,6 @@ public sealed class PhotoService(
     IImageVariantGenerator variantGenerator,
     IExifExtractor exifExtractor,
     IVideoProcessor videoProcessor,
-    IImageCompressor imageCompressor,
-    IVideoCompressor videoCompressor,
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime,
     Microsoft.Extensions.Options.IOptions<UploadOptions> uploadOptions)
@@ -107,13 +105,19 @@ public sealed class PhotoService(
     }
 
     /// <summary>
-    /// Paid plans reject files above their cap. Free plans never reject here —
-    /// oversize files are compressed/transcoded downstream to the free cap.
+    /// Original-quality modes reject files above the plan cap outright. Storage-saver
+    /// modes never reject here — oversize files are compressed/transcoded by the
+    /// variant worker after the upload, so the only hard ceiling is the quota.
     /// </summary>
-    private void EnsurePlanLimit(string plan, bool isVideo, long sizeBytes)
+    private void EnsureUploadLimit(User user, bool isVideo, long sizeBytes)
     {
-        if (plan == "free") return;
-        var cap = isVideo ? UploadLimits.PaidMaxVideoBytes : UploadLimits.PaidMaxImageBytes;
+        if (user.UploadQuality != UploadQualities.Original)
+        {
+            return;
+        }
+
+        var (imageCap, videoCap) = UploadLimits.CapsFor(user.Plan, user.UploadQuality);
+        var cap = isVideo ? videoCap : imageCap;
         if (cap > 0 && sizeBytes > cap)
         {
             throw new ValidationException(
@@ -141,17 +145,20 @@ public sealed class PhotoService(
             throw new ValidationException("File size must be greater than zero.");
         }
 
-        // Direct upload never sees the bytes, so free-plan compression cannot
-        // happen here: the ticket ceiling is the plan cap in both tiers.
-        var plan = (await users.GetByIdAsync(ownerId, cancellationToken)
-            ?? throw new NotFoundException($"User '{ownerId}' was not found.")).Plan;
-        var ticketCap = SupportedMediaTypes.KindOf(contentType) == MediaType.Video
-            ? (plan == "free" ? UploadLimits.FreeMaxVideoBytes : UploadLimits.PaidMaxVideoBytes)
-            : (plan == "free" ? UploadLimits.FreeMaxImageBytes : UploadLimits.PaidMaxImageBytes);
-        if (ticketCap > 0 && sizeBytes > ticketCap)
+        // Original-quality modes enforce their per-file cap at ticket time. Saver
+        // modes accept any size the quota admits — the worker compresses later,
+        // so the bytes never need to cross this API for the decision to hold.
+        var user = await users.GetByIdAsync(ownerId, cancellationToken)
+            ?? throw new NotFoundException($"User '{ownerId}' was not found.");
+        if (user.UploadQuality == UploadQualities.Original)
         {
-            throw new ValidationException(
-                $"File exceeds the {ticketCap / (1024 * 1024)} MB upload limit of your plan.");
+            var (imageCap, videoCap) = UploadLimits.CapsFor(user.Plan, user.UploadQuality);
+            var cap = SupportedMediaTypes.KindOf(contentType) == MediaType.Video ? videoCap : imageCap;
+            if (cap > 0 && sizeBytes > cap)
+            {
+                throw new ValidationException(
+                    $"File exceeds the {cap / (1024 * 1024)} MB upload limit of your plan.");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(contentHash))
@@ -164,9 +171,6 @@ public sealed class PhotoService(
         {
             return new UploadTicket(ToDto(existing, []), Duplicated: true, UploadUrl: null, ExpiresAt: null);
         }
-
-        var user = await users.GetByIdAsync(ownerId, cancellationToken)
-            ?? throw new NotFoundException($"User '{ownerId}' was not found.");
 
         var usage = await photos.GetUsageAsync(ownerId, cancellationToken);
         if (usage.UsedBytes + sizeBytes > user.StorageQuotaBytes)
@@ -339,18 +343,12 @@ public sealed class PhotoService(
         var user = await users.GetByIdAsync(ownerId, cancellationToken)
             ?? throw new NotFoundException($"User '{ownerId}' was not found.");
 
-        EnsurePlanLimit(user.Plan, isVideo: false, content2.Length);
+        EnsureUploadLimit(user, isVideo: false, content2.Length);
 
-        // Free-plan oversize images are compressed to the plan cap; the stored
-        // bytes (and their dedup hash) are the compressed result.
+        // The bytes are stored as uploaded; storage-saver compression happens in the
+        // variant worker (same path as direct uploads and zip imports).
         long storedLength = content2.Length;
         Stream stored = content2;
-        var freeImageCap = UploadLimits.FreeMaxImageBytes;
-        if (user.Plan == "free" && freeImageCap > 0 && storedLength > freeImageCap)
-        {
-            stored = await imageCompressor.CompressToFitAsync(content2, freeImageCap, cancellationToken);
-            storedLength = stored.Length;
-        }
 
         stored.Position = 0;
         var hash = contentHasher.ComputeHash(stored);
@@ -438,7 +436,6 @@ public sealed class PhotoService(
         CancellationToken cancellationToken)
     {
         var tempPath = Path.Combine(Path.GetTempPath(), $"iphotos-upload-{Guid.NewGuid():N}{Path.GetExtension(fileName)}");
-        string? compressedPath = null;
         try
         {
             await using (var target = File.Create(tempPath))
@@ -449,25 +446,9 @@ public sealed class PhotoService(
             var user = await users.GetByIdAsync(ownerId, cancellationToken)
                 ?? throw new NotFoundException($"User '{ownerId}' was not found.");
 
-            EnsurePlanLimit(user.Plan, isVideo: true, new FileInfo(tempPath).Length);
+            EnsureUploadLimit(user, isVideo: true, new FileInfo(tempPath).Length);
 
-            // Free-plan oversize videos are transcoded to the plan cap; the stored
-            // bytes (and their dedup hash) are the transcoded result.
-            if (user.Plan == "free" && UploadLimits.FreeMaxVideoBytes > 0
-                && new FileInfo(tempPath).Length > UploadLimits.FreeMaxVideoBytes)
-            {
-                await using var source = File.OpenRead(tempPath);
-                var transcoded = await videoCompressor.CompressToFitAsync(
-                    source, UploadLimits.FreeMaxVideoBytes, cancellationToken);
-                compressedPath = Path.Combine(Path.GetTempPath(), $"iphotos-upload-{Guid.NewGuid():N}.mp4");
-                await using (var target = File.Create(compressedPath))
-                {
-                    await transcoded.CopyToAsync(target, cancellationToken);
-                }
-                await transcoded.DisposeAsync();
-            }
-
-            await using var videoFile = File.OpenRead(compressedPath ?? tempPath);
+            await using var videoFile = File.OpenRead(tempPath);
             var hash = contentHasher.ComputeHash(videoFile);
 
             var existing = await photos.FindByContentHashAsync(ownerId, hash, cancellationToken);
@@ -539,7 +520,6 @@ public sealed class PhotoService(
         finally
         {
             File.Delete(tempPath);
-            if (compressedPath is not null) File.Delete(compressedPath);
         }
     }
 

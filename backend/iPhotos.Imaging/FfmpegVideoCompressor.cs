@@ -16,7 +16,7 @@ public sealed class FfmpegVideoCompressor(IOptions<VideoProcessorOptions> option
 {
     private static readonly int[] CrfLadder = [23, 28, 32, 35];
 
-    public async Task<Stream> CompressToFitAsync(Stream video, long maxBytes, CancellationToken cancellationToken = default)
+    public async Task<Stream> CompressToFitAsync(Stream video, long maxBytes, int maxHeight = 0, CancellationToken cancellationToken = default)
     {
         var inputPath = Path.Combine(Path.GetTempPath(), $"iphotos-compress-in-{Guid.NewGuid():N}.bin");
         var outputPath = Path.Combine(Path.GetTempPath(), $"iphotos-compress-out-{Guid.NewGuid():N}.mp4");
@@ -29,7 +29,7 @@ public sealed class FfmpegVideoCompressor(IOptions<VideoProcessorOptions> option
 
             foreach (var crf in CrfLadder)
             {
-                await RunFfmpegAsync(inputPath, outputPath, crf, cancellationToken);
+                await RunFfmpegAsync(inputPath, outputPath, crf, maxHeight, cancellationToken);
                 var info = new FileInfo(outputPath);
                 if (info.Exists && info.Length <= maxBytes)
                 {
@@ -53,22 +53,27 @@ public sealed class FfmpegVideoCompressor(IOptions<VideoProcessorOptions> option
         }
     }
 
-    private async Task RunFfmpegAsync(string inputPath, string outputPath, int crf, CancellationToken cancellationToken)
+    private async Task RunFfmpegAsync(string inputPath, string outputPath, int crf, int maxHeight, CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo(optionsAccessor.Value.FfmpegPath)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        foreach (var arg in new[]
+        var args = new List<string>
         {
             "-nostdin", "-v", "error", "-y",
             "-i", inputPath,
             "-c:v", "libx264", "-preset", "fast", "-crf", crf.ToString(),
-            "-c:a", "aac", "-b:a", "128k",
-            "-movflags", "+faststart",
-            outputPath,
-        })
+        };
+        if (maxHeight > 0)
+        {
+            // The escaped comma keeps min(ih,N) inside the scale filter (a bare comma
+            // would split the filtergraph); -2 preserves the display aspect ratio.
+            args.AddRange(["-vf", $"scale=-2:min(ih\\,{maxHeight})"]);
+        }
+        args.AddRange(["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", outputPath]);
+        foreach (var arg in args)
         {
             startInfo.ArgumentList.Add(arg);
         }

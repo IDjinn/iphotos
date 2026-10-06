@@ -1,4 +1,5 @@
 using iPhotos.Application.Abstractions;
+using iPhotos.Application.Common;
 using iPhotos.Application.Services;
 using iPhotos.Domain;
 
@@ -10,34 +11,44 @@ public class VariantProcessingHandlerTests
 
     private readonly InMemoryPhotoRepository _photos = new();
     private readonly InMemoryVariantRepository _variants = new();
+    private readonly InMemoryUserRepository _users = new();
     private readonly FakeBlobStorage _blobs = new();
     private readonly FakeImageVariantGenerator _generator = new();
     private readonly FakeExifExtractor _exif = new();
     private readonly FakeVideoProcessor _video = new();
     private readonly FakeUnitOfWork _uow = new();
 
-    private VariantProcessingHandler NewHandler() =>
-        new(_photos, _variants, _blobs, _generator, _exif, _video, _uow, new StubDateTimeProvider(Now));
+    private VariantProcessingHandler NewHandler(
+        UploadOptions? uploadOptions = null,
+        IImageCompressor? imageCompressor = null,
+        IVideoCompressor? videoCompressor = null) =>
+        new(_photos, _variants, _users, _blobs, new Sha256ContentHasher(), _generator, _exif, _video,
+            imageCompressor ?? new FakeImageCompressor(), videoCompressor ?? new FakeVideoCompressor(),
+            _uow, new StubDateTimeProvider(Now),
+            Microsoft.Extensions.Options.Options.Create(uploadOptions ?? new UploadOptions()));
 
-    private async Task<Photo> NewProcessedPhoto()
+    private User Owner(
+        string uploadQuality = UploadQualities.StorageSaver,
+        string plan = "free")
     {
-        var owner = User.Create("owner@example.com", "hash", null, 1_000_000, Now);
-        var photo = Photo.Create(owner.Id, "hash123", "p.jpg", "image/jpeg", 100, Now);
-        photo.OriginalBlobPath = $"{owner.Id}/{photo.Id}/original.jpg";
-        _photos.Photos.Add(photo);
-        _blobs.Blobs[photo.OriginalBlobPath] = new byte[100];
-        await Task.CompletedTask;
-        return photo;
+        var owner = User.Create($"owner-{Guid.NewGuid():N}@example.com", "hash", null, 1_000_000, Now);
+        owner.Plan = plan;
+        owner.UploadQuality = uploadQuality;
+        _users.Users.Add(owner);
+        return owner;
     }
 
-    private async Task<Photo> NewProcessedVideo()
+    private Photo NewStoredPhoto(
+        User owner,
+        string fileName,
+        string mimeType,
+        MediaType mediaType,
+        int sizeBytes)
     {
-        var owner = User.Create("owner@example.com", "hash", null, 1_000_000, Now);
-        var photo = Photo.Create(owner.Id, "hash456", "clip.mp4", "video/mp4", 500, Now, MediaType.Video);
-        photo.OriginalBlobPath = $"{owner.Id}/{photo.Id}/original.mp4";
+        var photo = Photo.Create(owner.Id, $"hash-{Guid.NewGuid():N}", fileName, mimeType, sizeBytes, Now, mediaType);
+        photo.OriginalBlobPath = $"{owner.Id}/{photo.Id}/original{Path.GetExtension(fileName)}";
         _photos.Photos.Add(photo);
-        _blobs.Blobs[photo.OriginalBlobPath] = new byte[500];
-        await Task.CompletedTask;
+        _blobs.Blobs[photo.OriginalBlobPath] = new byte[sizeBytes];
         return photo;
     }
 
@@ -51,7 +62,8 @@ public class VariantProcessingHandlerTests
     [Fact]
     public async Task Process_GeneratesVariantsIndexesMetadataAndMarksReady()
     {
-        var photo = await NewProcessedPhoto();
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "p.jpg", "image/jpeg", MediaType.Photo, 100);
         var job = NewJob(photo.Id);
 
         await NewHandler().ProcessJobAsync(job);
@@ -95,7 +107,8 @@ public class VariantProcessingHandlerTests
     [Fact]
     public async Task Process_GeneratorThrows_FailsPhotoAndRequeuesJob()
     {
-        var photo = await NewProcessedPhoto();
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "p.jpg", "image/jpeg", MediaType.Photo, 100);
         var job = NewJob(photo.Id);
         _generator.ThrowOnGenerate = new InvalidOperationException("cannot decode");
 
@@ -111,7 +124,8 @@ public class VariantProcessingHandlerTests
     [Fact]
     public async Task Process_LastAttempt_FailsJobPermanently()
     {
-        var photo = await NewProcessedPhoto();
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "p.jpg", "image/jpeg", MediaType.Photo, 100);
         _generator.ThrowOnGenerate = new InvalidOperationException("cannot decode");
 
         var handler = NewHandler();
@@ -130,7 +144,8 @@ public class VariantProcessingHandlerTests
     [Fact]
     public async Task Process_IsIdempotent_WhenRetryingAfterPartialVariants()
     {
-        var photo = await NewProcessedPhoto();
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "p.jpg", "image/jpeg", MediaType.Photo, 100);
         var job = NewJob(photo.Id);
         // leftover variant rows from a previous partial run
         _variants.Variants.Add(PhotoVariant.Create(photo.Id, VariantKind.Thumbnail, "stale.jpg", 1, 1, 1, "jpeg", Now));
@@ -144,7 +159,8 @@ public class VariantProcessingHandlerTests
     [Fact]
     public async Task Process_Video_UsesVideoProcessorAndMarksReady()
     {
-        var photo = await NewProcessedVideo();
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "clip.mp4", "video/mp4", MediaType.Video, 500);
         var job = NewJob(photo.Id);
 
         await NewHandler().ProcessJobAsync(job);
@@ -174,7 +190,8 @@ public class VariantProcessingHandlerTests
     [Fact]
     public async Task Process_VideoProcessorThrows_FailsPhotoAndRequeuesJob()
     {
-        var photo = await NewProcessedVideo();
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "clip.mp4", "video/mp4", MediaType.Video, 500);
         var job = NewJob(photo.Id);
         _video.ThrowOnProcess = new InvalidImageException("The stream is not a decodable video.");
 
@@ -184,4 +201,133 @@ public class VariantProcessingHandlerTests
         job.Attempts.ShouldBe(1);
         photo.State.ShouldBe(PhotoState.Failed);
     }
+
+    // ── Storage-saver application ────────────────────────────────────────────
+
+    [Fact]
+    public async Task Process_SaverImageOverCap_CompressesReplacesOriginalAndDropsOldBlob()
+    {
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "p.png", "image/png", MediaType.Photo, 100);
+        var job = NewJob(photo.Id);
+        var compressed = new byte[50];
+        Array.Fill(compressed, (byte)7);
+
+        await NewHandler(new UploadOptions { FreeSaverMaxImageBytes = 50 },
+            new FakeImageCompressor((_, _) => new MemoryStream(compressed))).ProcessJobAsync(job);
+
+        // The compressed JPEG becomes the stored original: path, mime, size, hash.
+        var newPath = $"{owner.Id}/{photo.Id}/original.jpg";
+        photo.OriginalBlobPath.ShouldBe(newPath);
+        photo.MimeType.ShouldBe("image/jpeg");
+        photo.SizeBytes.ShouldBe(50);
+        photo.StoredQuality.ShouldBe(UploadQualities.StorageSaver);
+        photo.ContentHash.ShouldBe(Sha256Of(compressed));
+        photo.State.ShouldBe(PhotoState.Ready);
+        job.State.ShouldBe(JobState.Done);
+
+        _blobs.Blobs.Keys.ShouldContain(newPath);
+        _blobs.Blobs.Keys.ShouldNotContain($"{owner.Id}/{photo.Id}/original.png");
+
+        var original = _variants.Variants.Single(v => v.Kind == VariantKind.Original);
+        original.BlobPath.ShouldBe(newPath);
+        original.SizeBytes.ShouldBe(50);
+    }
+
+    [Fact]
+    public async Task Process_SaverImageUnderCap_PassesThroughUntouched()
+    {
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "p.jpg", "image/jpeg", MediaType.Photo, 100);
+        var job = NewJob(photo.Id);
+        var compressor = new FakeImageCompressor();
+
+        await NewHandler(new UploadOptions { FreeSaverMaxImageBytes = 200 }, compressor).ProcessJobAsync(job);
+
+        compressor.CallCount.ShouldBe(0);
+        photo.OriginalBlobPath.ShouldBe($"{owner.Id}/{photo.Id}/original.jpg");
+        photo.SizeBytes.ShouldBe(100);
+        photo.StoredQuality.ShouldBe(UploadQualities.Original);
+        photo.State.ShouldBe(PhotoState.Ready);
+        job.State.ShouldBe(JobState.Done);
+    }
+
+    [Fact]
+    public async Task Process_OriginalQuality_NeverCompresses()
+    {
+        var owner = Owner(uploadQuality: UploadQualities.Original);
+        var photo = NewStoredPhoto(owner, "p.jpg", "image/jpeg", MediaType.Photo, 100);
+        var job = NewJob(photo.Id);
+        var compressor = new FakeImageCompressor();
+
+        await NewHandler(new UploadOptions { FreeSaverMaxImageBytes = 50 }, compressor).ProcessJobAsync(job);
+
+        compressor.CallCount.ShouldBe(0);
+        photo.SizeBytes.ShouldBe(100);
+        photo.StoredQuality.ShouldBe(UploadQualities.Original);
+    }
+
+    [Fact]
+    public async Task Process_SaverCompressionUnreachable_KeepsOriginalAndStillReadies()
+    {
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "p.jpg", "image/jpeg", MediaType.Photo, 100);
+        var job = NewJob(photo.Id);
+        var compressor = new FakeImageCompressor((_, _) =>
+            throw new InvalidImageException("The image cannot be compressed below 50 bytes."));
+
+        await NewHandler(new UploadOptions { FreeSaverMaxImageBytes = 50 }, compressor).ProcessJobAsync(job);
+
+        photo.State.ShouldBe(PhotoState.Ready);
+        photo.OriginalBlobPath.ShouldBe($"{owner.Id}/{photo.Id}/original.jpg");
+        photo.SizeBytes.ShouldBe(100);
+        photo.StoredQuality.ShouldBe(UploadQualities.Original);
+        job.State.ShouldBe(JobState.Done);
+    }
+
+    [Fact]
+    public async Task Process_SaverVideoOverCap_TranscodesWithSaverHeight()
+    {
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "clip.mov", "video/quicktime", MediaType.Video, 500);
+        var job = NewJob(photo.Id);
+        var transcoded = new byte[100];
+        var compressor = new FakeVideoCompressor((_, maxBytes, _) => new MemoryStream(transcoded));
+
+        await NewHandler(new UploadOptions { FreeSaverMaxVideoBytes = 100 }, videoCompressor: compressor)
+            .ProcessJobAsync(job);
+
+        compressor.CallCount.ShouldBe(1);
+        compressor.LastMaxHeight.ShouldBe(1080);
+
+        var newPath = $"{owner.Id}/{photo.Id}/original.mp4";
+        photo.OriginalBlobPath.ShouldBe(newPath);
+        photo.MimeType.ShouldBe("video/mp4");
+        photo.SizeBytes.ShouldBe(100);
+        photo.StoredQuality.ShouldBe(UploadQualities.StorageSaver);
+        photo.State.ShouldBe(PhotoState.Ready);
+        job.State.ShouldBe(JobState.Done);
+
+        _blobs.Blobs.Keys.ShouldContain(newPath);
+        _blobs.Blobs.Keys.ShouldNotContain($"{owner.Id}/{photo.Id}/original.mov");
+        _variants.Variants.Single(v => v.Kind == VariantKind.Original).Format.ShouldBe("mp4");
+    }
+
+    [Fact]
+    public async Task Process_SaverVideoUnderHeightCeiling_KeepsResolution()
+    {
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "clip.mp4", "video/mp4", MediaType.Video, 500);
+        var job = NewJob(photo.Id);
+        var compressor = new FakeVideoCompressor((_, maxBytes, _) => new MemoryStream(new byte[maxBytes]));
+
+        await NewHandler(new UploadOptions { FreeSaverMaxVideoBytes = 100, SaverVideoMaxHeight = 720 },
+            videoCompressor: compressor).ProcessJobAsync(job);
+
+        compressor.LastMaxHeight.ShouldBe(720);
+        photo.StoredQuality.ShouldBe(UploadQualities.StorageSaver);
+    }
+
+    private static string Sha256Of(byte[] bytes) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
 }
