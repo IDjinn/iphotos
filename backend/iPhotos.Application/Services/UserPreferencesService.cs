@@ -20,7 +20,7 @@ public sealed class UserPreferencesService(
     public async Task<UserPreferencesDto> GetAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var user = await users.GetByIdAsync(userId, cancellationToken)
-            ?? throw new NotFoundException($"User '{userId}' was not found.");
+            ?? throw new NotFoundException($"User '{userId}' was not found.", ErrorCodes.UserNotFound);
         return await BuildDtoAsync(user, cancellationToken);
     }
 
@@ -37,11 +37,15 @@ public sealed class UserPreferencesService(
         if (!UploadQualities.IsValid(request.UploadQuality))
         {
             throw new ValidationException(
-                $"Unknown upload quality '{request.UploadQuality}'. Use '{UploadQualities.Original}' or '{UploadQualities.StorageSaver}'.");
+                $"Unknown upload quality '{request.UploadQuality}'. Use '{UploadQualities.Original}' or '{UploadQualities.StorageSaver}'.",
+                ErrorCodes.PrefsUnknownQuality)
+            {
+                Params = new Dictionary<string, string> { ["quality"] = request.UploadQuality },
+            };
         }
 
         var user = await users.GetByIdAsync(userId, cancellationToken)
-            ?? throw new NotFoundException($"User '{userId}' was not found.");
+            ?? throw new NotFoundException($"User '{userId}' was not found.", ErrorCodes.UserNotFound);
 
         if (user.UploadQuality != request.UploadQuality)
         {

@@ -24,7 +24,7 @@ public sealed class BillingService(
     public async Task<BillingStatusDto> GetStatusAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var user = await users.GetByIdAsync(userId, cancellationToken)
-            ?? throw new NotFoundException($"User '{userId}' was not found.");
+            ?? throw new NotFoundException($"User '{userId}' was not found.", ErrorCodes.UserNotFound);
 
         return await BuildStatusAsync(user, cancellationToken);
     }
@@ -47,18 +47,18 @@ public sealed class BillingService(
     {
         if (string.IsNullOrWhiteSpace(purchaseToken))
         {
-            throw new ValidationException("Purchase token is required.");
+            throw new ValidationException("Purchase token is required.", ErrorCodes.BillingTokenRequired);
         }
 
         var product = optionsAccessor.Value.FindProduct(productId)
-            ?? throw new ValidationException($"Unknown product '{productId}'.");
+            ?? throw new ValidationException($"Unknown product '{productId}'.", ErrorCodes.BillingUnknownProduct);
 
         var existing = await purchases.FindByTokenAsync(purchaseToken, cancellationToken);
         if (existing is not null)
         {
             if (existing.UserId != userId)
             {
-                throw new InvalidPurchaseException("The purchase token is linked to another account.");
+                throw new InvalidPurchaseException("The purchase token is linked to another account.", ErrorCodes.BillingTokenAccountMismatch);
             }
 
             return await BuildStatusForAsync(userId, cancellationToken);
@@ -72,6 +72,11 @@ public sealed class BillingService(
                 BillingValidationState.Expired => "The purchase has expired.",
                 BillingValidationState.Refunded => "The purchase was refunded.",
                 _ => "The purchase token could not be verified.",
+            }, validation.State switch
+            {
+                BillingValidationState.Expired => ErrorCodes.BillingPurchaseExpired,
+                BillingValidationState.Refunded => ErrorCodes.BillingPurchaseRefunded,
+                _ => ErrorCodes.BillingPurchaseUnverifiable,
             });
         }
 
@@ -81,7 +86,7 @@ public sealed class BillingService(
         await purchases.AddAsync(purchase, cancellationToken);
 
         var user = await users.GetByIdAsync(userId, cancellationToken)
-            ?? throw new NotFoundException($"User '{userId}' was not found.");
+            ?? throw new NotFoundException($"User '{userId}' was not found.", ErrorCodes.UserNotFound);
         user.Plan = productId;
         user.StorageQuotaBytes = product.QuotaBytes;
         user.UpdatedAt = now;
@@ -97,18 +102,18 @@ public sealed class BillingService(
     {
         if (string.IsNullOrWhiteSpace(purchaseToken))
         {
-            throw new ValidationException("Purchase token is required.");
+            throw new ValidationException("Purchase token is required.", ErrorCodes.BillingTokenRequired);
         }
 
         var purchase = await purchases.FindByTokenAsync(purchaseToken, cancellationToken)
-            ?? throw new NotFoundException("No purchase is associated with the given token.");
+            ?? throw new NotFoundException("No purchase is associated with the given token.", ErrorCodes.BillingPurchaseNotFound);
         if (purchase.UserId != userId)
         {
-            throw new InvalidPurchaseException("The purchase token is linked to another account.");
+            throw new InvalidPurchaseException("The purchase token is linked to another account.", ErrorCodes.BillingTokenAccountMismatch);
         }
 
         var user = await users.GetByIdAsync(userId, cancellationToken)
-            ?? throw new NotFoundException($"User '{userId}' was not found.");
+            ?? throw new NotFoundException($"User '{userId}' was not found.", ErrorCodes.UserNotFound);
 
         var validation = await provider.ValidatePurchaseAsync(purchase.ProductId, purchaseToken, cancellationToken);
         var now = dateTime.UtcNow;
@@ -133,7 +138,7 @@ public sealed class BillingService(
     private async Task<BillingStatusDto> BuildStatusForAsync(Guid userId, CancellationToken cancellationToken)
     {
         var user = await users.GetByIdAsync(userId, cancellationToken)
-            ?? throw new NotFoundException($"User '{userId}' was not found.");
+            ?? throw new NotFoundException($"User '{userId}' was not found.", ErrorCodes.UserNotFound);
         return await BuildStatusAsync(user, cancellationToken);
     }
 

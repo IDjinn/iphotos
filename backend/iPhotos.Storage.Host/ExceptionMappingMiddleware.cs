@@ -1,6 +1,9 @@
 namespace iPhotos.Storage.Host;
 
-/// <summary>Maps storage-domain exceptions to HTTP status codes with a JSON error body.</summary>
+/// <summary>
+/// Maps storage-domain exceptions to HTTP status codes with a JSON error body of
+/// `{ error, code }` — `code` is a stable machine-readable key for clients.
+/// </summary>
 public sealed class ExceptionMappingMiddleware(RequestDelegate next, ILogger<ExceptionMappingMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context)
@@ -11,16 +14,16 @@ public sealed class ExceptionMappingMiddleware(RequestDelegate next, ILogger<Exc
         }
         catch (Exception ex)
         {
-            var (status, message) = ex switch
+            var (status, message, code) = ex switch
             {
-                InvalidObjectKeyException e => (StatusCodes.Status400BadRequest, e.Message),
-                ObjectNotFoundException e => (StatusCodes.Status404NotFound, e.Message),
-                ProviderNotConfiguredException e => (StatusCodes.Status400BadRequest, e.Message),
-                BlockedNetworkException e => (StatusCodes.Status400BadRequest, e.Message),
-                ProviderException e => (StatusCodes.Status502BadGateway, e.Message),
+                InvalidObjectKeyException e => (StatusCodes.Status400BadRequest, e.Message, StorageErrorCodes.InvalidKey),
+                ObjectNotFoundException e => (StatusCodes.Status404NotFound, e.Message, StorageErrorCodes.ObjectNotFound),
+                ProviderNotConfiguredException e => (StatusCodes.Status400BadRequest, e.Message, StorageErrorCodes.ProviderNotConfigured),
+                BlockedNetworkException e => (StatusCodes.Status400BadRequest, e.Message, StorageErrorCodes.NetworkBlocked),
+                ProviderException e => (StatusCodes.Status502BadGateway, e.Message, StorageErrorCodes.ProviderError),
                 OperationCanceledException when context.RequestAborted.IsCancellationRequested =>
-                    (499, "Client closed request."),
-                _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred."),
+                    (499, "Client closed request.", "client_closed"),
+                _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.", StorageErrorCodes.Internal),
             };
 
             if (status >= 500)
@@ -31,7 +34,7 @@ public sealed class ExceptionMappingMiddleware(RequestDelegate next, ILogger<Exc
             context.Response.Clear();
             context.Response.StatusCode = status;
             context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(new { error = message });
+            await context.Response.WriteAsJsonAsync(new { error = message, code });
         }
     }
 }

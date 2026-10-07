@@ -67,7 +67,7 @@ public static class ImportEndpoints
             var existing = await imports.GetByIdAsync(id, cancellationToken);
             if (existing is not null)
             {
-                return Results.Conflict(new { error = $"An import job '{id}' already exists." });
+                return Results.Conflict(new { error = $"An import job '{id}' already exists.", code = ErrorCodes.ImportsJobExists });
             }
 
             var blobPath = BlobPaths.Import(ownerId, id);

@@ -130,7 +130,7 @@ public static class ObjectEndpoints
 
         if (string.IsNullOrWhiteSpace(key))
         {
-            return Results.Json(new { error = "Query parameter 'key' is required." }, statusCode: StatusCodes.Status400BadRequest);
+            return Results.Json(new { error = "Query parameter 'key' is required.", code = StorageErrorCodes.KeyRequired }, statusCode: StatusCodes.Status400BadRequest);
         }
 
         var store = accessor.Resolve(provider);
@@ -162,7 +162,7 @@ public static class ObjectEndpoints
 
         if (string.IsNullOrWhiteSpace(key))
         {
-            return Results.Json(new { error = "Query parameter 'key' is required." }, statusCode: StatusCodes.Status400BadRequest);
+            return Results.Json(new { error = "Query parameter 'key' is required.", code = StorageErrorCodes.KeyRequired }, statusCode: StatusCodes.Status400BadRequest);
         }
 
         var store = accessor.Resolve(provider);
@@ -178,7 +178,7 @@ public static class ObjectEndpoints
         if (url is null)
         {
             return Results.Json(
-                new { error = $"Provider '{store.Id}' cannot presign direct uploads." },
+                new { error = $"Provider '{store.Id}' cannot presign direct uploads.", code = StorageErrorCodes.PresignUnsupported },
                 statusCode: StatusCodes.Status501NotImplemented);
         }
 
@@ -203,7 +203,7 @@ public static class ObjectEndpoints
 
         if (string.IsNullOrWhiteSpace(key))
         {
-            return Results.Json(new { error = "Query parameter 'key' is required." }, statusCode: StatusCodes.Status400BadRequest);
+            return Results.Json(new { error = "Query parameter 'key' is required.", code = StorageErrorCodes.KeyRequired }, statusCode: StatusCodes.Status400BadRequest);
         }
 
         var store = accessor.Resolve(provider);
@@ -212,7 +212,7 @@ public static class ObjectEndpoints
         if (uploadId is null)
         {
             return Results.Json(
-                new { error = $"Provider '{store.Id}' cannot presign multipart uploads." },
+                new { error = $"Provider '{store.Id}' cannot presign multipart uploads.", code = StorageErrorCodes.PresignUnsupported },
                 statusCode: StatusCodes.Status501NotImplemented);
         }
 
@@ -238,7 +238,7 @@ public static class ObjectEndpoints
         if (string.IsNullOrWhiteSpace(key) || partNumber is not (>= 1 and <= 10000))
         {
             return Results.Json(
-                new { error = "Query parameters 'key' and 'partNumber' (1-10000) are required." },
+                new { error = "Query parameters 'key' and 'partNumber' (1-10000) are required.", code = StorageErrorCodes.InvalidPartRequest },
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -252,7 +252,7 @@ public static class ObjectEndpoints
         if (url is null)
         {
             return Results.Json(
-                new { error = $"Provider '{store.Id}' cannot presign multipart uploads." },
+                new { error = $"Provider '{store.Id}' cannot presign multipart uploads.", code = StorageErrorCodes.PresignUnsupported },
                 statusCode: StatusCodes.Status501NotImplemented);
         }
 
@@ -275,7 +275,7 @@ public static class ObjectEndpoints
 
         if (string.IsNullOrWhiteSpace(key))
         {
-            return Results.Json(new { error = "Query parameter 'key' is required." }, statusCode: StatusCodes.Status400BadRequest);
+            return Results.Json(new { error = "Query parameter 'key' is required.", code = StorageErrorCodes.KeyRequired }, statusCode: StatusCodes.Status400BadRequest);
         }
 
         List<MultipartPartETag>? parts;
@@ -291,7 +291,7 @@ public static class ObjectEndpoints
         if (parts is null || parts.Count == 0)
         {
             return Results.Json(
-                new { error = "Body must be a non-empty array of { partNumber, etag }." },
+                new { error = "Body must be a non-empty array of { partNumber, etag }.", code = StorageErrorCodes.InvalidCompleteRequest },
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -322,7 +322,7 @@ public static class ObjectEndpoints
 
         if (string.IsNullOrWhiteSpace(key))
         {
-            return Results.Json(new { error = "Query parameter 'key' is required." }, statusCode: StatusCodes.Status400BadRequest);
+            return Results.Json(new { error = "Query parameter 'key' is required.", code = StorageErrorCodes.KeyRequired }, statusCode: StatusCodes.Status400BadRequest);
         }
 
         var store = accessor.Resolve(provider);
@@ -358,7 +358,7 @@ public static class ObjectEndpoints
     }
 
     private static IResult Unauthorized() =>
-        Results.Json(new { error = "Missing or invalid API key." }, statusCode: StatusCodes.Status401Unauthorized);
+        Results.Json(new { error = "Missing or invalid API key.", code = StorageErrorCodes.ApiKeyMissing }, statusCode: StatusCodes.Status401Unauthorized);
 
     private sealed record ObjectUrlResponse(
         string Url,

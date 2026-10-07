@@ -17,7 +17,7 @@ public sealed class AuthService(
     {
         if (request.Password.Length < 8)
         {
-            throw new ValidationException("Password must be at least 8 characters long.");
+            throw new ValidationException("Password must be at least 8 characters long.", ErrorCodes.AuthPasswordTooShort);
         }
 
         User user;
@@ -66,7 +66,7 @@ public sealed class AuthService(
     {
         var stored = await FindActiveTokenAsync(refreshToken, cancellationToken);
         var user = await users.GetByIdAsync(stored.UserId, cancellationToken)
-            ?? throw new UnauthorizedException("Invalid refresh token.");
+            ?? throw new UnauthorizedException("Invalid refresh token.", ErrorCodes.AuthRefreshInvalid);
 
         stored.Revoke(dateTime.UtcNow);
         var tokens = await IssueTokensAsync(user, cancellationToken);
@@ -87,11 +87,11 @@ public sealed class AuthService(
     private async Task<RefreshToken> FindActiveTokenAsync(string refreshToken, CancellationToken cancellationToken)
     {
         var stored = await refreshTokens.FindByHashAsync(tokenService.HashRefreshToken(refreshToken), cancellationToken)
-            ?? throw new UnauthorizedException("Invalid refresh token.");
+            ?? throw new UnauthorizedException("Invalid refresh token.", ErrorCodes.AuthRefreshInvalid);
 
         if (!stored.IsActive(dateTime.UtcNow))
         {
-            throw new UnauthorizedException("Invalid refresh token.");
+            throw new UnauthorizedException("Invalid refresh token.", ErrorCodes.AuthRefreshInvalid);
         }
 
         return stored;

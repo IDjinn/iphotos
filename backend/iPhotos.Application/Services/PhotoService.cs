@@ -36,7 +36,10 @@ public static class SupportedMediaTypes
         if (!SupportedImageTypes.MimeTypes.Contains(contentType)
             && !SupportedVideoTypes.MimeTypes.Contains(contentType))
         {
-            throw new ValidationException($"Unsupported content type '{contentType}'. Supported: {SupportedList}.");
+            throw new ValidationException($"Unsupported content type '{contentType}'. Supported: {SupportedList}.", ErrorCodes.PhotosUnsupportedContentType)
+            {
+                Params = new Dictionary<string, string> { ["contentType"] = contentType, ["supported"] = SupportedList },
+            };
         }
     }
 
@@ -120,10 +123,30 @@ public sealed class PhotoService(
         var cap = isVideo ? videoCap : imageCap;
         if (cap > 0 && sizeBytes > cap)
         {
-            throw new ValidationException(
-                $"{(isVideo ? "Video" : "Image")} exceeds the {cap / (1024 * 1024)} MB limit of your plan.");
+            throw SizeLimitExceeded(isVideo, cap);
         }
     }
+
+    private static ValidationException SizeLimitExceeded(bool isVideo, long cap) =>
+        new(
+            $"{(isVideo ? "Video" : "Image")} exceeds the {cap / (1024 * 1024)} MB limit of your plan.",
+            ErrorCodes.PhotosSizeLimitExceeded)
+        {
+            Params = new Dictionary<string, string>
+            {
+                ["limitMb"] = (cap / (1024 * 1024)).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["mediaKind"] = isVideo ? "video" : "photo",
+            },
+        };
+
+    private static QuotaExceededException QuotaExceeded(long incomingBytes, long quotaBytes) =>
+        new($"Upload of {incomingBytes} bytes would exceed the storage quota of {quotaBytes} bytes.")
+        {
+            Params = new Dictionary<string, string>
+            {
+                ["quotaBytes"] = quotaBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            },
+        };
 
     public async Task<UploadTicket> CreateUploadTicketAsync(
         Guid ownerId,
@@ -135,35 +158,34 @@ public sealed class PhotoService(
     {
         if (string.IsNullOrWhiteSpace(fileName))
         {
-            throw new ValidationException("File name is required.");
+            throw new ValidationException("File name is required.", ErrorCodes.PhotosFileNameRequired);
         }
 
         SupportedMediaTypes.EnsureSupported(contentType);
 
         if (sizeBytes <= 0)
         {
-            throw new ValidationException("File size must be greater than zero.");
+            throw new ValidationException("File size must be greater than zero.", ErrorCodes.PhotosFileSizeInvalid);
         }
 
         // Original-quality modes enforce their per-file cap at ticket time. Saver
         // modes accept any size the quota admits — the worker compresses later,
         // so the bytes never need to cross this API for the decision to hold.
         var user = await users.GetByIdAsync(ownerId, cancellationToken)
-            ?? throw new NotFoundException($"User '{ownerId}' was not found.");
+            ?? throw new NotFoundException($"User '{ownerId}' was not found.", ErrorCodes.UserNotFound);
         if (user.UploadQuality == UploadQualities.Original)
         {
             var (imageCap, videoCap) = UploadLimits.CapsFor(user.Plan, user.UploadQuality);
             var cap = SupportedMediaTypes.KindOf(contentType) == MediaType.Video ? videoCap : imageCap;
             if (cap > 0 && sizeBytes > cap)
             {
-                throw new ValidationException(
-                    $"File exceeds the {cap / (1024 * 1024)} MB upload limit of your plan.");
+                throw SizeLimitExceeded(SupportedMediaTypes.KindOf(contentType) == MediaType.Video, cap);
             }
         }
 
         if (string.IsNullOrWhiteSpace(contentHash))
         {
-            throw new ValidationException("Content hash is required.");
+            throw new ValidationException("Content hash is required.", ErrorCodes.PhotosHashRequired);
         }
 
         var existing = await photos.FindByContentHashAsync(ownerId, contentHash, cancellationToken);
@@ -175,8 +197,7 @@ public sealed class PhotoService(
         var usage = await photos.GetUsageAsync(ownerId, cancellationToken);
         if (usage.UsedBytes + sizeBytes > user.StorageQuotaBytes)
         {
-            throw new QuotaExceededException(
-                $"Upload of {sizeBytes} bytes would exceed the storage quota of {user.StorageQuotaBytes} bytes.");
+            throw QuotaExceeded(usage.UsedBytes + sizeBytes, user.StorageQuotaBytes);
         }
 
         var photo = Photo.CreatePendingUpload(
@@ -224,19 +245,19 @@ public sealed class PhotoService(
     {
         if (partNumber is < 1 or > 10000)
         {
-            throw new ValidationException("Part number must be between 1 and 10000.");
+            throw new ValidationException("Part number must be between 1 and 10000.", ErrorCodes.PhotosInvalidPartNumber);
         }
 
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
-            ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.", ErrorCodes.PhotosNotFound);
 
         if (photo.State != PhotoState.PendingUpload)
         {
-            throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.");
+            throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.", ErrorCodes.PhotosNotAwaitingUpload);
         }
 
         var uploadId = photo.MultipartUploadId
-            ?? throw new ValidationException($"Photo '{photoId}' has no multipart upload session.");
+            ?? throw new ValidationException($"Photo '{photoId}' has no multipart upload session.", ErrorCodes.PhotosNoMultipartSession);
 
         return await blobStorage.TryCreatePartUrlAsync(
             photo.OriginalBlobPath, uploadId, partNumber, ComputeUploadUrlExpiry(photo.SizeBytes), cancellationToken);
@@ -247,11 +268,11 @@ public sealed class PhotoService(
     public async Task AbortUploadAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
     {
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
-            ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.", ErrorCodes.PhotosNotFound);
 
         if (photo.State != PhotoState.PendingUpload)
         {
-            throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.");
+            throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.", ErrorCodes.PhotosNotAwaitingUpload);
         }
 
         if (photo.MultipartUploadId is not null)
@@ -287,11 +308,11 @@ public sealed class PhotoService(
         CancellationToken cancellationToken = default)
     {
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
-            ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.", ErrorCodes.PhotosNotFound);
 
         if (photo.State != PhotoState.PendingUpload)
         {
-            throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.");
+            throw new ValidationException($"Photo '{photoId}' is not awaiting an upload.", ErrorCodes.PhotosNotAwaitingUpload);
         }
 
         if (request?.MultipartUploadId is not null && request.Parts is { Count: > 0 })
@@ -299,7 +320,7 @@ public sealed class PhotoService(
             var expected = photo.MultipartUploadId;
             if (expected is not null && expected != request.MultipartUploadId)
             {
-                throw new ValidationException($"Multipart upload id does not match photo '{photoId}'.");
+                throw new ValidationException($"Multipart upload id does not match photo '{photoId}'.", ErrorCodes.PhotosMultipartMismatch);
             }
 
             await blobStorage.CompleteMultipartUploadAsync(
@@ -308,7 +329,7 @@ public sealed class PhotoService(
 
         if (!await blobStorage.ExistsAsync(photo.OriginalBlobPath, cancellationToken))
         {
-            throw new NotFoundException($"The file for photo '{photoId}' has not been uploaded yet.");
+            throw new NotFoundException($"The file for photo '{photoId}' has not been uploaded yet.", ErrorCodes.PhotosFileNotUploaded);
         }
 
         photo.MultipartUploadId = null;
@@ -329,7 +350,7 @@ public sealed class PhotoService(
     {
         if (string.IsNullOrWhiteSpace(fileName))
         {
-            throw new ValidationException("File name is required.");
+            throw new ValidationException("File name is required.", ErrorCodes.PhotosFileNameRequired);
         }
 
         SupportedMediaTypes.EnsureSupported(contentType);
@@ -341,7 +362,7 @@ public sealed class PhotoService(
 
         var content2 = EnsureSeekable(content);
         var user = await users.GetByIdAsync(ownerId, cancellationToken)
-            ?? throw new NotFoundException($"User '{ownerId}' was not found.");
+            ?? throw new NotFoundException($"User '{ownerId}' was not found.", ErrorCodes.UserNotFound);
 
         EnsureUploadLimit(user, isVideo: false, content2.Length);
 
@@ -362,8 +383,7 @@ public sealed class PhotoService(
         var usage = await photos.GetUsageAsync(ownerId, cancellationToken);
         if (usage.UsedBytes + storedLength > user.StorageQuotaBytes)
         {
-            throw new QuotaExceededException(
-                $"Upload of {storedLength} bytes would exceed the storage quota of {user.StorageQuotaBytes} bytes.");
+            throw QuotaExceeded(usage.UsedBytes + storedLength, user.StorageQuotaBytes);
         }
 
         var photo = Photo.Create(ownerId, hash, fileName, contentType, storedLength, dateTime.UtcNow);
@@ -444,7 +464,7 @@ public sealed class PhotoService(
             }
 
             var user = await users.GetByIdAsync(ownerId, cancellationToken)
-                ?? throw new NotFoundException($"User '{ownerId}' was not found.");
+                ?? throw new NotFoundException($"User '{ownerId}' was not found.", ErrorCodes.UserNotFound);
 
             EnsureUploadLimit(user, isVideo: true, new FileInfo(tempPath).Length);
 
@@ -460,8 +480,7 @@ public sealed class PhotoService(
             var usage = await photos.GetUsageAsync(ownerId, cancellationToken);
             if (usage.UsedBytes + videoFile.Length > user.StorageQuotaBytes)
             {
-                throw new QuotaExceededException(
-                    $"Upload of {videoFile.Length} bytes would exceed the storage quota of {user.StorageQuotaBytes} bytes.");
+                throw QuotaExceeded(usage.UsedBytes + videoFile.Length, user.StorageQuotaBytes);
             }
 
             var photo = Photo.Create(ownerId, hash, fileName, contentType, videoFile.Length, dateTime.UtcNow, MediaType.Video);
@@ -526,7 +545,7 @@ public sealed class PhotoService(
     public async Task<PhotoDto> GetAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
     {
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
-            ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.", ErrorCodes.PhotosNotFound);
 
         var photoVariants = await variants.ListByPhotoAsync(photoId, cancellationToken);
         return ToDto(photo, photoVariants.Select(ToVariantDto).ToList());
@@ -552,7 +571,7 @@ public sealed class PhotoService(
     public async Task DeleteAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
     {
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
-            ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.", ErrorCodes.PhotosNotFound);
 
         var photoVariants = await variants.ListByPhotoAsync(photoId, cancellationToken);
         var blobsToDelete = photoVariants
@@ -574,7 +593,7 @@ public sealed class PhotoService(
     public async Task<UsageSummary> GetUsageAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         var user = await users.GetByIdAsync(ownerId, cancellationToken)
-            ?? throw new NotFoundException($"User '{ownerId}' was not found.");
+            ?? throw new NotFoundException($"User '{ownerId}' was not found.", ErrorCodes.UserNotFound);
 
         var stats = await photos.GetUsageAsync(ownerId, cancellationToken);
         return new UsageSummary(stats.UsedBytes, user.StorageQuotaBytes, stats.PhotoCount, stats.VariantCount);
@@ -587,7 +606,7 @@ public sealed class PhotoService(
         CancellationToken cancellationToken = default)
     {
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
-            ?? throw new NotFoundException($"Photo '{photoId}' was not found.");
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.", ErrorCodes.PhotosNotFound);
 
         if (kind == VariantKind.Original)
         {
@@ -596,7 +615,10 @@ public sealed class PhotoService(
 
         var variant = (await variants.ListByPhotoAsync(photoId, cancellationToken))
             .FirstOrDefault(v => v.Kind == kind)
-            ?? throw new NotFoundException($"{kind} variant for photo '{photoId}' is not ready yet.");
+            ?? throw new NotFoundException($"{kind} variant for photo '{photoId}' is not ready yet.", ErrorCodes.PhotosVariantNotReady)
+            {
+                Params = new Dictionary<string, string> { ["kind"] = kind.ToString().ToLowerInvariant() },
+            };
 
         return new VariantFile(variant.BlobPath, MimeFromFormat(variant.Format), variant.SizeBytes, photo.ContentHash);
     }

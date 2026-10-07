@@ -70,7 +70,7 @@ public static class PhotoEndpoints
         {
             var url = await photos.CreatePartUrlAsync(principal.GetUserId(), id, request.PartNumber, cancellationToken);
             return url is null
-                ? Results.Json(new { error = "Direct multipart upload is not available." },
+                ? Results.Json(new { error = "Direct multipart upload is not available.", code = ErrorCodes.PhotosMultipartUnavailable },
                     statusCode: StatusCodes.Status501NotImplemented)
                 : Results.Ok(new PartUrlResponse(url.Url, request.PartNumber, url.ExpiresAt));
         })
@@ -113,6 +113,7 @@ public static class PhotoEndpoints
                     return Results.BadRequest(new
                     {
                         error = $"Unknown media type '{mediaType}'. Use 'photo' or 'video'.",
+                        code = ErrorCodes.PhotosInvalidMediaType,
                     });
                 }
 
@@ -132,13 +133,14 @@ public static class PhotoEndpoints
                 return Results.BadRequest(new
                 {
                     error = $"Unknown sort field '{sortBy}'. Use 'takenAt' or 'createdAt'.",
+                    code = ErrorCodes.PhotosInvalidSort,
                 });
             }
 
             order = string.IsNullOrWhiteSpace(order) ? "desc" : order.Trim().ToLowerInvariant();
             if (order is not ("asc" or "desc"))
             {
-                return Results.BadRequest(new { error = $"Unknown order '{order}'. Use 'asc' or 'desc'." });
+                return Results.BadRequest(new { error = $"Unknown order '{order}'. Use 'asc' or 'desc'.", code = ErrorCodes.PhotosInvalidOrder });
             }
 
             var filter = new PhotoFilter(
@@ -178,6 +180,7 @@ public static class PhotoEndpoints
                 return Results.BadRequest(new
                 {
                     error = $"Unknown variant '{kind}'. Use original, preview or thumbnail.",
+                    code = ErrorCodes.PhotosInvalidVariant,
                 });
             }
 

@@ -1,3 +1,4 @@
+using iPhotos.Application.Common;
 using iPhotos.Domain;
 
 namespace iPhotos.Application.Abstractions;
@@ -22,7 +23,7 @@ public interface IExifExtractor
     Task<PhotoMetadata> ExtractAsync(Stream original, CancellationToken cancellationToken = default);
 }
 
-public class InvalidImageException(string message) : Exception(message);
+public class InvalidImageException(string message) : AppException(message, ErrorCodes.PhotosInvalidImage);
 
 public interface IContentHasher
 {
