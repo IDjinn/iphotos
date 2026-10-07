@@ -34,7 +34,7 @@ export function PermissionGate({ status, onRequest }: PermissionGateProps) {
   return (
     <Container>
       <Content entering={FadeInDown.springify().dampingRatio(0.85)}>
-        <IconWrap style={{ backgroundColor: colors.surface }}>
+        <IconWrap>
           <Icon name="images-outline" size={40} color={colors.accent} />
         </IconWrap>
         <Title variant="title">

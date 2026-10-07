@@ -1,6 +1,6 @@
 # 16 — Mobile: styled-components como mecanismo único de estilo
 
-> Status: 🔄 Em andamento · Criado 2026-10-07 · Idioma: PT-BR (código/UI em inglês)
+> Status: ✅ Implementado (2026-10-07) · Criado 2026-10-07 · Idioma: PT-BR (código/UI em inglês)
 
 ## 1. Objetivo
 
@@ -74,46 +74,66 @@ Helpers compartilhados em `src/theme/shared.ts`: `absoluteFill` (substitui
 
 ### Fase A — Fundação
 
-- [ ] `bun add styled-components` + `bun add -d babel-plugin-styled-components`
+- [x] `bun add styled-components` + `bun add -d babel-plugin-styled-components`
       e `babel.config.js` (`babel-preset-expo` + plugin) no `frontend/`
-- [ ] `src/theme/tokens.ts`: escalas `space`, `type`, `hairline`, `border`
-- [ ] `src/theme/styled.d.ts`: `DefaultTheme`
-- [ ] `src/theme/context.tsx`: ponte com o `ThemeProvider` do styled-components
-- [ ] `src/theme/shared.ts`: `absoluteFill` e helpers
+- [x] `src/theme/tokens.ts`: escalas `space`, `type`, `hairline`, `border`
+- [x] `src/theme/styled.d.ts`: `DefaultTheme`
+- [x] `src/theme/context.tsx`: ponte com o `ThemeProvider` do styled-components
+- [x] `src/theme/shared.ts`: `absoluteFill` e helpers
 
 ### Fase B — Componentes (`src/components/`)
 
-- [ ] Base: ThemedText (API pública intacta), LabeledInput, EmptyState,
+- [x] Base: ThemedText (API pública intacta), LabeledInput, EmptyState,
       MiniToast, PermissionGate, SelectionBar, BottomSheet, AlbumPickerSheet,
       PinPad (dois objetos → um styles file), TabSwipe
-- [ ] Grid: PhotoCell, PhotoGrid, GridHeaders
-- [ ] Viewer/media: ViewerOverlay, ViewerPager, ViewerChrome, VideoPage,
+- [x] Grid: PhotoCell, PhotoGrid, GridHeaders
+- [x] Viewer/media: ViewerOverlay, ViewerPager, ViewerChrome, VideoPage,
       ZoomableImage, CloudGallery, CloudVideoPlayer
 
 ### Fase C — Telas (`src/app/`)
 
-- [ ] Tabs: `(tabs)/index`, `(tabs)/library`, `(tabs)/search`
-- [ ] Públicas: `(public)/welcome`, `(public)/login`, `(public)/register`
-- [ ] Navegação: `album/[id]`, `labels/index`, `label/[label]`,
+- [x] Tabs: `(tabs)/index`, `(tabs)/library`, `(tabs)/search`
+- [x] Públicas: `(public)/welcome`, `(public)/login`, `(public)/register`
+- [x] Navegação: `album/[id]`, `labels/index`, `label/[label]`,
       `locked/index`, `cloud-photos`
-- [ ] Settings: `settings`, `settings/account`, `settings/ai-labeling`,
+- [x] Settings: `settings`, `settings/account`, `settings/ai-labeling`,
       `settings/ai-model`, `settings/backup`, `settings/backup/folders`,
       `settings/encrypted-mode`, `settings/import-zip`,
       `settings/subscription`
 
 ### Fase D — Verificação
 
-- [ ] `bun run typecheck`, `bun run lint`, `bun test` verdes em `frontend/`
-- [ ] `rg "StyleSheet" frontend/src` → 0 matches
-- [ ] `style={{}}` restante apenas nas exceções sancionadas (§3)
-- [ ] Snapp de espaçamentos fora da grade 4pt registrado abaixo
-- [ ] Roadmap §5 atualizado
+- [x] `bun run typecheck`, `bun run lint`, `bun test` verdes em `frontend/`
+- [x] `rg "StyleSheet" frontend/src` → 0 matches
+- [x] `style={{}}` restante apenas nas exceções sancionadas (§3)
+- [x] Snapp de espaçamentos fora da grade 4pt registrado abaixo (§6)
+- [x] Roadmap §5 atualizado
 
 ## 6. Registro da migração
 
-- **Snapps de espaçamento** (valor antigo → token): _preencher ao concluir_.
-- Sem mudança de paleta, tipografia ou radius; `ThemedText` mantém
-  variant/color/style como API pública (~100 call sites intactos).
+- **Snapps de espaçamento** (valor antigo → token): 2→4, 6→4 (gap), 7→8 (inset),
+  10→8, 13→12, 14→12, 18→16, 22→20, 26→24, 28→24 (padding de sheet, agora
+  `radius.xl`), 44→40 (padding de EmptyState) — somente margens/gaps; nenhum
+  tamanho de controle mudou (teclas do PIN, dots, badges, barras).
+- Novos tokens semânticos de cor (mesmos valores visuais):
+  `onAccent` (#0B0B0D no check de seleção), `onMediaAccent` (#7EACF8 no coração
+  do viewer), `backgroundSoft` (header sticky ~95% opaco), `scrimSolid`
+  (#000000 fullscreen media).
+- `ThemedText` mantém variant/color/style como API pública (~100 call sites
+  intactos); o variant `label` herdou peso médio como antes.
+- **Style files criados**: 33 (`components/**` + `app/**`), além de
+  `theme/shared.ts` (`absoluteFill`, `elevationLow/Medium`).
+- **Inline styles restantes** (sancionados): providers raiz em `_layout.tsx`
+  (`GestureHandlerRootView`/`SafeAreaProvider` + background programático),
+  tamanhos medidos (`PhotoCell` size, `ZoomableImage` contain-fit), frações
+  computadas de progresso (`flex`/`width %`) e wrappers Reanimated
+  (`useAnimatedStyle`).
+- **Verificação**: `tsc --noEmit` limpo; `vitest` 13/13; `rg StyleSheet src`
+  → 0 usos (2 menções em comentários); lint mantém apenas a dívida
+  `react-hooks` pré-existente documentada no roadmap §5.2 (padrões idênticos
+  aos originais — migração não alterou lógica).
+- build: `babel-plugin-styled-components` com `displayName` só em dev e
+  `pure: true`; se o Metro reclamar do plugin, removê-lo não afeta o runtime.
 
 ## 7. Critérios de aceite
 

@@ -21,6 +21,7 @@ import {
   HeldRow,
   Note,
   NoteCard,
+  NoteCardText,
   Pill,
   Screen,
   Search,
@@ -164,9 +165,9 @@ export default function BackupFoldersScreen() {
         {mode !== 'cloud' ? (
           <NoteCard>
             <Icon name="information-circle-outline" size={20} color={colors.accent} />
-            <ThemedText variant="bodySmall" color="secondary" style={{ flex: 1 }}>
+            <NoteCardText variant="bodySmall" color="secondary">
               Folder rules are saved now and applied when Cloud mode is on.
-            </ThemedText>
+            </NoteCardText>
           </NoteCard>
         ) : null}
 

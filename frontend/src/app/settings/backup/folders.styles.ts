@@ -42,6 +42,10 @@ export const NoteCard = styled.View`
   background-color: ${({ theme }) => theme.colors.surface};
 `;
 
+export const NoteCardText = styled(ThemedText)`
+  flex: 1;
+`;
+
 export const Group = styled.View`
   gap: ${({ theme }) => theme.space[2]}px;
 `;

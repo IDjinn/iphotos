@@ -164,6 +164,9 @@ export default function EncryptedModeScreen() {
         )
       : null;
 
+  // Shared scroll content padding/gap (same on every state branch).
+  const contentBody = { padding: space[5], gap: space[3] };
+
   return (
     <Screen>
       <HeaderInset $insetTop={insets.top + space[2]}>
@@ -289,9 +292,6 @@ export default function EncryptedModeScreen() {
     </Screen>
   );
 }
-
-/** Shared scroll content padding/gap (same on every state branch). */
-const makeBodyContent = (space: readonly number[]) => ({ padding: space[5], gap: space[3] });
 
 /** Accent action button with pressed feedback. */
 function AccentButton({

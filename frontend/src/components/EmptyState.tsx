@@ -15,7 +15,7 @@ export function EmptyState({ icon, title, subtitle }: EmptyStateProps) {
   const { colors } = useTheme();
   return (
     <Container entering={FadeInDown.delay(80).springify().dampingRatio(0.8)}>
-      <IconWrap style={{ backgroundColor: colors.surface }}>
+      <IconWrap>
         <Icon name={icon} size={32} color={colors.textSecondary} />
       </IconWrap>
       <Title variant="titleMedium">{title}</Title>

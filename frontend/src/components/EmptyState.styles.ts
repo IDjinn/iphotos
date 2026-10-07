@@ -17,6 +17,7 @@ export const IconWrap = styled.View`
   align-items: center;
   justify-content: center;
   margin-bottom: ${({ theme }) => theme.space[2]}px;
+  background-color: ${({ theme }) => theme.colors.surface};
 `;
 
 export const Title = styled(ThemedText)`
