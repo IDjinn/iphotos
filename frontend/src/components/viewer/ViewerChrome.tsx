@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
@@ -10,7 +9,16 @@ import Animated, {
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  BottomBar,
+  IconButton,
+  Scrim,
+  Spacer,
+  Title,
+  TopBar,
+} from '@/components/viewer/ViewerChrome.styles';
 import { Durations, Springs } from '@/theme/tokens';
+import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
 interface ChromeButtonProps {
@@ -18,11 +26,11 @@ interface ChromeButtonProps {
   label: string;
   onPress: () => void;
   filled?: boolean;
-  accent?: string;
   pop?: boolean;
 }
 
 function ChromeButton({ icon, label, onPress, filled, pop }: ChromeButtonProps) {
+  const { colors } = useTheme();
   const scale = useSharedValue(1);
   useEffect(() => {
     if (pop) scale.value = withSpring(1, Springs.bouncy);
@@ -32,8 +40,7 @@ function ChromeButton({ icon, label, onPress, filled, pop }: ChromeButtonProps) 
 
   return (
     <Animated.View style={style}>
-      <Pressable
-        style={styles.iconButton}
+      <IconButton
         accessibilityLabel={label}
         onPress={() => {
           scale.value = 0.8;
@@ -42,8 +49,8 @@ function ChromeButton({ icon, label, onPress, filled, pop }: ChromeButtonProps) 
           onPress();
         }}
       >
-        <Icon name={icon as never} size={24} color={filled ? '#7EACF8' : '#FFFFFF'} />
-      </Pressable>
+        <Icon name={icon as never} size={24} color={filled ? colors.onMediaAccent : colors.textInverse} />
+      </IconButton>
     </Animated.View>
   );
 }
@@ -68,6 +75,7 @@ interface ViewerChromeProps {
 
 /** Viewer top and bottom bars: slide/fade in sync, white-on-media icons. */
 export function ViewerChrome(props: ViewerChromeProps) {
+  const { space } = useTheme();
   const insets = useSafeAreaInsets();
   const progress = useSharedValue(0);
 
@@ -91,16 +99,16 @@ export function ViewerChrome(props: ViewerChromeProps) {
 
   return (
     <>
-      <Animated.View style={[styles.topBar, { paddingTop: insets.top + 6 }, topStyle]}>
+      <TopBar style={topStyle} $insetTop={insets.top + space[1]}>
         <ChromeButton icon="close" label="Close" onPress={props.onClose} />
-        <ThemedText variant="body" color="inverse" style={styles.title} numberOfLines={1}>
+        <Title variant="body" color="inverse" numberOfLines={1}>
           {props.title}
-        </ThemedText>
+        </Title>
         <ChromeButton icon="information-circle" label="Info" onPress={props.onInfo} />
-      </Animated.View>
+      </TopBar>
 
-      <Animated.View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }, bottomStyle]}>
-        <View style={styles.scrim} />
+      <BottomBar style={bottomStyle} $insetBottom={insets.bottom + space[2]}>
+        <Scrim />
         {props.isVideo ? (
           <>
             <ChromeButton
@@ -115,7 +123,7 @@ export function ViewerChrome(props: ViewerChromeProps) {
             />
           </>
         ) : null}
-        <View style={styles.spacer} />
+        <Spacer />
         <ChromeButton icon="share-outline" label="Share" onPress={props.onShare} />
         <ChromeButton
           icon={props.isFavorite ? 'heart' : 'heart-outline'}
@@ -126,54 +134,7 @@ export function ViewerChrome(props: ViewerChromeProps) {
         />
         <ChromeButton icon="trash-outline" label="Delete" onPress={props.onDelete} />
         <ChromeButton icon="ellipsis-horizontal-circle" label="More" onPress={props.onMore} />
-      </Animated.View>
+      </BottomBar>
     </>
   );
 }
-
-const WHITE = '#FFFFFF';
-
-const styles = StyleSheet.create({
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-  },
-  title: {
-    flex: 1,
-    textAlign: 'center',
-    color: WHITE,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6,
-    marginHorizontal: 8,
-  },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-  },
-  spacer: { flex: 1 },
-  iconButton: {
-    width: 46,
-    height: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-  },
-});

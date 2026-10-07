@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { useVideoPlayer } from 'expo-video';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Center,
+  CloseButton,
+  ErrorText,
+  Fill,
+  PlayerSurface,
+  PosterImage,
+  RetryButton,
+} from '@/components/CloudVideoPlayer.styles';
 import { authHeaders } from '@/data/api-client';
 import { fileUrl, type CloudPhoto } from '@/data/cloud-photos-repository';
 import { useTheme } from '@/theme/context';
@@ -38,7 +46,7 @@ export function CloudVideoPlayer({ photo, onClose }: CloudVideoPlayerProps) {
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <View style={styles.fill}>{photo ? <VideoSurface photo={photo} onClose={onClose} /> : null}</View>
+      <Fill>{photo ? <VideoSurface photo={photo} onClose={onClose} /> : null}</Fill>
     </Modal>
   );
 }
@@ -49,7 +57,7 @@ type SurfaceState =
   | { status: 'error' };
 
 function VideoSurface({ photo, onClose }: { photo: CloudPhoto; onClose: () => void }) {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<SurfaceState>({ status: 'loading', fraction: 0 });
 
@@ -85,49 +93,43 @@ function VideoSurface({ photo, onClose }: { photo: CloudPhoto; onClose: () => vo
   }, [photo.id, photo.mimeType]);
 
   return (
-    <View style={styles.fill}>
-      <Image
+    <Fill>
+      <PosterImage
         source={{ uri: fileUrl(photo.id, 'thumbnail'), headers: authHeaders() }}
-        style={StyleSheet.absoluteFill}
         contentFit="contain"
       />
       {state.status === 'loading' ? (
-        <View style={styles.center}>
+        <Center>
           <ActivityIndicator size="large" color={colors.accent} />
           <ThemedText variant="bodySmall" color="secondary">
             Loading video… {Math.round(state.fraction * 100)}%
           </ThemedText>
-        </View>
+        </Center>
       ) : null}
       {state.status === 'error' ? (
-        <View style={styles.center}>
+        <Center>
           <Icon name="alert-circle" size={32} color={colors.danger} />
-          <ThemedText variant="bodySmall" color="secondary" style={styles.errorText}>
+          <ErrorText variant="bodySmall" color="secondary">
             Couldn&apos;t load this video. Check your connection and try again.
-          </ThemedText>
-          <Pressable
-            onPress={onClose}
-            accessibilityRole="button"
-            accessibilityLabel="Close player"
-            style={[styles.retryButton, { borderColor: colors.accent }]}
-          >
+          </ErrorText>
+          <RetryButton onPress={onClose} accessibilityRole="button" accessibilityLabel="Close player">
             <ThemedText variant="bodySmall" color="accent">
               Close
             </ThemedText>
-          </Pressable>
-        </View>
+          </RetryButton>
+        </Center>
       ) : null}
       {state.status === 'ready' ? <LoadedPlayer uri={state.uri} /> : null}
-      <Pressable
+      <CloseButton
         onPress={onClose}
         accessibilityRole="button"
         accessibilityLabel="Close player"
         hitSlop={12}
-        style={[styles.close, { top: insets.top + 12 }]}
+        $top={insets.top + space[3]}
       >
         <Icon name="close" size={26} color={colors.text} />
-      </Pressable>
-    </View>
+      </CloseButton>
+    </Fill>
   );
 }
 
@@ -140,13 +142,5 @@ function LoadedPlayer({ uri }: { uri: string }) {
     player.play();
   }, [player]);
 
-  return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" />;
+  return <PlayerSurface player={player} contentFit="contain" />;
 }
-
-const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: '#000000' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
-  errorText: { textAlign: 'center' },
-  retryButton: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
-  close: { position: 'absolute', right: 20, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-});

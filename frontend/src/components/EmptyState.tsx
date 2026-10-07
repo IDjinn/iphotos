@@ -1,8 +1,8 @@
-import { StyleSheet, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { FadeInDown } from 'react-native-reanimated';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import { Container, IconWrap, Subtitle, Title } from '@/components/EmptyState.styles';
 import { useTheme } from '@/theme/context';
 
 interface EmptyStateProps {
@@ -14,32 +14,16 @@ interface EmptyStateProps {
 export function EmptyState({ icon, title, subtitle }: EmptyStateProps) {
   const { colors } = useTheme();
   return (
-    <Animated.View entering={FadeInDown.delay(80).springify().dampingRatio(0.8)} style={styles.container}>
-      <View style={[styles.iconWrap, { backgroundColor: colors.surface }]}>
+    <Container entering={FadeInDown.delay(80).springify().dampingRatio(0.8)}>
+      <IconWrap style={{ backgroundColor: colors.surface }}>
         <Icon name={icon} size={32} color={colors.textSecondary} />
-      </View>
-      <ThemedText variant="titleMedium" style={styles.title}>
-        {title}
-      </ThemedText>
+      </IconWrap>
+      <Title variant="titleMedium">{title}</Title>
       {subtitle ? (
-        <ThemedText variant="bodySmall" color="secondary" style={styles.subtitle}>
+        <Subtitle variant="bodySmall" color="secondary">
           {subtitle}
-        </ThemedText>
+        </Subtitle>
       ) : null}
-    </Animated.View>
+    </Container>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 },
-  iconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  title: { textAlign: 'center' },
-  subtitle: { textAlign: 'center', maxWidth: 260 },
-});

@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
-import { Image } from 'expo-image';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { useVideoPlayer } from 'expo-video';
 import { runOnJS } from 'react-native-reanimated';
 
+import {
+  PageFill,
+  PosterImage,
+  Spinner,
+  VideoSurface,
+} from '@/components/viewer/VideoPage.styles';
 import { resolveVaultPlayback } from '@/data/vault-repository';
 import type { PhotoAsset } from '@/data/types';
 import { useTheme } from '@/theme/context';
@@ -57,12 +61,12 @@ export function VideoPage(props: VideoPageProps) {
     // Decrypting the vault file — show the poster meanwhile.
     return (
       <GestureDetector gesture={singleTap}>
-        <View style={styles.fill}>
+        <PageFill>
           {asset.uri ? (
-            <Image source={{ uri: asset.uri }} style={StyleSheet.absoluteFill} contentFit="contain" />
+            <PosterImage source={{ uri: asset.uri }} contentFit="contain" />
           ) : null}
-          <ActivityIndicator size="large" color={colors.accent} style={styles.spinner} />
-        </View>
+          <Spinner size="large" color={colors.accent} />
+        </PageFill>
       </GestureDetector>
     );
   }
@@ -70,7 +74,7 @@ export function VideoPage(props: VideoPageProps) {
   if (uri === '') {
     return (
       <GestureDetector gesture={singleTap}>
-        <View style={styles.fill} />
+        <PageFill />
       </GestureDetector>
     );
   }
@@ -114,19 +118,9 @@ function VideoPageInner({ asset, active, playing, muted, pagerPan, onTap, uri }:
 
   return (
     <GestureDetector gesture={singleTap}>
-      <View style={styles.fill}>
-        <VideoView
-          player={player}
-          style={StyleSheet.absoluteFill}
-          contentFit="contain"
-          nativeControls={false}
-        />
-      </View>
+      <PageFill>
+        <VideoSurface player={player} contentFit="contain" nativeControls={false} />
+      </PageFill>
     </GestureDetector>
   );
 }
-
-const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: 'transparent' },
-  spinner: { position: 'absolute', alignSelf: 'center', bottom: '18%' },
-});

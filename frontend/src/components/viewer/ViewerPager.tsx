@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, {
   clamp,
@@ -11,6 +10,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { Page, PagerContainer } from '@/components/viewer/ViewerPager.styles';
 import type { PhotoAsset } from '@/data/types';
 import { SCREEN_HEIGHT, SCREEN_WIDTH, Springs } from '@/theme/tokens';
 
@@ -68,7 +68,7 @@ function PagerPage({
   }, [pageIndex, controller, onRegister]);
 
   return (
-    <View style={[styles.page, { left: pageIndex * W }]}>
+    <Page $left={pageIndex * W}>
       {asset.mediaType === 'video' ? (
         <VideoPage
           asset={asset}
@@ -81,7 +81,7 @@ function PagerPage({
       ) : (
         <ZoomableImage asset={asset} controller={controller} pagerPan={pagerPan} onTap={onTap} />
       )}
-    </View>
+    </Page>
   );
 }
 
@@ -229,7 +229,7 @@ export function ViewerPager({
 
   return (
     <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.container, containerStyle]}>
+      <PagerContainer style={containerStyle}>
         {window.map((i) => (
           <PagerPage
             key={assets[i].id}
@@ -243,17 +243,7 @@ export function ViewerPager({
             onRegister={registerController}
           />
         ))}
-      </Animated.View>
+      </PagerContainer>
     </GestureDetector>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  page: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: W,
-  },
-});

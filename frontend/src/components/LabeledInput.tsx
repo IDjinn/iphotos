@@ -1,6 +1,7 @@
-import { StyleSheet, TextInput, type TextInputProps, View } from 'react-native';
+import { type TextInputProps } from 'react-native';
 
 import { ThemedText } from '@/components/ThemedText';
+import { Field, Wrap } from '@/components/LabeledInput.styles';
 import { useTheme } from '@/theme/context';
 
 interface LabeledInputProps extends Omit<TextInputProps, 'value' | 'onChangeText'> {
@@ -14,19 +15,16 @@ interface LabeledInputProps extends Omit<TextInputProps, 'value' | 'onChangeText
 export function LabeledInput({ label, value, error, onChangeText, ...inputProps }: LabeledInputProps) {
   const { colors } = useTheme();
   return (
-    <View style={styles.wrap}>
+    <Wrap>
       <ThemedText variant="label" color="secondary">
         {label}
       </ThemedText>
-      <TextInput
+      <Field
+        $error={Boolean(error)}
         value={value}
         onChangeText={onChangeText}
         placeholderTextColor={colors.textDisabled}
         accessibilityLabel={label}
-        style={[
-          styles.input,
-          { backgroundColor: colors.surface, color: colors.text, borderColor: error ? colors.danger : 'transparent' },
-        ]}
         {...inputProps}
       />
       {error ? (
@@ -34,17 +32,6 @@ export function LabeledInput({ label, value, error, onChangeText, ...inputProps 
           {error}
         </ThemedText>
       ) : null}
-    </View>
+    </Wrap>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: { gap: 6 },
-  input: {
-    borderRadius: 14,
-    borderWidth: 1.5,
-    height: 48,
-    paddingHorizontal: 14,
-    fontSize: 15,
-  },
-});

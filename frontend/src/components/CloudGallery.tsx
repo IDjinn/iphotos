@@ -1,11 +1,26 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList } from 'react-native';
 import { Image } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library/legacy';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
 import { CloudVideoPlayer } from '@/components/CloudVideoPlayer';
+import {
+  Cell,
+  CellImage,
+  Center,
+  Chip,
+  ChipText,
+  Duration,
+  EmptyText,
+  FilterRow,
+  FooterSpin,
+  RetryButton,
+  SortSpacer,
+  StateBadge,
+  VideoBadge,
+} from '@/components/CloudGallery.styles';
 import { prefetchRecentPreviews } from '@/data/cloud-media-cache';
 import {
   deletePhoto,
@@ -40,24 +55,49 @@ interface CloudGalleryProps {
   contentContainerStyle?: { paddingBottom: number };
 }
 
-/** Grid cell rendering the cached thumbnail, downloading it on first view. */
-function CloudPhotoCell({
-  item,
-  isReadyVideo,
-  colors,
+/** Filter/sort pill with pressed feedback. */
+function FilterChip({
+  label,
+  selected,
+  icon,
   onPress,
 }: {
-  item: CloudPhoto;
-  isReadyVideo: boolean;
-  colors: ReturnType<typeof useTheme>['colors'];
+  label: string;
+  selected: boolean;
+  icon?: { name: 'arrow-down' | 'arrow-up' };
   onPress: () => void;
 }) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Chip
+      $selected={selected}
+      $pressed={pressed}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={icon ? (selected ? 'Sort oldest first' : 'Sort newest first') : `Show ${label.toLowerCase()}`}
+      accessibilityState={{ selected }}
+    >
+      {icon ? <SortIcon active={selected} direction={icon.name} /> : null}
+      <ChipText $selected={selected}>{label}</ChipText>
+    </Chip>
+  );
+}
+
+function SortIcon({ direction }: { active: boolean; direction: 'arrow-down' | 'arrow-up' }) {
+  const { colors } = useTheme();
+  return <Icon name={direction} size={13} color={colors.textSecondary} />;
+}
+
+/** Grid cell rendering the cached thumbnail, downloading it on first view. */
+function CloudPhotoCell({ item, isReadyVideo, onPress }: { item: CloudPhoto; isReadyVideo: boolean; onPress: () => void }) {
+  const { colors } = useTheme();
   const thumbnailUri = useCloudThumbnailUri(item.id);
   return (
-    <Pressable style={styles.cell} onPress={onPress} accessibilityLabel={item.fileName}>
-      <Image
+    <Cell onPress={onPress} accessibilityLabel={item.fileName}>
+      <CellImage
         source={thumbnailUri}
-        style={styles.cellImage}
         contentFit="cover"
         recyclingKey={item.id}
         onError={(event) => {
@@ -65,25 +105,25 @@ function CloudPhotoCell({
         }}
       />
       {item.state !== 'Ready' ? (
-        <View style={[styles.stateBadge, { backgroundColor: colors.background }]}>
+        <StateBadge>
           {item.state === 'Failed' ? (
             <Icon name="alert-circle" size={14} color={colors.danger} />
           ) : (
             <ActivityIndicator size="small" color={colors.accent} />
           )}
-        </View>
+        </StateBadge>
       ) : null}
       {isReadyVideo ? (
         <>
-          <View style={styles.videoBadge} pointerEvents="none">
+          <VideoBadge pointerEvents="none">
             <Icon name="play" size={13} color={colors.textInverse} />
-          </View>
+          </VideoBadge>
           {item.durationSeconds ? (
-            <Text style={styles.duration}>{formatDuration(item.durationSeconds)}</Text>
+            <Duration>{formatDuration(item.durationSeconds)}</Duration>
           ) : null}
         </>
       ) : null}
-    </Pressable>
+    </Cell>
   );
 }
 
@@ -232,74 +272,52 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
   };
 
   const filterHeader = (
-    <View style={styles.filterRow}>
+    <FilterRow>
       {MEDIA_FILTERS.map((option) => (
-        <Pressable
+        <FilterChip
           key={option.value}
+          label={option.label}
+          selected={mediaFilter === option.value}
           onPress={() => setFilter(option.value)}
-          accessibilityRole="button"
-          accessibilityLabel={`Show ${option.label.toLowerCase()}`}
-          accessibilityState={{ selected: mediaFilter === option.value }}
-          style={({ pressed }) => [
-            styles.chip,
-            mediaFilter === option.value && { backgroundColor: colors.accent, borderColor: colors.accent },
-            pressed && styles.chipPressed,
-          ]}
-        >
-          <Text
-            style={[
-              styles.chipText,
-              { color: mediaFilter === option.value ? colors.textInverse : colors.textSecondary },
-            ]}
-          >
-            {option.label}
-          </Text>
-        </Pressable>
+        />
       ))}
-      <View style={styles.sortSpacer} />
-      <Pressable
+      <SortSpacer />
+      <FilterChip
+        label={order === 'desc' ? 'Newest' : 'Oldest'}
+        selected={false}
+        icon={{ name: order === 'desc' ? 'arrow-down' : 'arrow-up' }}
         onPress={() => setFilter(order === 'desc' ? 'asc' : 'desc')}
-        accessibilityRole="button"
-        accessibilityLabel={order === 'desc' ? 'Sort oldest first' : 'Sort newest first'}
-        style={({ pressed }) => [styles.chip, styles.sortChip, pressed && styles.chipPressed]}
-      >
-        <Icon name={order === 'desc' ? 'arrow-down' : 'arrow-up'} size={13} color={colors.textSecondary} />
-        <Text style={[styles.chipText, { color: colors.textSecondary }]}>
-          {order === 'desc' ? 'Newest' : 'Oldest'}
-        </Text>
-      </Pressable>
-    </View>
+      />
+    </FilterRow>
   );
 
   if (state.status === 'loading') {
     return (
-      <View style={styles.center}>
+      <Center>
         <ActivityIndicator color={colors.accent} />
-      </View>
+      </Center>
     );
   }
 
   if (state.status === 'error') {
     return (
-      <View style={styles.center}>
+      <Center>
         <ThemedText variant="bodySmall" color="danger">
           {state.message}
         </ThemedText>
-        <Pressable
-        onPress={() => {
-          setState({ status: 'loading' });
-          void load(1, mediaFilter, order);
-        }}
+        <RetryButton
+          onPress={() => {
+            setState({ status: 'loading' });
+            void load(1, mediaFilter, order);
+          }}
           accessibilityLabel="Try again"
           accessibilityRole="button"
         >
-          <View style={[styles.retryButton, { borderColor: colors.accent }]}>
-            <ThemedText variant="bodySmall" color="accent">
-              Try again
-            </ThemedText>
-          </View>
-        </Pressable>
-      </View>
+          <ThemedText variant="bodySmall" color="accent">
+            Try again
+          </ThemedText>
+        </RetryButton>
+      </Center>
     );
   }
 
@@ -311,13 +329,13 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
           ? 'No videos in the cloud yet.'
           : undefined;
     return (
-      <View style={styles.center}>
+      <Center>
         {filterHeader}
         <Icon name="cloud-offline-outline" size={40} color={colors.iconInactive} />
-        <ThemedText variant="bodySmall" color="secondary" style={styles.emptyText}>
+        <EmptyText variant="bodySmall" color="secondary">
           {emptyByFilter ?? emptyHint ?? 'No photos or videos in the cloud yet — run a backup from Settings.'}
-        </ThemedText>
-      </View>
+        </EmptyText>
+      </Center>
     );
   }
 
@@ -333,14 +351,11 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
         onEndReachedThreshold={0.5}
         refreshing={refreshing}
         onRefresh={onRefresh}
-        ListFooterComponent={
-          state.loadingMore ? <ActivityIndicator color={colors.accent} style={styles.footer} /> : null
-        }
+        ListFooterComponent={state.loadingMore ? <FooterSpin color={colors.accent} /> : null}
         renderItem={({ item }) => (
           <CloudPhotoCell
             item={item}
             isReadyVideo={item.state === 'Ready' && item.mediaType === 'Video'}
-            colors={colors}
             onPress={() => openPhoto(item)}
           />
         )}
@@ -349,62 +364,3 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
-  retryButton: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
-  emptyText: { textAlign: 'center' },
-  cell: { flex: 1 / 3, aspectRatio: 1, padding: 1 },
-  cellImage: { flex: 1, borderRadius: 4, backgroundColor: 'rgba(128,128,128,0.15)' },
-  stateBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    borderRadius: 8,
-    padding: 3,
-  },
-  videoBadge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  duration: {
-    position: 'absolute',
-    bottom: 4,
-    left: 6,
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '500',
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  footer: { marginVertical: 16 },
-  filterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(128,128,128,0.35)',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  chipPressed: { opacity: 0.7 },
-  chipText: { fontSize: 12, fontWeight: '600' },
-  sortSpacer: { flex: 1 },
-  sortChip: { alignSelf: 'flex-start' },
-});

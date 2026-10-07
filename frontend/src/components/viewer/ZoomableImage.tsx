@@ -1,6 +1,5 @@
 import { Image } from 'expo-image';
 import { useCallback, useMemo } from 'react';
-import { StyleSheet } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, {
   clamp,
@@ -12,6 +11,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { ZoomFill } from '@/components/viewer/ZoomableImage.styles';
 import type { PhotoAsset } from '@/data/types';
 import { Durations, SCREEN_HEIGHT, SCREEN_WIDTH, Springs } from '@/theme/tokens';
 
@@ -171,16 +171,14 @@ export function ZoomableImage({ asset, controller, pagerPan, onTap }: ZoomableIm
 
   return (
     <GestureDetector gesture={composed}>
-      <Animated.View style={[styles.fill, animatedStyle]}>
+      <ZoomFill style={animatedStyle}>
         <Image
           source={{ uri: asset.uri }}
           style={{ width: layout.w, height: layout.h }}
           contentFit="contain"
           transition={120}
         />
-      </Animated.View>
+      </ZoomFill>
     </GestureDetector>
   );
 }
-
-const styles = StyleSheet.create({ fill: { flex: 1, alignItems: 'center', justifyContent: 'center' } });

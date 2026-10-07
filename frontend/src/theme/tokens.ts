@@ -1,4 +1,4 @@
-import { Dimensions } from 'react-native';
+import { Dimensions, PixelRatio } from 'react-native';
 
 /** Grid layout constants for photo grids. */
 export const GRID_COLUMNS = 3;
@@ -31,8 +31,56 @@ export const Springs = {
 
 /** Corner radii. */
 export const RADIUS = {
+  xs: 4,
   sm: 8,
   md: 12,
   lg: 16,
+  xl: 24,
   full: 999,
+} as const;
+
+/** Spacing scale on a 4pt grid — index by step, e.g. space[4] = 16. */
+export const SPACE = [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72] as const;
+
+/** Typography scale — sizes mirror the ThemedText variants. */
+export const TYPE = {
+  size: {
+    display: 28,
+    title: 20,
+    titleMedium: 16,
+    body: 15,
+    bodySmall: 13,
+    label: 12,
+    caption: 11,
+  },
+  weight: {
+    regular: '400',
+    medium: '500',
+    semibold: '600',
+  },
+  letterSpacing: {
+    tight: 0.4,
+    slight: 0.2,
+    normal: 0,
+  },
+  line: {
+    body: 20,
+    small: 18,
+  },
+} as const;
+
+/** Thinnest renderable line — replaces StyleSheet.hairlineWidth. */
+export const HAIRLINE = 1 / PixelRatio.get();
+
+/** Border widths. */
+export const BORDER = {
+  width: 1,
+  thick: 1.5,
+  wide: 2,
+} as const;
+
+/** Android elevation levels (iOS shadow params live in theme/shared.ts). */
+export const ELEVATION = {
+  low: 4,
+  medium: 6,
 } as const;

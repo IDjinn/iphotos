@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, BackHandler, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Animated, {
   Easing,
@@ -18,6 +18,16 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { Icon, type IconName } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  ActionRow,
+  Backdrop,
+  HeroImage,
+  InfoLabel,
+  InfoRowWrap,
+  OverlayRoot,
+  PagerLayer,
+  SheetHeading,
+} from '@/components/viewer/ViewerOverlay.styles';
 import { addAssetsToAlbum, removeAssetsFromAlbum } from '@/data/albums-repository';
 import { readLockedConfig } from '@/data/locked-repository';
 import { deleteFromVault, exportFromVault, importToVault } from '@/data/vault-repository';
@@ -341,12 +351,12 @@ export function ViewerOverlay() {
   }
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <OverlayRoot pointerEvents="box-none">
       <StatusBar style="light" />
 
-      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
+      <Backdrop style={backdropStyle} />
 
-      <Animated.View style={[StyleSheet.absoluteFill, pagerStyle]} pointerEvents="auto">
+      <PagerLayer style={pagerStyle} pointerEvents="auto">
         <ViewerPager
           assets={assets}
           index={index}
@@ -359,10 +369,10 @@ export function ViewerOverlay() {
           videoPlaying={videoPlaying}
           videoMuted={videoMuted}
         />
-      </Animated.View>
+      </PagerLayer>
 
       <Animated.View style={heroStyle} pointerEvents="none">
-        <Image source={{ uri: current.uri }} style={StyleSheet.absoluteFill} contentFit="cover" transition={0} />
+        <HeroImage source={{ uri: current.uri }} contentFit="cover" transition={0} />
       </Animated.View>
 
       <ViewerChrome
@@ -385,9 +395,7 @@ export function ViewerOverlay() {
 
       {/* Details sheet */}
       <BottomSheet visible={infoVisible} onClose={() => setInfoVisible(false)} maxHeightFactor={0.6}>
-        <ThemedText variant="titleMedium" style={styles.sheetHeading}>
-          Details
-        </ThemedText>
+        <SheetHeading variant="titleMedium">Details</SheetHeading>
         <InfoRow label="File name" value={current.filename || '—'} />
         <InfoRow label="Date" value={`${fullDateLabel(current.creationTime)} · ${timeLabel(current.creationTime)}`} />
         <InfoRow
@@ -403,23 +411,9 @@ export function ViewerOverlay() {
 
       {/* More-actions sheet */}
       <BottomSheet visible={moreVisible} onClose={() => setMoreVisible(false)} maxHeightFactor={0.45}>
-        <ThemedText variant="titleMedium" style={styles.sheetHeading}>
-          Actions
-        </ThemedText>
+        <SheetHeading variant="titleMedium">Actions</SheetHeading>
         {moreActions.map((entry) => (
-          <Pressable
-            key={entry.label}
-            style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]}
-            onPress={() => {
-              setMoreVisible(false);
-              entry.action();
-            }}
-          >
-            <Icon name={entry.icon} size={22} color={entry.destructive ? colors.danger : colors.icon} />
-            <ThemedText variant="body" color={entry.destructive ? 'danger' : 'primary'}>
-              {entry.label}
-            </ThemedText>
-          </Pressable>
+          <ActionRowItem key={entry.label} entry={entry} onDone={() => setMoreVisible(false)} />
         ))}
       </BottomSheet>
 
@@ -430,28 +424,46 @@ export function ViewerOverlay() {
       />
 
       <MiniToast message={toast} onDismissed={() => setToast(null)} />
-    </View>
+    </OverlayRoot>
+  );
+}
+
+function ActionRowItem({
+  entry,
+  onDone,
+}: {
+  entry: { icon: IconName; label: string; action: () => void; destructive?: boolean };
+  onDone: () => void;
+}) {
+  const { colors } = useTheme();
+  const [pressed, setPressed] = useState(false);
+  return (
+    <ActionRow
+      $pressed={pressed}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={() => {
+        onDone();
+        entry.action();
+      }}
+    >
+      <Icon name={entry.icon} size={22} color={entry.destructive ? colors.danger : colors.icon} />
+      <ThemedText variant="body" color={entry.destructive ? 'danger' : 'primary'}>
+        {entry.label}
+      </ThemedText>
+    </ActionRow>
   );
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.infoRow}>
-      <ThemedText variant="bodySmall" color="secondary" style={styles.infoLabel}>
+    <InfoRowWrap>
+      <InfoLabel variant="bodySmall" color="secondary">
         {label}
-      </ThemedText>
-      <ThemedText variant="body" style={styles.infoValue}>
+      </InfoLabel>
+      <ThemedText variant="body">
         {value}
       </ThemedText>
-    </View>
+    </InfoRowWrap>
   );
 }
-
-const styles = StyleSheet.create({
-  backdrop: { backgroundColor: '#000000' },
-  sheetHeading: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 10 },
-  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14 },
-  infoRow: { paddingHorizontal: 20, paddingVertical: 8, gap: 2 },
-  infoLabel: { textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 },
-  infoValue: { fontWeight: '400' },
-});

@@ -1,9 +1,8 @@
 import { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/ThemedText';
+import { Text, Wrap } from '@/components/MiniToast.styles';
 import { useTheme } from '@/theme/context';
 
 interface MiniToastProps {
@@ -15,7 +14,7 @@ interface MiniToastProps {
 
 /** Tiny transient confirmation pill. */
 export function MiniToast({ message, topOffset, onDismissed, durationMs = 1600 }: MiniToastProps) {
-  const { colors } = useTheme();
+  const { space } = useTheme();
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -27,31 +26,15 @@ export function MiniToast({ message, topOffset, onDismissed, durationMs = 1600 }
   if (!message) return null;
 
   return (
-    <Animated.View
+    <Wrap
       entering={FadeIn.duration(150)}
       exiting={FadeOut.duration(180)}
-      style={[styles.wrap, { top: (topOffset ?? insets.top) + 12, backgroundColor: colors.surfaceElevated }]}
+      $top={(topOffset ?? insets.top) + space[3]}
       pointerEvents="none"
     >
-      <ThemedText variant="bodySmall" style={styles.text}>
+      <Text variant="bodySmall">
         {message}
-      </ThemedText>
-    </Animated.View>
+      </Text>
+    </Wrap>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: {
-    position: 'absolute',
-    alignSelf: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  text: { maxWidth: 280 },
-});

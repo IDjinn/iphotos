@@ -1,5 +1,4 @@
-import { useEffect } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -8,7 +7,15 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/ThemedText';
-import { useTheme } from '@/theme/context';
+import {
+  DigitKey,
+  Dot,
+  DotsWrap,
+  Grid,
+  Key,
+  KeySpacer,
+  PadWrap,
+} from '@/components/PinPad.styles';
 import { haptic } from '@/utils/haptics';
 
 interface PinPadProps {
@@ -21,9 +28,23 @@ interface PinPadProps {
   onBackspace: () => void;
 }
 
+/** Single keypad digit with pressed feedback (parity with the original opacity dip). */
+function Digit({ digit, onPress }: { digit: string; onPress: (digit: string) => void }) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <DigitKey
+      $pressed={pressed}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={() => onPress(digit)}
+    >
+      <ThemedText variant="title">{digit}</ThemedText>
+    </DigitKey>
+  );
+}
+
 /** Numeric keypad with per-key press feedback and a wrong-PIN shake. */
 export function PinPad({ length, maxLength, shakeKey, onDigit, onBackspace }: PinPadProps) {
-  const { colors } = useTheme();
   const shake = useSharedValue(0);
 
   useEffect(() => {
@@ -42,71 +63,43 @@ export function PinPad({ length, maxLength, shakeKey, onDigit, onBackspace }: Pi
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back'];
 
   return (
-    <Animated.View style={[styles.wrap, shakeStyle]}>
-      <View style={styles.grid}>
+    <PadWrap style={shakeStyle}>
+      <Grid>
         {keys.map((key, i) => {
-          if (key === '') return <View key={i} style={styles.key} />;
+          if (key === '') return <KeySpacer key={i} />;
           if (key === 'back') {
             return (
-              <Pressable key={i} style={styles.key} onPress={onBackspace} accessibilityLabel="Delete digit">
+              <Key key={i} onPress={onBackspace} accessibilityLabel="Delete digit">
                 <ThemedText variant="titleMedium" color="secondary">
                   ⌫
                 </ThemedText>
-              </Pressable>
+              </Key>
             );
           }
           return (
-            <Pressable
+            <Digit
               key={i}
-              style={({ pressed }) => [
-                styles.key,
-                styles.digit,
-                { backgroundColor: colors.surface, opacity: pressed ? 0.6 : 1 },
-              ]}
-              onPress={() => {
+              digit={key}
+              onPress={(digit) => {
                 if (length >= maxLength) return;
                 haptic('selection');
-                onDigit(key);
+                onDigit(digit);
               }}
-            >
-              <ThemedText variant="title">{key}</ThemedText>
-            </Pressable>
+            />
           );
         })}
-      </View>
-    </Animated.View>
+      </Grid>
+    </PadWrap>
   );
 }
 
 /** PIN progress dots. */
 export function PinDots({ length, maxLength, error }: { length: number; maxLength: number; error?: boolean }) {
-  const { colors } = useTheme();
   return (
-    <View style={dotStyles.wrap}>
+    <DotsWrap>
       {Array.from({ length: maxLength }).map((_, i) => (
-        <View
-          key={i}
-          style={[
-            dotStyles.dot,
-            {
-              backgroundColor:
-                i < length ? (error ? colors.danger : colors.accent) : colors.outline,
-            },
-          ]}
-        />
+        <Dot key={i} $state={i < length ? (error ? 'error' : 'filled') : 'empty'} />
       ))}
-    </View>
+    </DotsWrap>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: { alignItems: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', width: 264, gap: 18, justifyContent: 'center' },
-  key: { width: 72, height: 72, alignItems: 'center', justifyContent: 'center' },
-  digit: { borderRadius: 36 },
-});
-
-const dotStyles = StyleSheet.create({
-  wrap: { flexDirection: 'row', gap: 14, height: 16, alignItems: 'center' },
-  dot: { width: 12, height: 12, borderRadius: 6 },
-});

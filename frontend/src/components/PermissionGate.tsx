@@ -1,9 +1,18 @@
-import { Linking, StyleSheet, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { Linking } from 'react-native';
+import { FadeInDown } from 'react-native-reanimated';
 
 import { Icon } from '@/components/Icon';
-import { PressableScale } from '@/components/PressableScale';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Button,
+  ButtonLabel,
+  Container,
+  Content,
+  IconWrap,
+  Link,
+  Subtitle,
+  Title,
+} from '@/components/PermissionGate.styles';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
@@ -23,63 +32,50 @@ export function PermissionGate({ status, onRequest }: PermissionGateProps) {
   };
 
   return (
-    <View style={styles.container}>
-      <Animated.View entering={FadeInDown.springify().dampingRatio(0.85)} style={styles.content}>
-        <View style={[styles.iconWrap, { backgroundColor: colors.surface }]}>
+    <Container>
+      <Content entering={FadeInDown.springify().dampingRatio(0.85)}>
+        <IconWrap style={{ backgroundColor: colors.surface }}>
           <Icon name="images-outline" size={40} color={colors.accent} />
-        </View>
-        <ThemedText variant="title" style={styles.title}>
+        </IconWrap>
+        <Title variant="title">
           {status === 'denied' ? 'Allow access to your photos' : 'Allow access to more photos'}
-        </ThemedText>
-        <ThemedText variant="body" color="secondary" style={styles.subtitle}>
+        </Title>
+        <Subtitle variant="body" color="secondary">
           {status === 'denied'
             ? 'iPhotos needs permission to display your photo and video library. Everything stays on your device.'
             : 'You have granted access to a limited selection. Allow full access to see your entire library.'}
-        </ThemedText>
+        </Subtitle>
         {status === 'denied' ? (
           <>
-            <PressableScale
-              style={[styles.button, { backgroundColor: colors.accent }]}
+            <Button
               onPress={() => {
                 haptic('medium');
                 onRequest();
               }}
             >
-              <ThemedText variant="body" color="inverse" style={styles.buttonLabel}>
+              <ButtonLabel variant="body" color="inverse">
                 Allow access
-              </ThemedText>
-            </PressableScale>
-            <PressableScale style={styles.link} onPress={openSettings}>
+              </ButtonLabel>
+            </Button>
+            <Link onPress={openSettings}>
               <ThemedText variant="bodySmall" color="accent">
                 Open system settings
               </ThemedText>
-            </PressableScale>
+            </Link>
           </>
         ) : (
-          <PressableScale
-            style={[styles.button, { backgroundColor: colors.accent }]}
+          <Button
             onPress={() => {
               haptic('medium');
               onRequest();
             }}
           >
-            <ThemedText variant="body" color="inverse" style={styles.buttonLabel}>
+            <ButtonLabel variant="body" color="inverse">
               Manage access
-            </ThemedText>
-          </PressableScale>
+            </ButtonLabel>
+          </Button>
         )}
-      </Animated.View>
-    </View>
+      </Content>
+    </Container>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  content: { alignItems: 'center', gap: 12, maxWidth: 340 },
-  iconWrap: { width: 88, height: 88, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  title: { textAlign: 'center' },
-  subtitle: { textAlign: 'center', lineHeight: 20 },
-  button: { borderRadius: 24, paddingHorizontal: 32, paddingVertical: 13, marginTop: 12 },
-  buttonLabel: { fontWeight: '600' },
-  link: { padding: 8 },
-});

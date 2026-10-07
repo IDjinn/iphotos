@@ -1,7 +1,8 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import { DayWrap, MonthLabel, MonthWrap, Row } from '@/components/grid/GridHeaders.styles';
 import type { PhotoAsset } from '@/data/types';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -15,10 +16,8 @@ import { PhotoCell } from './PhotoCell';
 export function MonthHeader({ label, onBackToTop }: { label: string; onBackToTop?: () => void }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.monthWrap, { backgroundColor: `${colors.background}F2` }]}>
-      <ThemedText variant="titleMedium" style={styles.monthLabel}>
-        {label}
-      </ThemedText>
+    <MonthWrap>
+      <MonthLabel variant="titleMedium">{label}</MonthLabel>
       {onBackToTop ? (
         <Pressable
           hitSlop={12}
@@ -31,18 +30,18 @@ export function MonthHeader({ label, onBackToTop }: { label: string; onBackToTop
           <Icon name="chevron-up-circle-outline" size={22} color={colors.textSecondary} />
         </Pressable>
       ) : null}
-    </View>
+    </MonthWrap>
   );
 }
 
 /** Day group header, e.g. "Today". */
 export function DayHeader({ label }: { label: string }) {
   return (
-    <View style={styles.dayWrap}>
+    <DayWrap>
       <ThemedText variant="bodySmall" color="secondary">
         {label}
       </ThemedText>
-    </View>
+    </DayWrap>
   );
 }
 
@@ -59,23 +58,10 @@ export function GridRow({
   onPress: (asset: PhotoAsset) => void;
 }) {
   return (
-    <View style={[styles.row, { gap, height: cellSize, marginBottom: gap }]}>
+    <Row $gap={gap} $height={cellSize}>
       {assets.map((asset) => (
         <PhotoCell key={asset.id} asset={asset} size={cellSize} onPress={onPress} />
       ))}
-    </View>
+    </Row>
   );
 }
-
-const styles = StyleSheet.create({
-  monthWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  monthLabel: { fontWeight: '600' },
-  dayWrap: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6 },
-  row: { flexDirection: 'row' },
-});

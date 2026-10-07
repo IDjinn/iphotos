@@ -1,36 +1,36 @@
-import { createContext, useContext, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useColorScheme } from 'react-native';
+import { ThemeProvider as StyledThemeProvider, useTheme as useStyledTheme } from 'styled-components/native';
 
 import { useSettingsStore } from '@/stores/settings';
-import { darkColors, lightColors, type ThemeColors } from './colors';
+import { darkColors, lightColors } from './colors';
+import { BORDER, HAIRLINE, RADIUS, SPACE, TYPE } from './tokens';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
-
-interface ThemeContextValue {
-  colors: ThemeColors;
-  dark: boolean;
-  mode: ThemeMode;
-}
-
-const ThemeContext = createContext<ThemeContextValue>({
-  colors: lightColors,
-  dark: false,
-  mode: 'system',
-});
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const mode = useSettingsStore((s) => s.themeMode);
   const systemScheme = useColorScheme();
   const dark = mode === 'system' ? systemScheme === 'dark' : mode === 'dark';
 
-  const value = useMemo<ThemeContextValue>(
-    () => ({ colors: dark ? darkColors : lightColors, dark, mode }),
+  const theme = useMemo(
+    () => ({
+      colors: dark ? darkColors : lightColors,
+      dark,
+      mode,
+      space: SPACE,
+      radius: RADIUS,
+      type: TYPE,
+      hairline: HAIRLINE,
+      border: BORDER,
+    }),
     [dark, mode]
   );
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return <StyledThemeProvider theme={theme}>{children}</StyledThemeProvider>;
 }
 
-export function useTheme(): ThemeContextValue {
-  return useContext(ThemeContext);
+/** Same public API as before: programmatic consumers (StatusBar, SystemUI, icon colors). */
+export function useTheme() {
+  return useStyledTheme();
 }

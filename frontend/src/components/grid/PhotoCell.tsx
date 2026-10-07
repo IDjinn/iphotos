@@ -1,6 +1,5 @@
-import { Image } from 'expo-image';
 import { useEffect, useRef } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -11,6 +10,15 @@ import Animated, {
 
 import { registerHeroCell } from '@/animations/hero';
 import { Icon } from '@/components/Icon';
+import {
+  CellImage,
+  CellPressable,
+  CheckCircle,
+  CheckWrap,
+  DimLayer,
+  Duration,
+  VideoBadge,
+} from '@/components/grid/PhotoCell.styles';
 import { useThumbnailUri } from '@/hooks/use-thumbnail-uri';
 import { useSelectionStore } from '@/stores/selection';
 import { Springs } from '@/theme/tokens';
@@ -57,83 +65,39 @@ export function PhotoCell({ asset, size, onPress }: PhotoCellProps) {
 
   return (
     <View ref={viewRef} collapsable={false} style={{ width: size, height: size }}>
-      <Animated.View style={[StyleSheet.absoluteFill, dimStyle]}>
-        <Pressable
+      <DimLayer style={dimStyle}>
+        <CellPressable
           onPress={() => onPress(asset)}
           onLongPress={() => {
             haptic('medium');
             useSelectionStore.getState().begin(asset.id);
           }}
-          style={StyleSheet.absoluteFill}
         >
-            <Image
+          <CellImage
             source={{ uri: sourceUri }}
-            style={StyleSheet.absoluteFill}
             contentFit="cover"
             transition={180}
             recyclingKey={asset.id}
             cachePolicy="memory-disk"
           />
           {isVideo ? (
-            <View style={styles.videoBadge} pointerEvents="none">
-              <Icon name="play" size={14} color="#FFFFFF" />
-            </View>
+            <VideoBadge pointerEvents="none">
+              <Icon name="play" size={14} color={colors.textInverse} />
+            </VideoBadge>
           ) : null}
           {isVideo && asset.duration ? (
-            <Text style={styles.duration}>{formatDuration(asset.duration)}</Text>
+            <Duration>{formatDuration(asset.duration)}</Duration>
           ) : null}
-        </Pressable>
-      </Animated.View>
+        </CellPressable>
+      </DimLayer>
 
       {selectionActive ? (
-        <Animated.View style={[styles.checkWrap, checkStyle]} pointerEvents="none">
-          <View
-            style={[
-              styles.checkCircle,
-              {
-                borderColor: colors.textInverse,
-                backgroundColor: isSelected ? colors.accent : 'rgba(0,0,0,0.25)',
-              },
-            ]}
-          >
-            {isSelected ? <Icon name="checkmark" size={14} color="#0B0B0D" /> : null}
-          </View>
-        </Animated.View>
+        <CheckWrap style={checkStyle} pointerEvents="none">
+          <CheckCircle $selected={isSelected}>
+            {isSelected ? <Icon name="checkmark" size={14} color={colors.onAccent} /> : null}
+          </CheckCircle>
+        </CheckWrap>
       ) : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  checkWrap: { position: 'absolute', top: 6, right: 6, zIndex: 10 },
-  checkCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  videoBadge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  duration: {
-    position: 'absolute',
-    bottom: 4,
-    left: 6,
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '500',
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-});

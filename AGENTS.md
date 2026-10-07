@@ -5,6 +5,7 @@
 - **DO** write `.md` files and code in English; plan documents (`docs/plans/`) follow decision D1 (PT-BR docs, English code/UI).
 - **DO** keep the frontend dependent on explicit API contracts (`src/data/*` typed modules) — never encode backend implementation details, business rules, or pricing into the app.
 - **DO** follow the roadmap workflow in `docs/plans/00-roadmap.md`: read the doc for the topic before coding, update the §5 status table and task checkboxes when a stage is done.
+- **DO** style the mobile app exclusively with styled-components/native in sibling `<Component>.styles.ts` files (decision D17, doc 16): theme scales only (`theme.space`/`type`/`radius`), transient `$` props for dynamic values — never `StyleSheet`, inline styles, or color literals (sanctioned exceptions: Reanimated `useAnimatedStyle`, intrinsic sizes, runtime-measured values).
 
 ## Docker (local compose)
 

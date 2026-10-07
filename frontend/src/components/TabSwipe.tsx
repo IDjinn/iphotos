@@ -1,8 +1,7 @@
 import { useLayoutEffect, useMemo, type ReactNode } from 'react';
-import { StyleSheet } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
+import {
   cancelAnimation,
   Easing,
   runOnJS,
@@ -14,6 +13,7 @@ import Animated, {
 import { useReducedMotion } from '@/animations/useReducedMotion';
 import { beginTabEnter, takeTabEnter } from '@/navigation/tab-transition';
 import { useSelectionStore } from '@/stores/selection';
+import { Fill } from '@/components/TabSwipe.styles';
 import { SCREEN_WIDTH } from '@/theme/tokens';
 
 /** Bottom-tab routes in bar order — a committed horizontal swipe moves between them. */
@@ -107,9 +107,7 @@ export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode 
 
   return (
     <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.fill, style]}>{children}</Animated.View>
+      <Fill style={style}>{children}</Fill>
     </GestureDetector>
   );
 }
-
-const styles = StyleSheet.create({ fill: { flex: 1 } });

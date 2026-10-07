@@ -1,6 +1,6 @@
 import { FlashList, type FlashListRef, type ListRenderItem } from '@shopify/flash-list';
 import { useCallback, useMemo, useRef } from 'react';
-import { RefreshControl, StyleSheet, View } from 'react-native';
+import { RefreshControl } from 'react-native';
 
 import { measureHeroCell } from '@/animations/hero';
 import { buildGridData, type GridItem } from '@/data/grouping';
@@ -11,6 +11,7 @@ import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_GAP } from '@/theme/tokens';
 import { useTheme } from '@/theme/context';
 
 import { DayHeader, GridRow, MonthHeader } from './GridHeaders';
+import { Grid } from './PhotoGrid.styles';
 
 interface PhotoGridProps {
   assets: PhotoAsset[];
@@ -90,7 +91,7 @@ export function PhotoGrid({
   );
 
   return (
-    <View style={styles.container}>
+    <Grid>
       <FlashList
         ref={listRef}
         data={gridData.items}
@@ -111,8 +112,6 @@ export function PhotoGrid({
           ) : undefined
         }
       />
-    </View>
+    </Grid>
   );
 }
-
-const styles = StyleSheet.create({ container: { flex: 1 } });
