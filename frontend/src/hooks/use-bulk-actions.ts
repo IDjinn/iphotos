@@ -5,6 +5,8 @@ import { addAssetsToAlbum, removeAssetsFromAlbum } from '@/data/albums-repositor
 import { readLockedConfig } from '@/data/locked-repository';
 import { deleteFromVault, exportFromVault, importToVault } from '@/data/vault-repository';
 import type { PhotoAsset } from '@/data/types';
+import type { TranslationKey } from '@/i18n';
+import { useTranslation } from '@/i18n/hook';
 import { useLibraryStore } from '@/stores/library';
 import { useSelectionStore } from '@/stores/selection';
 import { deleteAssetsFromDevice, shareAssets } from '@/utils/share';
@@ -20,10 +22,37 @@ interface UseBulkActionsOptions {
   albumId?: string;
 }
 
-function confirmAlert(title: string, message: string, confirmLabel: string): Promise<boolean> {
+/** A toast result: a fixed translation key plus optional variables. */
+export interface BulkToast {
+  key: TranslationKey;
+  params?: Record<string, string | number>;
+}
+
+/**
+ * Every message the bulk actions can produce, as translation-key constants.
+ * Fixed messages are plain keys; messages carrying values are builders that
+ * fill `{variables}` and resolve the `_one`/`_other` plural variant.
+ */
+export const BULK_TOAST = {
+  SETUP_REQUIRED: 'photos.lockSetupRequired',
+  UNLOCKED: (count: number): BulkToast => ({
+    key: count === 1 ? 'locked.unlockedCount_one' : 'locked.unlockedCount_other',
+    params: { count },
+  }),
+  MOVED: (count: number): BulkToast => ({
+    key: count === 1 ? 'locked.movedCount_one' : 'locked.movedCount_other',
+    params: { count },
+  }),
+  MOVED_WITH_FAILURES: (moved: number, failed: number): BulkToast => ({
+    key: 'locked.movedWithFailures',
+    params: { moved, failed },
+  }),
+} as const;
+
+function confirmAlert(title: string, message: string, confirmLabel: string, cancelLabel: string): Promise<boolean> {
   return new Promise((resolve) => {
     Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+      { text: cancelLabel, style: 'cancel', onPress: () => resolve(false) },
       { text: confirmLabel, onPress: () => resolve(true) },
     ]);
   });
@@ -34,6 +63,7 @@ function confirmAlert(title: string, message: string, confirmLabel: string): Pro
  * All actions operate on the current selection and clear it on success.
  */
 export function useBulkActions({ assets, applyRemovals, lockedContext, albumId }: UseBulkActionsOptions) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
 
   const selectedAssets = (): PhotoAsset[] => {
@@ -66,9 +96,9 @@ export function useBulkActions({ assets, applyRemovals, lockedContext, albumId }
     return added;
   };
 
-  const toggleLocked = async (): Promise<string> => {
+  const toggleLocked = async (): Promise<BulkToast | null> => {
     const selected = selectedAssets();
-    if (selected.length === 0) return '';
+    if (selected.length === 0) return null;
     const library = useLibraryStore.getState();
 
     if (lockedContext) {
@@ -88,31 +118,30 @@ export function useBulkActions({ assets, applyRemovals, lockedContext, albumId }
       }
       const moved = legacyIds.length + exported;
       applyRemovals(selected.map((a) => a.id));
-      return `Unlocked ${moved} — back in your gallery`;
+      return BULK_TOAST.UNLOCKED(moved);
     }
 
     const config = await readLockedConfig();
     if (!config.enabled) {
       finish();
-      return 'SETUP_REQUIRED';
+      return { key: BULK_TOAST.SETUP_REQUIRED };
     }
 
     const count = selected.length;
     const ok = await confirmAlert(
-      `Move ${count} item${count === 1 ? '' : 's'} to Locked Folder?`,
-      'They will be removed from your device gallery and stored encrypted inside iPhotos. If you uninstall iPhotos, locked items are deleted permanently.',
-      'Move'
+      t(count === 1 ? 'locked.moveConfirmTitle_one' : 'locked.moveConfirmTitle_other', { count }),
+      t('locked.moveConfirmBody'),
+      t('common.move'),
+      t('common.cancel')
     );
-    if (!ok) return '';
+    if (!ok) return null;
 
     setBusy(true);
     try {
       const { imported, failed } = await importToVault(selected);
       applyRemovals(selected.map((a) => a.id));
       finish();
-      return failed > 0
-        ? `Moved ${imported} to Locked Folder — ${failed} failed`
-        : `Moved ${imported} to Locked Folder`;
+      return failed > 0 ? BULK_TOAST.MOVED_WITH_FAILURES(imported, failed) : BULK_TOAST.MOVED(imported);
     } finally {
       setBusy(false);
     }

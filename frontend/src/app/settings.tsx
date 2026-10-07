@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
@@ -16,12 +7,33 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { Icon, type IconName } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  BackupBarFill,
+  BackupBarTrack,
+  CacheInput,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  License,
+  Row,
+  RowLabel,
+  RowText,
+  Screen,
+  Section,
+  SectionHint,
+  SectionTitle,
+  StaticRow,
+  ThemeOption,
+  ThemeRow,
+} from '@/app/settings.styles';
 import type { CloudCacheMode } from '@/data/cloud-media-cache';
 import { cloudCacheModeChanged } from '@/data/cloud-media-cache';
 import { countLabeledAssets } from '@/data/labels-repository';
 import type { UploadQuality } from '@/data/user-preferences';
 import { getUserPreferences, updateUserPreferences } from '@/data/user-preferences';
 import { getPendingFolderDecisions } from '@/data/sync-rules-repository';
+import type { LanguageMode, LocaleTag, TranslationKey } from '@/i18n';
+import { useTranslation } from '@/i18n/hook';
 import { resolveActiveModel } from '@/stores/ai-model';
 import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useAccountStore } from '@/stores/account';
@@ -35,41 +47,77 @@ import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 import { formatBytes } from '@/utils/format';
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionBlock({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <View style={styles.section}>
-      <ThemedText variant="label" style={styles.sectionTitle}>
-        {title}
-      </ThemedText>
+    <Section>
+      <SectionTitle variant="label">{title}</SectionTitle>
       {children}
-    </View>
+    </Section>
   );
 }
 
-const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: IconName }[] = [
-  { mode: 'system', label: 'System', icon: 'phone-portrait-outline' },
-  { mode: 'light', label: 'Light', icon: 'sunny-outline' },
-  { mode: 'dark', label: 'Dark', icon: 'moon-outline' },
-];
-
-const CLOUD_CACHE_OPTIONS: { mode: CloudCacheMode; label: string; icon: IconName }[] = [
-  { mode: 'default', label: 'Default', icon: 'albums-outline' },
-  { mode: 'limited', label: 'Limited', icon: 'server-outline' },
-  { mode: 'all', label: 'Everything', icon: 'cloud-done-outline' },
-];
-
-const UPLOAD_QUALITY_OPTIONS: { mode: UploadQuality; label: string; icon: IconName }[] = [
-  { mode: 'original', label: 'Original', icon: 'diamond-outline' },
-  { mode: 'storageSaver', label: 'Storage saver', icon: 'save-outline' },
-];
-
-function formatCount(count: number): string {
-  return count.toLocaleString('en-US');
+/** Navigable settings row with press feedback (parity with the original opacity dip). */
+function NavRow({
+  onPress,
+  disabled,
+  spaced,
+  dimmed,
+  accessibilityLabel,
+  accessibilityRole,
+  children,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+  spaced?: boolean;
+  dimmed?: boolean;
+  accessibilityLabel?: string;
+  accessibilityRole?: 'button';
+  children: React.ReactNode;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Row
+      $pressed={pressed}
+      $dimmed={dimmed}
+      $spaced={spaced}
+      disabled={disabled}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+    >
+      {children}
+    </Row>
+  );
 }
 
-function renewDateLabel(epoch?: number): string {
+const THEME_OPTIONS: { mode: ThemeMode; labelKey: TranslationKey; icon: IconName }[] = [
+  { mode: 'system', labelKey: 'settings.appearance.system', icon: 'phone-portrait-outline' },
+  { mode: 'light', labelKey: 'settings.appearance.light', icon: 'sunny-outline' },
+  { mode: 'dark', labelKey: 'settings.appearance.dark', icon: 'moon-outline' },
+];
+
+const LANGUAGE_OPTIONS: { mode: LanguageMode; labelKey: TranslationKey; icon: IconName }[] = [
+  { mode: 'system', labelKey: 'settings.language.system', icon: 'phone-portrait-outline' },
+  { mode: 'en', labelKey: 'settings.language.english', icon: 'language-outline' },
+  { mode: 'pt', labelKey: 'settings.language.portuguese', icon: 'language-outline' },
+];
+
+const CLOUD_CACHE_OPTIONS: { mode: CloudCacheMode; labelKey: TranslationKey; icon: IconName }[] = [
+  { mode: 'default', labelKey: 'settings.cloudCache.default', icon: 'albums-outline' },
+  { mode: 'limited', labelKey: 'settings.cloudCache.limited', icon: 'server-outline' },
+  { mode: 'all', labelKey: 'settings.cloudCache.everything', icon: 'cloud-done-outline' },
+];
+
+const UPLOAD_QUALITY_OPTIONS: { mode: UploadQuality; labelKey: TranslationKey; icon: IconName }[] = [
+  { mode: 'original', labelKey: 'settings.uploadQuality.original', icon: 'diamond-outline' },
+  { mode: 'storageSaver', labelKey: 'settings.uploadQuality.storageSaver', icon: 'save-outline' },
+];
+
+function renewDateLabel(epoch: number | undefined, localeTag: LocaleTag): string {
   if (!epoch) return '—';
-  return new Date(epoch).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(epoch).toLocaleDateString(localeTag, { month: 'short', day: 'numeric' });
 }
 
 /** Just the host of the configured endpoint (never the key or full path). */
@@ -82,11 +130,18 @@ function aiHost(url: string): string {
 }
 
 export default function SettingsScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
+  const { t, tCount, localeTag } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const formatCount = useCallback(
+    (count: number) => count.toLocaleString(localeTag),
+    [localeTag]
+  );
   const themeMode = useSettingsStore((s) => s.themeMode);
   const setThemeMode = useSettingsStore((s) => s.setThemeMode);
+  const languageMode = useSettingsStore((s) => s.language);
+  const setLanguage = useSettingsStore((s) => s.setLanguage);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
   const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
   const cloudCacheMode = useSettingsStore((s) => s.cloudCacheMode);
@@ -125,12 +180,12 @@ export default function SettingsScreen() {
         if (saved.mismatchedPhotoCount > 0) {
           const count = formatCount(saved.mismatchedPhotoCount);
           Alert.alert(
-            'Update existing photos?',
-            `${count} ${saved.mismatchedPhotoCount === 1 ? 'photo is' : 'photos are'} stored in a different quality and can be rewritten to match.`,
+            t('settings.uploadQuality.updateExistingTitle'),
+            tCount('settings.uploadQuality.updateExistingBody', saved.mismatchedPhotoCount, { count }),
             [
-              { text: 'Keep existing', style: 'cancel' },
+              { text: t('settings.uploadQuality.keepExisting'), style: 'cancel' },
               {
-                text: `Update ${count}`,
+                text: t('settings.uploadQuality.updateAction', { count }),
                 onPress: () => {
                   void updateUserPreferences(mode, true).catch(() => {});
                 },
@@ -146,13 +201,15 @@ export default function SettingsScreen() {
 
   const uploadQualityHint = qualityCaps
     ? uploadQuality === 'storageSaver'
-      ? `Photos over ${formatBytes(qualityCaps.imageCapBytes)} and videos over ${formatBytes(
-          qualityCaps.videoCapBytes
-        )} are compressed server-side (videos to 1080p)`
-      : `Photos up to ${formatBytes(qualityCaps.imageCapBytes)} and videos up to ${formatBytes(
-          qualityCaps.videoCapBytes
-        )} are stored exactly as uploaded`
-    : 'Applies to new uploads on every device signed in to your account';
+      ? t('settings.uploadQuality.hintSaver', {
+          imageLimit: formatBytes(qualityCaps.imageCapBytes),
+          videoLimit: formatBytes(qualityCaps.videoCapBytes),
+        })
+      : t('settings.uploadQuality.hintOriginal', {
+          imageLimit: formatBytes(qualityCaps.imageCapBytes),
+          videoLimit: formatBytes(qualityCaps.videoCapBytes),
+        })
+    : t('settings.uploadQuality.hintGeneric');
 
   const account = useAccountStore();
   const plan = useAccountStore((s) => s.plan);
@@ -186,7 +243,10 @@ export default function SettingsScreen() {
   const aiEndpoint = useAiLabelingStore((s) => s.endpoint);
   const aiModel = useAiLabelingStore((s) => s.model);
   const [labeledCount, setLabeledCount] = useState(() => countLabeledAssets());
-  const modelName = useMemo(() => resolveActiveModel()?.name ?? 'Cloud only — coming soon', []);
+  const modelName = useMemo(
+    () => resolveActiveModel()?.name ?? t('settings.ai.cloudOnly'),
+    [t]
+  );
 
   // SQLite writes land outside React's knowledge — refresh when a run finishes.
   useEffect(() => {
@@ -205,268 +265,234 @@ export default function SettingsScreen() {
   }, [account.mode, refreshPlan]);
 
   const searchCaption = !localSearchEnabled
-    ? 'Off'
+    ? t('common.off')
     : indexationRunning
       ? indexationProgress && indexationProgress.total > 0
-        ? `Indexing… ${Math.min(
-            100,
-            Math.floor((indexationProgress.scanned / indexationProgress.total) * 100)
-          )}% (${formatCount(indexationProgress.scanned)} of ${formatCount(indexationProgress.total)})`
-        : 'Indexing your library…'
+        ? t('settings.ai.indexing', {
+            percent: Math.min(
+              100,
+              Math.floor((indexationProgress.scanned / indexationProgress.total) * 100)
+            ),
+            count: formatCount(indexationProgress.scanned),
+            total: formatCount(indexationProgress.total),
+          })
+        : t('settings.ai.indexingLibrary')
       : labeledCount > 0
-        ? `${formatCount(labeledCount)} items labeled on this device`
-        : 'Labels your folders on this device';
+        ? tCount('settings.ai.labeledCount', labeledCount, { count: formatCount(labeledCount) })
+        : t('settings.ai.labelsSubtitle');
 
   const backupProgress = backup.progress;
   const backupStats = backup.stats;
   const backupBusy = backup.running || backup.scanning;
   const backupBusyCaption = backup.scanning
     ? backup.scanProgress && backup.scanProgress.total > 0
-      ? `${backup.scanProgress.phase === 'scanning' ? 'Scanning' : 'Hashing'}… ${formatCount(
+      ? `${backup.scanProgress.phase === 'scanning' ? t('settings.backup.scanPhase') : t('settings.backup.hashPhase')}… ${formatCount(
           Math.min(backup.scanProgress.processed, backup.scanProgress.total)
-        )} of ${formatCount(backup.scanProgress.total)}`
+        )} ${t('units.of')} ${formatCount(backup.scanProgress.total)}`
       : backup.scanProgress?.phase === 'hashing'
-        ? 'Hashing your photos…'
-        : 'Scanning your library…'
+        ? t('settings.backup.hashingLibrary')
+        : t('settings.backup.scanningLibrary')
     : backupProgress
       ? backupProgress.phase === 'inventory'
-        ? 'Scanning your library…'
+        ? t('settings.backup.scanningLibrary')
         : backupProgress.phase === 'hashing'
-          ? `Hashing ${formatCount(backupProgress.processed)} of ${formatCount(backupProgress.total)}…`
+          ? `${t('settings.backup.hashing')} ${formatCount(backupProgress.processed)} ${t('units.of')} ${formatCount(backupProgress.total)}…`
           : backupProgress.total > 0
-            ? `Backing up ${formatCount(Math.min(backupProgress.processed, backupProgress.total))} of ${formatCount(
+            ? `${t('settings.backup.backingUp')} ${formatCount(Math.min(backupProgress.processed, backupProgress.total))} ${t('units.of')} ${formatCount(
                 backupProgress.total
-              )}${backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} failed` : ''}`
-            : 'Backing up…'
-      : 'Starting…';
+              )}${backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} ${t('settings.backup.failed')}` : ''}`
+            : t('settings.backup.backingUpEllipsis')
+      : t('settings.backup.starting');
   const backupCaption = backupBusy
     ? backupBusyCaption
     : backup.lastError
       ? backup.lastError
       : backupStats && backupStats.totalItems > 0
-        ? `${formatCount(backupStats.totalItems)} items · ${formatBytes(backupStats.totalBytes)} · ${formatBytes(
+        ? `${tCount('units.items', backupStats.totalItems, { count: formatCount(backupStats.totalItems) })} · ${formatBytes(backupStats.totalBytes)} · ${formatBytes(
             backupStats.uploadedBytes
-          )} backed up`
+          )} ${t('settings.backup.backedUp')}`
         : backupProgress && backupProgress.total > 0
-          ? `Last run: ${formatCount(backupProgress.uploaded)} uploaded · ${formatCount(backupProgress.skipped)} already saved${
-              backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} failed` : ''
+          ? `${t('settings.backup.lastRun')}: ${formatCount(backupProgress.uploaded)} ${t('settings.backup.uploaded')} · ${formatCount(backupProgress.skipped)} ${t('settings.backup.alreadySaved')}${
+              backupProgress.failed > 0 ? ` · ${formatCount(backupProgress.failed)} ${t('settings.backup.failed')}` : ''
             }`
-          : 'Inventory, scan and cloud backup';
+          : t('settings.backup.subtitle');
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 40 }}
+    <Screen
+      contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[10] }}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.header}>
-        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
+      <Header>
+        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel={t('common.back')}>
           <Icon name="arrow-back" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          Settings
-        </ThemedText>
-        <View style={{ width: 24 }} />
-      </View>
+        <HeaderTitle variant="titleMedium">{t('settings.title')}</HeaderTitle>
+        <HeaderSpacer />
+      </Header>
 
       <Animated.View entering={FadeInDown.duration(200)}>
-        <Section title="Account">
-          <Pressable
-            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+        <SectionBlock title={t('settings.sections.account')}>
+          <NavRow
             onPress={() => {
               haptic('light');
               router.push(account.user ? '/settings/account' : '/login');
             }}
-            accessibilityLabel="Account settings"
+            accessibilityLabel={t('settings.account.a11y')}
           >
             <Icon name="person-circle-outline" size={22} color={colors.icon} />
-            <View style={styles.rowText}>
-              <ThemedText variant="body">{account.user ? account.user.email : 'Local mode'}</ThemedText>
+            <RowText>
+              <ThemedText variant="body">{account.user ? account.user.email : t('settings.account.localMode')}</ThemedText>
               <ThemedText variant="bodySmall" color="secondary">
-                {account.user ? 'Cloud · manage account' : 'No account · set up cloud backup'}
+                {account.user ? t('settings.account.cloudManage') : t('settings.account.noAccount')}
               </ThemedText>
-            </View>
+            </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.row,
-              { backgroundColor: colors.surface, marginTop: 8 },
-              account.mode !== 'cloud' && { opacity: 0.6 },
-              pressed && { opacity: 0.75 },
-            ]}
+          </NavRow>
+          <NavRow
+            spaced
+            dimmed={account.mode !== 'cloud'}
             onPress={() => {
               haptic('light');
               router.push('/settings/subscription');
             }}
             accessibilityRole="button"
-            accessibilityLabel="iPhotos Cloud subscription"
+            accessibilityLabel={t('settings.account.subscriptionA11y')}
           >
             <Icon
               name="cloud-circle-outline"
               size={22}
               color={plan ? colors.accent : colors.icon}
             />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                iPhotos Cloud
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.account.iPhotosCloud')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
                 {plan
-                  ? `${plan.label} · renews ${renewDateLabel(plan.renewsAt)}`
+                  ? `${plan.label} · ${t('settings.account.renews', { date: renewDateLabel(plan.renewsAt, localeTag) })}`
                   : account.mode === 'cloud'
-                    ? 'Add more cloud storage'
-                    : 'Requires Cloud mode'}
+                    ? t('settings.account.addStorage')
+                    : t('settings.account.requiresCloud')}
               </ThemedText>
-            </View>
+            </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </Pressable>
-        </Section>
+          </NavRow>
+        </SectionBlock>
 
-        <Section title="Backup & sync">
-          <Pressable
-            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+        <SectionBlock title={t('settings.sections.backupSync')}>
+          <NavRow
             onPress={() => {
               haptic('light');
               router.push('/settings/backup');
             }}
-            accessibilityLabel="Backup settings"
+            accessibilityLabel={t('settings.backup.a11y')}
           >
             <Icon
               name={account.mode === 'cloud' ? 'cloud-upload-outline' : 'cloud-offline-outline'}
               size={22}
               color={account.mode === 'cloud' ? colors.accent : colors.icon}
             />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                Backup
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.backup.title')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
                 {backupCaption}
               </ThemedText>
               {backup.running && backupProgress && backupProgress.phase === 'uploading' && backupProgress.total > 0 ? (
-                <View style={styles.backupBarTrack}>
-                  <View
-                    style={[
-                      styles.backupBarFill,
-                      {
-                        backgroundColor: colors.accent,
-                        flex: Math.max(
-                          0.02,
-                          (backupProgress.processed - backupProgress.failed) / Math.max(1, backupProgress.total)
-                        ),
-                      },
-                    ]}
+                <BackupBarTrack>
+                  <BackupBarFill
+                    $flex={Math.max(
+                      0.02,
+                      (backupProgress.processed - backupProgress.failed) / Math.max(1, backupProgress.total)
+                    )}
                   />
-                </View>
+                </BackupBarTrack>
               ) : null}
-            </View>
+            </RowText>
             {backupBusy ? (
               <ActivityIndicator size="small" color={colors.accent} />
             ) : (
               <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
             )}
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.row,
-              { backgroundColor: colors.surface, marginTop: 8 },
-              pressed && { opacity: 0.75 },
-            ]}
+          </NavRow>
+          <NavRow
+            spaced
             onPress={() => {
               haptic('light');
               router.push('/settings/backup/folders');
             }}
             accessibilityRole="button"
-            accessibilityLabel="Backup folders"
+            accessibilityLabel={t('settings.backupFolders.title')}
           >
             <Icon name="folder-open-outline" size={22} color={colors.icon} />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                Backup folders
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.backupFolders.title')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
                 {heldFolderCount > 0
-                  ? `${heldFolderCount} new folder${heldFolderCount === 1 ? '' : 's'} to review`
-                  : 'Choose which folders are backed up'}
+                  ? tCount('settings.backupFolders.newFolders', heldFolderCount)
+                  : t('settings.backupFolders.subtitle')}
               </ThemedText>
-            </View>
+            </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.row,
-              { backgroundColor: colors.surface, marginTop: 8 },
-              account.mode !== 'cloud' && { opacity: 0.6 },
-              pressed && { opacity: 0.75 },
-            ]}
+          </NavRow>
+          <NavRow
+            spaced
+            dimmed={account.mode !== 'cloud'}
             onPress={() => {
               haptic('light');
               router.push('/settings/import-zip');
             }}
             accessibilityRole="button"
-            accessibilityLabel="Import from ZIP"
+            accessibilityLabel={t('settings.importZip.title')}
           >
             <Icon
               name="archive-outline"
               size={22}
               color={account.mode === 'cloud' ? colors.accent : colors.iconInactive}
             />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                Import from ZIP
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.importZip.title')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
-                {account.mode === 'cloud' ? 'Google Takeout & photo archives' : 'Requires Cloud mode'}
+                {account.mode === 'cloud' ? t('settings.importZip.subtitle') : t('settings.account.requiresCloud')}
               </ThemedText>
-            </View>
+            </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </Pressable>
-        </Section>
+          </NavRow>
+        </SectionBlock>
 
         {account.mode === 'cloud' ? (
-          <Section title="Upload quality">
-            <View style={styles.themeRow}>
+          <SectionBlock title={t('settings.sections.uploadQuality')}>
+            <ThemeRow>
               {UPLOAD_QUALITY_OPTIONS.map((option) => {
                 const active = uploadQuality === option.mode;
+                const label = t(option.labelKey);
                 return (
-                  <Pressable
+                  <ThemeOption
                     key={option.mode}
-                    style={[
-                      styles.themeOption,
-                      { backgroundColor: active ? colors.accentSoft : colors.surface },
-                      { borderColor: active ? colors.accent : 'transparent' },
-                    ]}
+                    $active={active}
                     onPress={() => changeUploadQuality(option.mode)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Upload quality: ${option.label}`}
+                    accessibilityLabel={t('settings.uploadQuality.a11y', { label })}
                   >
                     <Icon name={option.icon} size={20} color={active ? colors.accent : colors.textSecondary} />
                     <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
-                      {option.label}
+                      {label}
                     </ThemedText>
-                  </Pressable>
+                  </ThemeOption>
                 );
               })}
-            </View>
-            <ThemedText variant="bodySmall" color="secondary" style={styles.sectionHint}>
+            </ThemeRow>
+            <SectionHint variant="bodySmall" color="secondary">
               {uploadQualityHint}
-            </ThemedText>
-          </Section>
+            </SectionHint>
+          </SectionBlock>
         ) : null}
 
-        <Section title="Cloud cache">
-          <View style={styles.themeRow}>
+        <SectionBlock title={t('settings.sections.cloudCache')}>
+          <ThemeRow>
             {CLOUD_CACHE_OPTIONS.map((option) => {
               const active = cloudCacheMode === option.mode;
               return (
-                <Pressable
+                <ThemeOption
                   key={option.mode}
-                  style={[
-                    styles.themeOption,
-                    { backgroundColor: active ? colors.accentSoft : colors.surface },
-                    { borderColor: active ? colors.accent : 'transparent' },
-                  ]}
+                  $active={active}
                   onPress={() => {
                     haptic('light');
                     setCloudCacheMode(option.mode);
@@ -475,48 +501,41 @@ export default function SettingsScreen() {
                 >
                   <Icon name={option.icon} size={20} color={active ? colors.accent : colors.textSecondary} />
                   <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
-                    {option.label}
+                    {t(option.labelKey)}
                   </ThemedText>
-                </Pressable>
+                </ThemeOption>
               );
             })}
-          </View>
-          <ThemedText variant="bodySmall" color="secondary" style={styles.sectionHint}>
+          </ThemeRow>
+          <SectionHint variant="bodySmall" color="secondary">
             {cloudCacheMode === 'default'
-              ? 'Caches every cloud thumbnail plus previews of your 100 most recent photos'
+              ? t('settings.cloudCache.hintDefault')
               : cloudCacheMode === 'limited'
-                ? 'Caches cloud media up to a total size, evicting the oldest files first'
-                : 'Caches every cloud thumbnail and preview with no size limit'}
-          </ThemedText>
+                ? t('settings.cloudCache.hintLimited')
+                : t('settings.cloudCache.hintAll')}
+          </SectionHint>
           {cloudCacheMode === 'limited' ? (
-            <View style={[styles.row, { backgroundColor: colors.surface, marginTop: 10 }]}>
+            <StaticRow $spaced>
               <Icon name="server-outline" size={22} color={colors.icon} />
-              <ThemedText variant="body" style={styles.rowLabel}>
-                Cache limit (MB)
-              </ThemedText>
-              <TextInput
+              <RowLabel variant="body">{t('settings.cloudCache.limitLabel')}</RowLabel>
+              <CacheInput
                 value={cacheLimitInput}
                 onChangeText={onCacheLimitChange}
                 keyboardType="number-pad"
-                style={[styles.cacheInput, { borderColor: colors.outline, color: colors.text }]}
-                accessibilityLabel="Cache limit in megabytes"
+                accessibilityLabel={t('settings.cloudCache.limitA11y')}
               />
-            </View>
+            </StaticRow>
           ) : null}
-        </Section>
+        </SectionBlock>
 
-        <Section title="Appearance">
-          <View style={styles.themeRow}>
+        <SectionBlock title={t('settings.sections.appearance')}>
+          <ThemeRow>
             {THEME_OPTIONS.map((option) => {
               const active = themeMode === option.mode;
               return (
-                <Pressable
+                <ThemeOption
                   key={option.mode}
-                  style={[
-                    styles.themeOption,
-                    { backgroundColor: active ? colors.accentSoft : colors.surface },
-                    { borderColor: active ? colors.accent : 'transparent' },
-                  ]}
+                  $active={active}
                   onPress={() => {
                     haptic('light');
                     setThemeMode(option.mode);
@@ -524,57 +543,80 @@ export default function SettingsScreen() {
                 >
                   <Icon name={option.icon} size={20} color={active ? colors.accent : colors.textSecondary} />
                   <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
-                    {option.label}
+                    {t(option.labelKey)}
                   </ThemedText>
-                </Pressable>
+                </ThemeOption>
               );
             })}
-          </View>
-          <Pressable
-            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, marginTop: 10 }, pressed && { opacity: 0.75 }]}
+          </ThemeRow>
+          <NavRow
+            spaced
+            disabled={thumbnails.running}
             onPress={() => {
               haptic('medium');
               if (!thumbnails.running) void thumbnails.startBatch();
             }}
-            disabled={thumbnails.running}
-            accessibilityLabel="Generate photo previews"
+            accessibilityLabel={t('settings.previews.a11y')}
           >
             <Icon name="images-outline" size={22} color={colors.icon} />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                Photo previews
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.previews.title')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
                 {thumbnails.lastError
                   ? thumbnails.lastError
                   : thumbnails.running
                     ? thumbnails.progress && thumbnails.progress.total > 0
-                      ? `Generating… ${Math.min(
-                          100,
-                          Math.floor(
-                            ((thumbnails.progress.generated + thumbnails.progress.skipped) /
-                              thumbnails.progress.total) *
-                              100
-                          )
-                        )}%`
-                      : 'Scanning your library…'
-                    : 'Create small previews so the gallery loads faster'}
+                      ? t('settings.previews.generating', {
+                          percent: Math.min(
+                            100,
+                            Math.floor(
+                              ((thumbnails.progress.generated + thumbnails.progress.skipped) /
+                                thumbnails.progress.total) *
+                                100
+                            )
+                          ),
+                        })
+                      : t('settings.previews.scanning')
+                    : t('settings.previews.subtitle')}
               </ThemedText>
-            </View>
+            </RowText>
             {thumbnails.running ? (
               <ActivityIndicator size="small" color={colors.accent} />
             ) : (
               <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
             )}
-          </Pressable>
-        </Section>
+          </NavRow>
+        </SectionBlock>
 
-        <Section title="Feedback">
-          <View style={[styles.row, { backgroundColor: colors.surface }]}>
+        <SectionBlock title={t('settings.sections.language')}>
+          <ThemeRow>
+            {LANGUAGE_OPTIONS.map((option) => {
+              const active = languageMode === option.mode;
+              return (
+                <ThemeOption
+                  key={option.mode}
+                  $active={active}
+                  onPress={() => {
+                    haptic('light');
+                    setLanguage(option.mode);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(option.labelKey)}
+                >
+                  <Icon name={option.icon} size={20} color={active ? colors.accent : colors.textSecondary} />
+                  <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
+                    {t(option.labelKey)}
+                  </ThemedText>
+                </ThemeOption>
+              );
+            })}
+          </ThemeRow>
+        </SectionBlock>
+
+        <SectionBlock title={t('settings.sections.feedback')}>
+          <StaticRow>
             <Icon name="radio-outline" size={22} color={colors.icon} />
-            <ThemedText variant="body" style={styles.rowLabel}>
-              Haptic feedback
-            </ThemedText>
+            <RowLabel variant="body">{t('settings.feedback.haptics')}</RowLabel>
             <Switch
               value={hapticsEnabled}
               onValueChange={(v) => {
@@ -583,58 +625,51 @@ export default function SettingsScreen() {
               }}
               trackColor={{ true: colors.accent, false: colors.outline }}
             />
-          </View>
-        </Section>
+          </StaticRow>
+        </SectionBlock>
 
-        <Section title="Privacy">
-          <Pressable
-            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+        <SectionBlock title={t('settings.sections.privacy')}>
+          <NavRow
             onPress={() => {
               haptic('light');
               router.push('/locked');
             }}
           >
             <Icon name="lock-closed-outline" size={22} color={colors.icon} />
-            <ThemedText variant="body" style={styles.rowLabel}>
-              Locked Folder
-            </ThemedText>
+            <RowLabel variant="body">{t('settings.privacy.lockedFolder')}</RowLabel>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, marginTop: 8 }, pressed && { opacity: 0.75 }]}
+          </NavRow>
+          <NavRow
+            spaced
             onPress={() => {
               haptic('light');
               router.push('/settings/encrypted-mode');
             }}
-            accessibilityLabel="Encrypted mode"
+            accessibilityLabel={t('settings.privacy.encryptedMode')}
           >
             <Icon name="lock-closed-outline" size={22} color={colors.icon} />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                Encrypted mode
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.privacy.encryptedMode')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
                 {encryptedMode.enabled
                   ? encryptedMode.unlocked
-                    ? 'Unlocked — photos are browsable'
-                    : 'On — photos are encrypted and locked'
-                  : 'Encrypt your photos on this device (offline)'}
+                    ? t('settings.privacy.encryptedUnlocked')
+                    : t('settings.privacy.encryptedLocked')
+                  : t('settings.privacy.encryptedOff')}
               </ThemedText>
-            </View>
+            </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </Pressable>
-          <View style={[styles.row, { backgroundColor: colors.surface, marginTop: 8 }]}>
+          </NavRow>
+          <StaticRow $spaced>
             <Icon name="sparkles-outline" size={22} color={colors.icon} />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                Artificial intelligence
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.privacy.ai')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
                 {aiEnabled
-                  ? 'On-device labeling and smart search are available'
-                  : 'All AI features are off — nothing is indexed or sent anywhere'}
+                  ? t('settings.privacy.aiOn')
+                  : t('settings.privacy.aiOff')}
               </ThemedText>
-            </View>
+            </RowText>
             <Switch
               value={aiEnabled}
               onValueChange={(v) => {
@@ -642,17 +677,15 @@ export default function SettingsScreen() {
                 setAiEnabled(v);
               }}
               trackColor={{ true: colors.accent, false: colors.outline }}
-              accessibilityLabel="Artificial intelligence"
+              accessibilityLabel={t('settings.privacy.ai')}
             />
-          </View>
+          </StaticRow>
           {aiEnabled ? (
           <>
-          <View style={[styles.row, { backgroundColor: colors.surface, marginTop: 8 }]}>
+          <StaticRow $spaced>
             <Icon name="sparkles-outline" size={22} color={colors.icon} />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                Smart search &amp; labels
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.privacy.smartSearch')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
                 {searchCaption}
               </ThemedText>
@@ -661,7 +694,7 @@ export default function SettingsScreen() {
                   {indexationError}
                 </ThemedText>
               ) : null}
-            </View>
+            </RowText>
             <Switch
               value={localSearchEnabled}
               onValueChange={(v) => {
@@ -669,113 +702,72 @@ export default function SettingsScreen() {
                 setLocalSearchEnabled(v);
               }}
               trackColor={{ true: colors.accent, false: colors.outline }}
-              accessibilityLabel="Smart search and labels"
+              accessibilityLabel={t('settings.privacy.smartSearchA11y')}
             />
-          </View>
-          <Pressable
-            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, marginTop: 8 }, pressed && { opacity: 0.75 }]}
+          </StaticRow>
+          <NavRow
+            spaced
             onPress={() => {
               haptic('light');
               router.push('/settings/ai-labeling');
             }}
-            accessibilityLabel="AI labeling"
+            accessibilityLabel={t('settings.ai.labelingTitle')}
           >
             <Icon name="color-wand-outline" size={22} color={colors.icon} />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                AI labeling
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.ai.labelingTitle')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
-                {aiEndpoint && aiModel ? `${aiHost(aiEndpoint)} · ${aiModel}` : 'Not configured — tap to set up'}
+                {aiEndpoint && aiModel ? `${aiHost(aiEndpoint)} · ${aiModel}` : t('settings.ai.notConfigured')}
               </ThemedText>
               {aiRunning && aiProgress && aiProgress.total > 0 ? (
                 <ThemedText variant="bodySmall" color="secondary">
-                  {`Labeling… ${Math.min(
-                    100,
-                    Math.floor((aiProgress.scanned / aiProgress.total) * 100)
-                  )}% (${formatCount(aiProgress.scanned)} of ${formatCount(aiProgress.total)})`}
+                  {t('settings.ai.labeling', {
+                    percent: Math.min(
+                      100,
+                      Math.floor((aiProgress.scanned / aiProgress.total) * 100)
+                    ),
+                    count: formatCount(aiProgress.scanned),
+                    total: formatCount(aiProgress.total),
+                  })}
                 </ThemedText>
               ) : null}
-            </View>
+            </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.row, { backgroundColor: colors.surface, marginTop: 8 }, pressed && { opacity: 0.75 }]}
+          </NavRow>
+          <NavRow
+            spaced
             onPress={() => {
               haptic('light');
               router.push('/settings/ai-model');
             }}
-            accessibilityLabel="AI model"
+            accessibilityLabel={t('settings.ai.modelTitle')}
           >
             <Icon name="cube-outline" size={22} color={colors.icon} />
-            <View style={styles.rowText}>
-              <ThemedText variant="body" style={styles.rowLabel}>
-                AI model
-              </ThemedText>
+            <RowText>
+              <RowLabel variant="body">{t('settings.ai.modelTitle')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
                 {modelName}
               </ThemedText>
-            </View>
+            </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </Pressable>
+          </NavRow>
           </>
           ) : null}
-        </Section>
+        </SectionBlock>
 
-        <Section title="About">
-          <View style={[styles.row, { backgroundColor: colors.surface }]}>
+        <SectionBlock title={t('settings.sections.about')}>
+          <StaticRow>
             <Icon name="information-circle-outline" size={22} color={colors.icon} />
-            <ThemedText variant="body" style={styles.rowLabel}>
-              Version
-            </ThemedText>
+            <RowLabel variant="body">{t('settings.about.version')}</RowLabel>
             <ThemedText variant="bodySmall" color="secondary">
               {Constants.expoConfig?.version ?? '0.1.0'}
             </ThemedText>
-          </View>
-          <ThemedText variant="bodySmall" color="secondary" style={styles.license}>
-            Licensed for non-commercial use — see LICENSE (PolyForm Noncommercial).
-          </ThemedText>
-        </Section>
+          </StaticRow>
+          <License variant="bodySmall" color="secondary">
+            {t('settings.about.license')}
+          </License>
+        </SectionBlock>
       </Animated.View>
-    </ScrollView>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  section: { paddingHorizontal: 16, marginTop: 20 },
-  sectionTitle: { marginBottom: 10 },
-  sectionHint: { marginTop: 10 },
-  cacheInput: {
-    width: 72,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    textAlign: 'right',
-    fontSize: 14,
-  },
-  themeRow: { flexDirection: 'row', gap: 8 },
-  themeOption: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 14,
-    paddingVertical: 14,
-    borderWidth: 1.5,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  rowLabel: { flex: 1 },
-  rowText: { flex: 1, gap: 2 },
-  backupBarTrack: { height: 4, borderRadius: 2, backgroundColor: 'rgba(128,128,128,0.25)', flexDirection: 'row', marginTop: 4 },
-  backupBarFill: { borderRadius: 2 },
-  license: { marginTop: 14, lineHeight: 18, textAlign: 'center' },
-});

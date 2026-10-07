@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
@@ -8,6 +8,23 @@ import { getUsage, type CloudUsage } from '@/data/cloud-photos-repository';
 import { useAccountStore } from '@/stores/account';
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Body,
+  Card,
+  CardColumn,
+  CardText,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  LoadingRow,
+  Note,
+  Screen,
+  UsageBar,
+  UsageFill,
+  UsageHeader,
+  UsageRemainder,
+} from '@/app/settings/account.styles';
+import { useTranslation } from '@/i18n/hook';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 import { formatBytes } from '@/utils/format';
@@ -20,13 +37,14 @@ function hostOf(url: string): string {
   }
 }
 
-function renewDateLabel(epoch?: number): string {
+function renewDateLabel(epoch: number | undefined, localeTag: string): string {
   if (!epoch) return '—';
-  return new Date(epoch).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(epoch).toLocaleDateString(localeTag, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function AccountSettingsScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
+  const { t, tCount, localeTag } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const user = useAccountStore((s) => s.user);
@@ -40,19 +58,19 @@ export default function AccountSettingsScreen() {
     let cancelled = false;
     getUsage()
       .then((value) => !cancelled && setUsage(value))
-      .catch(() => !cancelled && setUsageError('Could not load usage — try again later.'));
+      .catch(() => !cancelled && setUsageError(t('account.usageError')));
     void refreshPlan();
     return () => {
       cancelled = true;
     };
-  }, [refreshPlan]);
+  }, [refreshPlan, t]);
 
   const confirmSignOut = () => {
     haptic('medium');
-    Alert.alert('Sign out', 'Cloud sync stops, but your local photos stay on this device.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('account.signOut'), t('account.signOutBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Sign out',
+        text: t('account.signOut'),
         style: 'destructive',
         onPress: () => {
           signOut();
@@ -65,145 +83,145 @@ export default function AccountSettingsScreen() {
   const usedFraction = usage ? Math.min(1, usage.usedBytes / Math.max(1, usage.quotaBytes)) : 0;
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 40 }}
+    <Screen
+      contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[10] }}
     >
-      <View style={styles.header}>
-        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
+      <Header>
+        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel={t('common.back')}>
           <Icon name="arrow-back" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          Account
-        </ThemedText>
-        <View style={{ width: 24 }} />
-      </View>
+        <HeaderTitle variant="titleMedium">{t('account.title')}</HeaderTitle>
+        <HeaderSpacer />
+      </Header>
 
-      <View style={styles.body}>
-        <View style={[styles.card, { backgroundColor: colors.surface }]}>
+      <Body>
+        <StaticCard>
           <Icon name="person-circle-outline" size={40} color={colors.accent} />
-          <View style={styles.cardText}>
-            <ThemedText variant="body">{user?.email ?? 'Not signed in'}</ThemedText>
+          <CardText>
+            <ThemedText variant="body">{user?.email ?? t('account.notSignedIn')}</ThemedText>
             <ThemedText variant="bodySmall" color="secondary">
-              Cloud · {hostOf(API_URL)}
+              {t('account.cloudHost', { host: hostOf(API_URL) })}
             </ThemedText>
-          </View>
-        </View>
+          </CardText>
+        </StaticCard>
 
-        <View style={[styles.cardColumn, { backgroundColor: colors.surface }]}>
+        <CardColumn>
           {usageError ? (
             <ThemedText variant="bodySmall" color="danger">
               {usageError}
             </ThemedText>
           ) : usage ? (
             <>
-              <View style={styles.usageHeader}>
-                <ThemedText variant="body">Storage</ThemedText>
+              <UsageHeader>
+                <ThemedText variant="body">{t('account.storage')}</ThemedText>
                 {usage ? (
                   <ThemedText variant="bodySmall" color="secondary">
-                    {formatBytes(usage.usedBytes)} of {formatBytes(usage.quotaBytes)}
+                    {`${formatBytes(usage.usedBytes)} ${t('units.of')} ${formatBytes(usage.quotaBytes)}`}
                   </ThemedText>
                 ) : null}
-              </View>
-              <View style={[styles.usageBar, { backgroundColor: colors.outline }]}>
-                <View
-                  style={[styles.usageFill, { backgroundColor: colors.accent, flex: usedFraction }]}
-                />
-                <View style={{ flex: 1 - usedFraction }} />
-              </View>
+              </UsageHeader>
+              <UsageBar>
+                <UsageFill $fraction={usedFraction} />
+                <UsageRemainder $fraction={1 - usedFraction} />
+              </UsageBar>
               <ThemedText variant="bodySmall" color="secondary">
-                {usage.photoCount.toLocaleString('en-US')} photos backed up
+                {tCount('account.photosBackedUp', usage.photoCount, {
+                  count: usage.photoCount.toLocaleString(localeTag),
+                })}
               </ThemedText>
             </>
           ) : (
-            <View style={styles.loadingRow}>
+            <LoadingRow>
               <ActivityIndicator color={colors.accent} />
               <ThemedText variant="bodySmall" color="secondary">
-                Loading usage…
+                {t('account.loadingUsage')}
               </ThemedText>
-            </View>
+            </LoadingRow>
           )}
-        </View>
+        </CardColumn>
 
-        <Pressable
-          style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+        <PressableCard
           onPress={() => {
             haptic('light');
             router.push('/settings/subscription');
           }}
-          accessibilityLabel="iPhotos Cloud subscription"
+          accessibilityLabel={t('settings.account.subscriptionA11y')}
         >
           <Icon
             name={plan ? 'cloud-done-outline' : 'cloud-circle-outline'}
             size={22}
             color={plan ? colors.accent : colors.icon}
           />
-          <View style={styles.cardText}>
-            <ThemedText variant="body">{plan ? plan.label : 'iPhotos Cloud'}</ThemedText>
+          <CardText>
+            <ThemedText variant="body">{plan ? plan.label : t('settings.account.iPhotosCloud')}</ThemedText>
             <ThemedText variant="bodySmall" color="secondary">
               {plan
-                ? `Active · renews ${renewDateLabel(plan.renewsAt)}`
-                : 'Add more cloud storage'}
+                ? t('account.planActive', { date: renewDateLabel(plan.renewsAt, localeTag) })
+                : t('settings.account.addStorage')}
             </ThemedText>
-          </View>
+          </CardText>
           <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-        </Pressable>
+        </PressableCard>
 
-        <Pressable
-          style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+        <PressableCard
           onPress={() => {
             haptic('light');
             router.push('/cloud-photos');
           }}
-          accessibilityLabel="Photos in the cloud"
+          accessibilityLabel={t('account.photosInCloud')}
         >
           <Icon name="cloud-outline" size={22} color={colors.icon} />
-          <View style={styles.cardText}>
-            <ThemedText variant="body">Photos in the cloud</ThemedText>
+          <CardText>
+            <ThemedText variant="body">{t('account.photosInCloud')}</ThemedText>
             <ThemedText variant="bodySmall" color="secondary">
-              Browse, download or delete your backups
+              {t('account.photosInCloudSubtitle')}
             </ThemedText>
-          </View>
+          </CardText>
           <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-        </Pressable>
+        </PressableCard>
 
-        <Pressable
-          style={({ pressed }) => [styles.card, pressed && { opacity: 0.75, borderColor: colors.danger }]}
-          onPress={confirmSignOut}
-          accessibilityLabel="Sign out"
-        >
+        <PressableCard danger onPress={confirmSignOut} accessibilityLabel={t('account.signOut')}>
           <Icon name="log-out-outline" size={22} color={colors.danger} />
           <ThemedText variant="body" color="danger">
-            Sign out
+            {t('account.signOut')}
           </ThemedText>
-        </Pressable>
+        </PressableCard>
 
-        <ThemedText variant="bodySmall" color="secondary" style={styles.note}>
-          Password change is not available yet — it arrives in a future update. Version{' '}
-          {Constants.expoConfig?.version ?? '0.1.0'}.
-        </ThemedText>
-      </View>
-    </ScrollView>
+        <Note variant="bodySmall" color="secondary">
+          {t('account.passwordNote', { version: Constants.expoConfig?.version ?? '0.1.0' })}
+        </Note>
+      </Body>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  body: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  cardText: { flex: 1, gap: 2 },
-  cardColumn: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, gap: 10 },
-  usageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  usageBar: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden' },
-  usageFill: { borderRadius: 4 },
-  loadingRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  note: { lineHeight: 18, textAlign: 'center', marginTop: 8 },
-});
+/** Non-interactive card block (profile header). */
+function StaticCard({ children }: { children: React.ReactNode }) {
+  return <Card $pressed={false}>{children}</Card>;
+}
+
+/** Pressable settings card with pressed feedback. */function PressableCard({
+  onPress,
+  danger,
+  accessibilityLabel,
+  children,
+}: {
+  onPress: () => void;
+  danger?: boolean;
+  accessibilityLabel?: string;
+  children: React.ReactNode;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Card
+      $pressed={pressed}
+      $danger={danger}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel}
+    >
+      {children}
+    </Card>
+  );
+}

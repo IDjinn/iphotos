@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useTheme } from '@/theme/context';
+import { useTranslation } from '@/i18n/hook';
 import type { IconName } from '@/components/Icon';
 
 function TabIcon({ name, color, focused }: { name: IconName; color: string; focused: boolean }) {
@@ -11,6 +12,7 @@ function TabIcon({ name, color, focused }: { name: IconName; color: string; focu
 
 export default function TabsLayout() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
 
   return (
     <Tabs
@@ -30,7 +32,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Photos',
+          title: t('tabs.photos'),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="images" color={String(color)} focused={focused} />
           ),
@@ -39,7 +41,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="search"
         options={{
-          title: 'Search',
+          title: t('tabs.search'),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="search" color={String(color)} focused={focused} />
           ),
@@ -48,7 +50,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="library"
         options={{
-          title: 'Library',
+          title: t('tabs.library'),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="albums" color={String(color)} focused={focused} />
           ),

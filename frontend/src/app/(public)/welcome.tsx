@@ -1,23 +1,39 @@
-import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { FadeInDown } from 'react-native-reanimated';
 
 import { Icon } from '@/components/Icon';
 import { PressableScale } from '@/components/PressableScale';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Actions,
+  BulletRow,
+  BulletText,
+  Bullets,
+  Container,
+  Hero,
+  Logo,
+  PrimaryButton,
+  SecondaryButton,
+  SkipRow,
+  Tagline,
+  Title,
+} from '@/app/(public)/welcome.styles';
+import type { TranslationKey } from '@/i18n';
+import { useTranslation } from '@/i18n/hook';
 import { useOnboardingStore } from '@/stores/onboarding';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
-const BULLETS = [
-  'Works fully offline',
-  'Optional end-to-end encrypted backup',
-  'Smart search that runs on your device',
+const BULLETS: TranslationKey[] = [
+  'auth.welcome.bulletOffline',
+  'auth.welcome.bulletE2E',
+  'auth.welcome.bulletSmartSearch',
 ];
 
 export default function WelcomeScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const complete = useOnboardingStore((s) => s.complete);
@@ -29,94 +45,75 @@ export default function WelcomeScreen() {
   };
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: colors.background, paddingTop: insets.top + 32, paddingBottom: insets.bottom + 28 },
-      ]}
+    <Container
+      $insetTop={insets.top + space[8]}
+      $insetBottom={insets.bottom + space[7]}
     >
-      <Animated.View entering={FadeInDown.duration(300)} style={styles.hero}>
-        <View style={[styles.logo, { backgroundColor: colors.accentSoft }]}>
+      <Hero entering={FadeInDown.duration(300)}>
+        <Logo>
           <Icon name="images" size={44} color={colors.accent} />
-        </View>
-        <ThemedText variant="display" style={styles.title}>
-          iPhotos
-        </ThemedText>
-        <ThemedText variant="body" color="secondary" style={styles.tagline}>
-          Your photos. Private by default.
-        </ThemedText>
-      </Animated.View>
+        </Logo>
+        <Title variant="display">iPhotos</Title>
+        <Tagline variant="body" color="secondary">
+          {t('auth.welcome.tagline')}
+        </Tagline>
+      </Hero>
 
-      <View style={styles.bullets}>
+      <Bullets>
         {BULLETS.map((bullet, index) => (
-          <Animated.View
-            key={bullet}
-            entering={FadeInDown.duration(220).delay(150 + index * 80)}
-            style={styles.bulletRow}
-          >
+          <BulletRow key={bullet} entering={FadeInDown.duration(220).delay(150 + index * 80)}>
             <Icon name="checkmark-circle" size={20} color={colors.accent} />
-            <ThemedText variant="body" color="secondary" style={styles.bulletText}>
-              {bullet}
-            </ThemedText>
-          </Animated.View>
+            <BulletText variant="body" color="secondary">
+              {t(bullet)}
+            </BulletText>
+          </BulletRow>
         ))}
-      </View>
+      </Bullets>
 
-      <Animated.View entering={FadeInDown.duration(240).delay(420)} style={styles.actions}>
-        <PressableScale
-          style={[styles.primaryButton, { backgroundColor: colors.accent }]}
+      <Actions entering={FadeInDown.duration(240).delay(420)}>
+        <PrimaryButton
           onPress={() => {
             haptic('light');
             router.push('/register');
           }}
           accessibilityRole="button"
-          accessibilityLabel="Create account"
+          accessibilityLabel={t('auth.createAccount')}
         >
-          <ThemedText variant="titleMedium" style={{ color: colors.background }}>
-            Create account
+          <ThemedText variant="titleMedium" color="inverse">
+            {t('auth.createAccount')}
           </ThemedText>
-        </PressableScale>
-        <PressableScale
-          style={[styles.secondaryButton, { backgroundColor: colors.surface, borderColor: colors.outline }]}
+        </PrimaryButton>
+        <SecondaryButton
           onPress={() => {
             haptic('light');
             router.push('/login');
           }}
           accessibilityRole="button"
-          accessibilityLabel="Log in"
+          accessibilityLabel={t('auth.logIn')}
         >
           <ThemedText variant="titleMedium" color="accent">
-            Log in
+            {t('auth.logIn')}
           </ThemedText>
-        </PressableScale>
-        <Pressable
-          hitSlop={12}
-          onPress={continueOffline}
-          accessibilityRole="button"
-          accessibilityLabel="Continue without account"
-          style={styles.skipRow}
-        >
-          <ThemedText variant="bodySmall" color="accent">
-            Continue without account
-          </ThemedText>
-          <Icon name="arrow-forward" size={14} color={colors.accent} />
-        </Pressable>
-      </Animated.View>
-    </View>
+        </SecondaryButton>
+        <PressableSkipRow onPress={continueOffline} label={t('auth.continueWithoutAccount')} />
+      </Actions>
+    </Container>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 24, justifyContent: 'space-between' },
-  hero: { alignItems: 'center', gap: 12 },
-  logo: { width: 96, height: 96, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  title: { fontWeight: '600', letterSpacing: 0.2 },
-  tagline: { textAlign: 'center' },
-  bullets: { gap: 14, alignSelf: 'stretch' },
-  bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  bulletText: { flex: 1 },
-  actions: { gap: 10 },
-  primaryButton: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  secondaryButton: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
-  skipRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8 },
-});
+function PressableSkipRow({ onPress, label }: { onPress: () => void; label: string }) {
+  const { colors } = useTheme();
+  return (
+    <SkipRow
+      hitSlop={12}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <ThemedText variant="bodySmall" color="accent">
+        {label}
+      </ThemedText>
+      <Icon name="arrow-forward" size={14} color={colors.accent} />
+    </SkipRow>
+  );
+}

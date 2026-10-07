@@ -1,10 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Body,
+  Card,
+  CardColumn,
+  CardText,
+  CurrentBadge,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  LoadingCard,
+  Note,
+  PlanCard,
+  PlanHeader,
+  PlanTitle,
+  BenefitRow,
+  Screen,
+  SubscribeButton,
+  SubscribeLabel,
+} from '@/app/settings/subscription.styles';
 import {
   getBillingCatalog,
   getBillingStatus,
@@ -31,7 +50,7 @@ function termDate(iso?: string | null): string {
 }
 
 export default function SubscriptionScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const refreshPlan = useAccountStore((s) => s.refreshPlan);
@@ -107,28 +126,24 @@ export default function SubscriptionScreen() {
           : null;
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 40 }}
+    <Screen
+      contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[10] }}
     >
-      <View style={styles.header}>
+      <Header>
         <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
           <Icon name="arrow-back" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          iPhotos Cloud
-        </ThemedText>
-        <View style={{ width: 24 }} />
-      </View>
+        <HeaderTitle variant="titleMedium">iPhotos Cloud</HeaderTitle>
+        <HeaderSpacer />
+      </Header>
 
-      <View style={styles.body}>
+      <Body>
         {loadError ? (
           <>
             <ThemedText variant="bodySmall" color="danger">
               {loadError}
             </ThemedText>
-            <Pressable
-              style={({ pressed }) => [styles.card, styles.actionCard, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+            <ActionCard
               onPress={() => {
                 haptic('light');
                 reload();
@@ -137,103 +152,91 @@ export default function SubscriptionScreen() {
             >
               <Icon name="refresh-outline" size={22} color={colors.icon} />
               <ThemedText variant="body">Try again</ThemedText>
-            </Pressable>
+            </ActionCard>
           </>
         ) : !catalog || !status ? (
-          <View style={[styles.card, styles.loadingCard, { backgroundColor: colors.surface }]}>
+          <LoadingCard>
             <ActivityIndicator color={colors.accent} />
             <ThemedText variant="bodySmall" color="secondary">
               Loading your plan…
             </ThemedText>
-          </View>
+          </LoadingCard>
         ) : (
           <>
             {subscribed && status.state === 'Active' ? (
-              <View style={[styles.card, styles.planCard, { backgroundColor: colors.accentSoft }]}>
+              <PlanCard>
                 <Icon name="cloud-done-outline" size={40} color={colors.accent} />
-                <ThemedText variant="body" color="accent" style={styles.planTitle}>
+                <PlanTitle variant="body" color="accent">
                   You&apos;re on iPhotos Cloud
-                </ThemedText>
+                </PlanTitle>
                 <ThemedText variant="bodySmall" color="secondary">
                   {stateLabel}
                 </ThemedText>
-              </View>
+              </PlanCard>
             ) : null}
 
             {catalog.products.map((item) => {
               const isCurrentPlan = subscribed && status.plan === item.productId;
               return (
-                <View key={item.productId} style={[styles.cardColumn, { backgroundColor: colors.surface }]}>
-                  <View style={styles.planHeader}>
-                    <View style={styles.cardText}>
+                <CardColumn key={item.productId}>
+                  <PlanHeader>
+                    <CardText>
                       <ThemedText variant="body">{item.displayName}</ThemedText>
                       <ThemedText variant="bodySmall" color="secondary">
                         {formatBytes(item.quotaBytes)} of cloud storage for your photos
                       </ThemedText>
-                    </View>
+                    </CardText>
                     <ThemedText variant="titleMedium" color="accent">
                       {item.displayPrice}
                     </ThemedText>
-                  </View>
+                  </PlanHeader>
 
-                  <View style={styles.benefitRow}>
+                  <BenefitRow>
                     <Icon name="checkmark-circle-outline" size={18} color={colors.accent} />
                     <ThemedText variant="bodySmall" color="secondary">
                       Automatic backup with deduplication — each photo is stored once
                     </ThemedText>
-                  </View>
-                  <View style={styles.benefitRow}>
+                  </BenefitRow>
+                  <BenefitRow>
                     <Icon name="checkmark-circle-outline" size={18} color={colors.accent} />
                     <ThemedText variant="bodySmall" color="secondary">
                       Your full timeline on every device, with restore
                     </ThemedText>
-                  </View>
-                  <View style={styles.benefitRow}>
+                  </BenefitRow>
+                  <BenefitRow>
                     <Icon name="checkmark-circle-outline" size={18} color={colors.accent} />
                     <ThemedText variant="bodySmall" color="secondary">
                       Your photos stay yours — download or delete them anytime
                     </ThemedText>
-                  </View>
+                  </BenefitRow>
 
                   {isCurrentPlan ? (
-                    <View style={[styles.currentBadge, { borderColor: colors.accent }]}>
+                    <CurrentBadge>
                       <ThemedText variant="bodySmall" color="accent">
                         {status.state === 'Active' ? 'Current plan' : 'Current plan — payment issue'}
                       </ThemedText>
-                    </View>
+                    </CurrentBadge>
                   ) : (
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.subscribeButton,
-                        { backgroundColor: colors.accent },
-                        pressed && { opacity: 0.85 },
-                      ]}
-                      onPress={() => void subscribe(item.productId)}
+                    <SubscribeRow
+                      label={subscribed ? 'Switch plan' : 'Subscribe'}
+                      busy={busy === 'subscribe'}
                       disabled={busy !== null}
+                      onPress={() => void subscribe(item.productId)}
                       accessibilityLabel={`Subscribe to ${item.displayName}`}
-                    >
-                      {busy === 'subscribe' ? (
-                        <ActivityIndicator color={colors.textInverse} />
-                      ) : (
-                        <ThemedText variant="body" style={[styles.subscribeLabel, { color: colors.textInverse }]}>
-                          {subscribed ? 'Switch plan' : 'Subscribe'}
-                        </ThemedText>
-                      )}
-                    </Pressable>
+                    />
                   )}
-                </View>
+                </CardColumn>
               );
             })}
 
             {status.state === 'Expired' ? (
-              <ThemedText variant="bodySmall" color="secondary" style={styles.note}>
+              <Note variant="bodySmall" color="secondary">
                 Your subscription expired on {termDate(status.expiresAt)}. Nothing was deleted —
                 subscribe again to keep backing up.
-              </ThemedText>
+              </Note>
             ) : null}
 
-            <Pressable
-              style={({ pressed }) => [styles.card, styles.actionCard, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+            <ActionCard
               onPress={() => void restore()}
               disabled={busy !== null}
               accessibilityLabel="Restore purchase"
@@ -243,13 +246,13 @@ export default function SubscriptionScreen() {
               ) : (
                 <Icon name="refresh-circle-outline" size={22} color={colors.icon} />
               )}
-              <View style={styles.cardText}>
+              <CardText>
                 <ThemedText variant="body">Restore purchase</ThemedText>
                 <ThemedText variant="bodySmall" color="secondary">
                   Re-linked after reinstalling or signing in again
                 </ThemedText>
-              </View>
-            </Pressable>
+              </CardText>
+            </ActionCard>
 
             {actionError ? (
               <ThemedText variant="bodySmall" color="danger">
@@ -258,39 +261,76 @@ export default function SubscriptionScreen() {
             ) : null}
 
             {catalog.sandbox ? (
-              <ThemedText variant="bodySmall" color="secondary" style={styles.note}>
+              <Note variant="bodySmall" color="secondary">
                 Sandbox build — purchases are simulated and never charged.
-              </ThemedText>
+              </Note>
             ) : null}
           </>
         )}
-      </View>
-    </ScrollView>
+      </Body>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  body: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  cardColumn: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, gap: 10 },
-  cardText: { flex: 1, gap: 2 },
-  loadingCard: { flexDirection: 'row', justifyContent: 'center' },
-  actionCard: { paddingVertical: 12 },
-  planCard: { alignItems: 'center', gap: 4 },
-  planTitle: { fontWeight: '600' },
-  planHeader: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  benefitRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  currentBadge: { borderRadius: 10, borderWidth: 1.5, alignItems: 'center', paddingVertical: 8 },
-  subscribeButton: { borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, marginTop: 4 },
-  subscribeLabel: { fontWeight: '600' },
-  note: { lineHeight: 18, textAlign: 'center', marginTop: 8 },
-});
+/** Action row card with press feedback. */
+function ActionCard({
+  onPress,
+  disabled,
+  accessibilityLabel,
+  children,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  children: React.ReactNode;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Card
+      $pressed={pressed}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityLabel={accessibilityLabel}
+    >
+      {children}
+    </Card>
+  );
+}
+
+/** Subscribe button with press feedback and busy spinner. */
+function SubscribeRow({
+  label,
+  busy,
+  disabled,
+  onPress,
+  accessibilityLabel,
+}: {
+  label: string;
+  busy: boolean;
+  disabled: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const { colors } = useTheme();
+  return (
+    <SubscribeButton
+      $pressed={pressed}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityLabel={accessibilityLabel}
+    >
+      {busy ? (
+        <ActivityIndicator color={colors.textInverse} />
+      ) : (
+        <SubscribeLabel variant="body" color="inverse">
+          {label}
+        </SubscribeLabel>
+      )}
+    </SubscribeButton>
+  );
+}

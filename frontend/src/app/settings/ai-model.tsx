@@ -1,11 +1,37 @@
-import { useMemo } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  ActionButton,
+  ActionButtonText,
+  Badge,
+  BadgeText,
+  ErrorText,
+  FirstSection,
+  Footnote,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  NameLine,
+  OptionRow,
+  ProgressBlock,
+  ProgressLine,
+  RowLabel,
+  RowText,
+  RuntimeCard,
+  Screen,
+  Section,
+  SectionTitle,
+  TextButton,
+  TextButtonRow,
+  Track,
+  TrackFill,
+} from '@/app/settings/ai-model.styles';
 import {
   MODEL_CATALOG,
   formatRam,
@@ -15,36 +41,106 @@ import {
   type ModelDescriptor,
 } from '@/data/model-registry';
 import { VISION_MODEL_SIZE_LABEL } from '@/data/ml/model-files';
+import type { TranslationKey } from '@/i18n';
+import { useTranslation } from '@/i18n/hook';
 import { useAiModelStore } from '@/stores/ai-model';
 import { useLocalMlStore } from '@/stores/local-ml';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionBlock({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <View style={styles.section}>
-      <ThemedText variant="label" style={styles.sectionTitle}>
-        {title}
-      </ThemedText>
+    <Section>
+      <SectionTitle variant="label">{title}</SectionTitle>
       {children}
-    </View>
+    </Section>
   );
 }
 
-function capabilityLabel(cap: ReturnType<typeof getHardwareCapability>): string {
+function capabilityLabel(
+  cap: ReturnType<typeof getHardwareCapability>,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string
+): string {
   const parts: string[] = [];
   if (cap.totalRamBytes) parts.push(formatRam(cap.totalRamBytes));
   if (cap.cpuArch) parts.push(cap.cpuArch);
-  parts.push(cap.isPhysicalDevice ? 'Device' : 'Emulator');
+  parts.push(cap.isPhysicalDevice ? t('aiModel.device') : t('aiModel.emulator'));
   return parts.join(' · ');
 }
 
-function capabilityLine(model: ModelDescriptor): string {
+function capabilityLine(
+  model: ModelDescriptor,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string
+): string {
   const parts: string[] = [];
   if (model.sizeLabel) parts.push(model.sizeLabel);
-  if (model.minRamBytes) parts.push(`needs ${formatRam(model.minRamBytes)}`);
-  parts.push(model.capabilities.semanticSearch ? 'semantic search' : 'labels only');
+  if (model.minRamBytes) parts.push(t('aiModel.needsRam', { ram: formatRam(model.minRamBytes) }));
+  parts.push(model.capabilities.semanticSearch ? t('aiModel.semanticSearch') : t('aiModel.labelsOnly'));
   return parts.join(' · ');
+}
+
+/** Selectable model row with pressed/disabled feedback and a trailing check. */
+function SelectRow({
+  active,
+  disabled,
+  onPress,
+  accessibilityLabel,
+  children,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
+  children: React.ReactNode;
+}) {
+  const { colors } = useTheme();
+  const [pressed, setPressed] = useState(false);
+  return (
+    <OptionRow
+      $pressed={pressed}
+      $disabled={disabled}
+      disabled={disabled}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel}
+    >
+      {children}
+      <Icon
+        name={active ? 'checkmark-circle' : 'ellipse-outline'}
+        size={22}
+        color={active ? colors.accent : colors.textDisabled}
+      />
+    </OptionRow>
+  );
+}
+
+/** Pressable accent action with pressed/disabled states. */
+function ActionRow({
+  onPress,
+  disabled,
+  label,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <ActionButton
+      $pressed={pressed}
+      $disabled={disabled}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={() => {
+        haptic('light');
+        onPress();
+      }}
+      disabled={disabled}
+    >
+      <ActionButtonText variant="body">{label}</ActionButtonText>
+    </ActionButton>
+  );
 }
 
 /**
@@ -53,8 +149,9 @@ function capabilityLine(model: ModelDescriptor): string {
  * above — v1 runs CLIP on any device that downloads it, slower on low-RAM
  * hardware.
  */
-function RuntimeCard() {
+function RuntimeCardSection() {
   const { colors } = useTheme();
+  const { t, localeTag } = useTranslation();
   const ready = useLocalMlStore((s) => s.modelReady);
   const downloading = useLocalMlStore((s) => s.downloading);
   const downloadProgress = useLocalMlStore((s) => s.downloadProgress);
@@ -74,124 +171,94 @@ function RuntimeCard() {
 
   const confirmRedo = () => {
     haptic('light');
-    Alert.alert(
-      'Redo on-device labels?',
-      'Existing on-device labels are deleted and every photo is reprocessed offline.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Redo', style: 'destructive', onPress: () => void runLabeling(true) },
-      ]
-    );
+    Alert.alert(t('aiModel.redoTitle'), t('aiModel.redoBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('aiModel.redo'), style: 'destructive', onPress: () => void runLabeling(true) },
+    ]);
   };
 
   const confirmDelete = () => {
     haptic('light');
-    Alert.alert('Delete the downloaded model?', `Frees ${VISION_MODEL_SIZE_LABEL}. Labels stay.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: deleteModel },
+    Alert.alert(t('aiModel.deleteTitle'), t('aiModel.deleteBody', { size: VISION_MODEL_SIZE_LABEL }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: deleteModel },
     ]);
   };
 
   return (
-    <View style={styles.runtimeCard}>
-      <View style={[styles.row, { backgroundColor: colors.surface }]}>
+    <RuntimeCard>
+      <OptionRow $pressed={false}>
         <Icon name={ready ? 'checkmark-circle' : 'cloud-download-outline'} size={22} color={ready ? colors.accent : colors.icon} />
-        <View style={styles.rowText}>
-          <ThemedText variant="body" style={styles.rowLabel}>
-            CLIP ViT-B/32 (int8) — runs offline
-          </ThemedText>
+        <RowText>
+          <RowLabel variant="body">{t('aiModel.runtimeTitle')}</RowLabel>
           <ThemedText variant="bodySmall" color="secondary">
             {ready
-              ? 'Downloaded — ready to label photos on this device.'
-              : `Not downloaded (${VISION_MODEL_SIZE_LABEL}, one-time).`}
+              ? t('aiModel.downloaded')
+              : t('aiModel.notDownloaded', { size: VISION_MODEL_SIZE_LABEL })}
           </ThemedText>
           {downloading ? (
-            <View style={styles.progressBlock}>
-              <View style={styles.progressLine}>
+            <ProgressBlock>
+              <ProgressLine>
                 <ActivityIndicator size="small" color={colors.accent} />
                 <ThemedText variant="bodySmall" color="secondary">
                   {downloadProgress !== null
-                    ? `Downloading… ${Math.floor(downloadProgress * 100)}%`
-                    : 'Downloading…'}
+                    ? t('aiModel.downloadingPct', { percent: Math.floor(downloadProgress * 100) })
+                    : t('aiModel.downloading')}
                 </ThemedText>
-              </View>
-              <View style={[styles.track, { backgroundColor: colors.outline }]}>
-                <View
-                  style={[styles.fill, { backgroundColor: colors.accent, width: `${(downloadProgress ?? 0) * 100}%` }]}
-                />
-              </View>
-            </View>
+              </ProgressLine>
+              <Track>
+                <TrackFill $pct={(downloadProgress ?? 0) * 100} />
+              </Track>
+            </ProgressBlock>
           ) : null}
           {running ? (
-            <View style={styles.progressBlock}>
-              <View style={styles.progressLine}>
+            <ProgressBlock>
+              <ProgressLine>
                 <ActivityIndicator size="small" color={colors.accent} />
                 <ThemedText variant="bodySmall" color="secondary">
                   {progress && progress.total > 0
-                    ? `Labeling… ${pct}% (${progress.scanned.toLocaleString('en-US')} of ${progress.total.toLocaleString('en-US')})`
-                    : 'Labeling…'}
+                    ? t('settings.ai.labeling', {
+                        percent: pct,
+                        count: progress.scanned.toLocaleString(localeTag),
+                        total: progress.total.toLocaleString(localeTag),
+                      })
+                    : t('aiModel.labeling')}
                 </ThemedText>
-              </View>
-              <View style={[styles.track, { backgroundColor: colors.outline }]}>
-                <View style={[styles.fill, { backgroundColor: colors.accent, width: `${pct}%` }]} />
-              </View>
-            </View>
+              </ProgressLine>
+              <Track>
+                <TrackFill $pct={pct} />
+              </Track>
+            </ProgressBlock>
           ) : null}
           {error ? (
-            <ThemedText variant="bodySmall" color="danger" style={styles.errorText}>
+            <ErrorText variant="bodySmall" color="danger">
               {error}
-            </ThemedText>
+            </ErrorText>
           ) : null}
-        </View>
-      </View>
+        </RowText>
+      </OptionRow>
 
       {!ready && !downloading ? (
-        <Pressable
-          style={({ pressed }) => [styles.actionButton, { backgroundColor: colors.accent }, pressed && { opacity: 0.85 }]}
-          onPress={() => {
-            haptic('light');
-            void downloadModel();
-          }}
-        >
-          <ThemedText variant="body" style={styles.actionButtonText}>
-            Download model
-          </ThemedText>
-        </Pressable>
+        <ActionRow onPress={() => void downloadModel()} label={t('aiModel.download')} />
       ) : null}
       {ready && !downloading ? (
-        <Pressable
-          disabled={running}
-          style={({ pressed }) => [
-            styles.actionButton,
-            { backgroundColor: colors.accent },
-            running && styles.buttonDisabled,
-            pressed && { opacity: 0.85 },
-          ]}
-          onPress={() => {
-            haptic('light');
-            void runLabeling();
-          }}
-        >
-          <ThemedText variant="body" style={styles.actionButtonText}>
-            {running ? 'Labeling…' : 'Label photos now'}
-          </ThemedText>
-        </Pressable>
+        <ActionRow disabled={running} onPress={() => void runLabeling()} label={running ? t('aiModel.labeling') : t('aiModel.labelNow')} />
       ) : null}
       {ready && !running && !downloading ? (
-        <View style={styles.textButtonRow}>
-          <Pressable style={styles.textButton} onPress={confirmRedo}>
+        <TextButtonRow>
+          <TextButton onPress={confirmRedo}>
             <ThemedText variant="bodySmall" color="secondary">
-              Redo labels
+              {t('aiModel.redoLabels')}
             </ThemedText>
-          </Pressable>
-          <Pressable style={styles.textButton} onPress={confirmDelete}>
+          </TextButton>
+          <TextButton onPress={confirmDelete}>
             <ThemedText variant="bodySmall" color="danger">
-              Delete model
+              {t('aiModel.deleteModel')}
             </ThemedText>
-          </Pressable>
-        </View>
+          </TextButton>
+        </TextButtonRow>
       ) : null}
-    </View>
+    </RuntimeCard>
   );
 }
 
@@ -201,7 +268,8 @@ function RuntimeCard() {
  * cloud models arrive with the cloud service and stay listed but locked.
  */
 export default function AiModelScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const selectedModelId = useAiModelStore((s) => s.selectedModelId);
@@ -223,166 +291,103 @@ export default function AiModelScreen() {
     const active = activeId === model.id;
     const recommendedBadge = recommended?.id === model.id;
     return (
-      <Pressable
+      <SelectRow
         key={model.id}
+        active={active}
         disabled={!eligibility.ok}
-        accessibilityLabel={model.name}
-        style={({ pressed }) => [
-          styles.row,
-          { backgroundColor: colors.surface },
-          !eligibility.ok && styles.rowDisabled,
-          pressed && { opacity: 0.75 },
-        ]}
         onPress={() => select(model.id)}
+        accessibilityLabel={model.name}
       >
-        <View style={styles.rowText}>
-          <View style={styles.nameLine}>
-            <ThemedText variant="body" style={styles.rowLabel}>
-              {model.name}
-            </ThemedText>
+        <RowText>
+          <NameLine>
+            <RowLabel variant="body">{model.name}</RowLabel>
             {recommendedBadge ? (
-              <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}>
-                <ThemedText variant="bodySmall" color="accent" style={styles.badgeText}>
-                  Recommended
-                </ThemedText>
-              </View>
+              <Badge>
+                <BadgeText variant="bodySmall" color="accent">
+                  {t('aiModel.recommended')}
+                </BadgeText>
+              </Badge>
             ) : null}
-          </View>
+          </NameLine>
           <ThemedText variant="bodySmall" color="secondary">
-            {eligibility.ok ? capabilityLine(model) : eligibility.reason}
+            {eligibility.ok ? capabilityLine(model, t) : eligibility.reason}
           </ThemedText>
           <ThemedText variant="bodySmall" color="secondary">
             {model.description}
           </ThemedText>
-        </View>
-        <Icon
-          name={active ? 'checkmark-circle' : 'ellipse-outline'}
-          size={22}
-          color={active ? colors.accent : colors.textDisabled}
-        />
-      </Pressable>
+        </RowText>
+      </SelectRow>
     );
   };
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 40 }}
+    <Screen
+      contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[10] }}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.header}>
-        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
+      <Header>
+        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel={t('common.back')}>
           <Icon name="arrow-back" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          AI model
-        </ThemedText>
-        <View style={{ width: 24 }} />
-      </View>
+        <HeaderTitle variant="titleMedium">{t('settings.ai.modelTitle')}</HeaderTitle>
+        <HeaderSpacer />
+      </Header>
 
       <Animated.View entering={FadeInDown.duration(200)}>
-        <View style={[styles.row, { backgroundColor: colors.surface }]}>
-          <Icon name="hardware-chip-outline" size={22} color={colors.icon} />
-          <View style={styles.rowText}>
-            <ThemedText variant="body" style={styles.rowLabel}>
-              This device
-            </ThemedText>
-            <ThemedText variant="bodySmall" color="secondary">
-              {capabilityLabel(cap)}
-            </ThemedText>
-          </View>
-        </View>
+        <FirstSection>
+          <OptionRow $pressed={false}>
+            <Icon name="hardware-chip-outline" size={22} color={colors.icon} />
+            <RowText>
+              <RowLabel variant="body">{t('aiModel.thisDevice')}</RowLabel>
+              <ThemedText variant="bodySmall" color="secondary">
+                {capabilityLabel(cap, t)}
+              </ThemedText>
+            </RowText>
+          </OptionRow>
+        </FirstSection>
 
-        <Section title="On-device labeling">
-          <RuntimeCard />
-        </Section>
+        <SectionBlock title={t('aiModel.sectionOnDevice')}>
+          <RuntimeCardSection />
+        </SectionBlock>
 
         {recommended ? (
-          <Section title="On this device">
-            <Pressable
-              accessibilityLabel="Automatic"
-              style={({ pressed }) => [
-                styles.row,
-                { backgroundColor: colors.surface },
-                pressed && { opacity: 0.75 },
-              ]}
+          <SectionBlock title={t('aiModel.sectionLocal')}>
+            <SelectRow
+              active={selectedModelId === null}
               onPress={() => select(null)}
+              accessibilityLabel={t('aiModel.automatic')}
             >
-              <View style={styles.rowText}>
-                <View style={styles.nameLine}>
-                  <ThemedText variant="body" style={styles.rowLabel}>
-                    Automatic
-                  </ThemedText>
-                </View>
+              <RowText>
+                <NameLine>
+                  <RowLabel variant="body">{t('aiModel.automatic')}</RowLabel>
+                </NameLine>
                 <ThemedText variant="bodySmall" color="secondary">
-                  {`Follows our suggestion — currently ${recommended.name}`}
+                  {t('aiModel.automaticHint', { model: recommended.name })}
                 </ThemedText>
-              </View>
-              <Icon
-                name={selectedModelId === null ? 'checkmark-circle' : 'ellipse-outline'}
-                size={22}
-                color={selectedModelId === null ? colors.accent : colors.textDisabled}
-              />
-            </Pressable>
+              </RowText>
+            </SelectRow>
             {localModels.map(renderModelRow)}
-          </Section>
+          </SectionBlock>
         ) : (
-          <Section title="On this device">
-            <View style={[styles.row, { backgroundColor: colors.surface }]}>
+          <SectionBlock title={t('aiModel.sectionLocal')}>
+            <OptionRow $pressed={false}>
               <Icon name="cloud-offline-outline" size={22} color={colors.iconInactive} />
-              <View style={styles.rowText}>
-                <ThemedText variant="body" style={styles.rowLabel}>
-                  Local models unavailable
-                </ThemedText>
+              <RowText>
+                <RowLabel variant="body">{t('aiModel.localUnavailable')}</RowLabel>
                 <ThemedText variant="bodySmall" color="secondary">
-                  This device can&apos;t run on-device models — classification will use the cloud
-                  when it&apos;s available.
+                  {t('aiModel.localUnavailableBody')}
                 </ThemedText>
-              </View>
-            </View>
-          </Section>
+              </RowText>
+            </OptionRow>
+          </SectionBlock>
         )}
 
-        <Section title="Cloud">{cloudModels.map(renderModelRow)}</Section>
+        <SectionBlock title={t('aiModel.sectionCloud')}>{cloudModels.map(renderModelRow)}</SectionBlock>
 
-        <ThemedText variant="bodySmall" color="secondary" style={styles.footnote}>
-          Your choice applies when on-device AI ships in a future update. Local models never send
-          your photos anywhere.
-        </ThemedText>
+        <Footnote variant="bodySmall" color="secondary">
+          {t('aiModel.footnote')}
+        </Footnote>
       </Animated.View>
-    </ScrollView>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  section: { paddingHorizontal: 16, marginTop: 20 },
-  sectionTitle: { marginBottom: 10 },
-  runtimeCard: { gap: 10 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  rowDisabled: { opacity: 0.55 },
-  rowLabel: { flex: 1 },
-  rowText: { flex: 1, gap: 2 },
-  nameLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  badge: { borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
-  badgeText: { fontSize: 10, fontWeight: '600' },
-  footnote: { marginTop: 20, paddingHorizontal: 32, lineHeight: 18, textAlign: 'center' },
-  progressBlock: { gap: 8, paddingVertical: 4 },
-  progressLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  track: { height: 6, borderRadius: 3, overflow: 'hidden' },
-  fill: { height: 6, borderRadius: 3 },
-  errorText: { lineHeight: 18 },
-  actionButton: { borderRadius: 14, alignItems: 'center', paddingVertical: 13 },
-  actionButtonText: { color: '#FFFFFF', fontWeight: '600' },
-  buttonDisabled: { opacity: 0.55 },
-  textButtonRow: { flexDirection: 'row', justifyContent: 'center', gap: 24 },
-  textButton: { paddingVertical: 4 },
-});

@@ -1,11 +1,30 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { FadeInDown } from 'react-native-reanimated';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Body,
+  Field,
+  GridWrap,
+  Header,
+  HeaderInset,
+  HeaderSpacer,
+  HeaderTitle,
+  Intro,
+  IntroText,
+  IntroTitle,
+  PrimaryButton,
+  PrimaryButtonLabel,
+  Screen,
+  StatusRow,
+  StatusText,
+  StatusTitle,
+  TextButton,
+} from '@/app/settings/encrypted-mode.styles';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import { loadEncryptedGridAssets, resolveEncryptedOriginal } from '@/data/encrypted-mode-repository';
 import { isEncryptedModeSupported } from '@/data/encrypted-crypto';
@@ -21,7 +40,7 @@ import { haptic } from '@/utils/haptics';
  * password. Browsing uses decrypted previews; originals decrypt on demand.
  */
 export default function EncryptedModeScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const supported = isEncryptedModeSupported();
@@ -146,38 +165,34 @@ export default function EncryptedModeScreen() {
       : null;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={{ paddingTop: insets.top + 8 }}>
-        <View style={styles.header}>
+    <Screen>
+      <HeaderInset $insetTop={insets.top + space[2]}>
+        <Header>
           <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
             <Icon name="arrow-back" size={24} />
           </Pressable>
-          <ThemedText variant="titleMedium" style={styles.headerTitle}>
-            Encrypted mode
-          </ThemedText>
-          <View style={{ width: 24 }} />
-        </View>
-      </View>
+          <HeaderTitle variant="titleMedium">Encrypted mode</HeaderTitle>
+          <HeaderSpacer />
+        </Header>
+      </HeaderInset>
 
       {!supported ? (
-        <ScrollView contentContainerStyle={styles.body}>
-          <Animated.View entering={FadeInDown.duration(200)} style={styles.intro}>
+        <Body contentContainerStyle={contentBody}>
+          <Intro entering={FadeInDown.duration(200)}>
             <Icon name="lock-closed-outline" size={28} color={colors.textDisabled} />
-            <ThemedText variant="body" style={styles.introTitle}>
-              Not available here
-            </ThemedText>
-            <ThemedText variant="bodySmall" color="secondary" style={styles.introText}>
+            <IntroTitle variant="body">Not available here</IntroTitle>
+            <IntroText variant="bodySmall" color="secondary">
               Encrypted mode needs the native crypto module, which the Expo Go preview client does
               not include. Run a development build (expo run:android) to use it.
-            </ThemedText>
-          </Animated.View>
-        </ScrollView>
+            </IntroText>
+          </Intro>
+        </Body>
       ) : mode.migrating || busy ? (
-        <ScrollView contentContainerStyle={styles.body}>
+        <Body contentContainerStyle={contentBody}>
           <ActivityIndicator size="large" color={colors.accent} />
-          <ThemedText variant="body" style={styles.statusTitle}>
+          <StatusTitle variant="body">
             {mode.progress?.phase === 'decrypting' ? 'Restoring your photos…' : 'Encrypting your photos…'}
-          </ThemedText>
+          </StatusTitle>
           {progressPercent !== null ? (
             <ThemedText variant="bodySmall" color="secondary">
               {progressPercent}% · {mode.progress!.processed + mode.progress!.failed} of {mode.progress!.total}
@@ -187,29 +202,25 @@ export default function EncryptedModeScreen() {
               Keep the app open until this finishes.
             </ThemedText>
           )}
-        </ScrollView>
+        </Body>
       ) : !mode.enabled ? (
-        <ScrollView contentContainerStyle={styles.body}>
-          <Animated.View entering={FadeInDown.duration(200)} style={styles.intro}>
+        <Body contentContainerStyle={contentBody}>
+          <Intro entering={FadeInDown.duration(200)}>
             <Icon name="lock-closed-outline" size={28} color={colors.accent} />
-            <ThemedText variant="body" style={styles.introTitle}>
-              Encrypt your photos on this device
-            </ThemedText>
-            <ThemedText variant="bodySmall" color="secondary" style={styles.introText}>
+            <IntroTitle variant="body">Encrypt your photos on this device</IntroTitle>
+            <IntroText variant="bodySmall" color="secondary">
               Your photos are removed from the system gallery and stored encrypted (AES-256). Browse
               them inside the app with small previews; opening a photo asks for your password and
               decrypts it only for that session. Photos only for now — videos stay untouched.
-            </ThemedText>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.outline }]}
+            </IntroText>
+            <Field
               placeholder="Password"
               placeholderTextColor={colors.textDisabled}
               secureTextEntry
               value={password}
               onChangeText={setPassword}
             />
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.outline }]}
+            <Field
               placeholder="Repeat password"
               placeholderTextColor={colors.textDisabled}
               secureTextEntry
@@ -221,30 +232,19 @@ export default function EncryptedModeScreen() {
                 {mode.lastError}
               </ThemedText>
             ) : null}
-            <Pressable
-              style={({ pressed }) => [styles.button, { backgroundColor: colors.accent }, pressed && { opacity: 0.85 }]}
-              onPress={() => void enable()}
-              accessibilityLabel="Enable encrypted mode"
-            >
-              <ThemedText variant="body" style={styles.buttonLabel}>
-                Encrypt my photos
-              </ThemedText>
-            </Pressable>
-          </Animated.View>
-        </ScrollView>
+            <AccentButton onPress={() => void enable()} accessibilityLabel="Enable encrypted mode" label="Encrypt my photos" />
+          </Intro>
+        </Body>
       ) : !mode.unlocked ? (
-        <ScrollView contentContainerStyle={styles.body}>
-          <Animated.View entering={FadeInDown.duration(200)} style={styles.intro}>
+        <Body contentContainerStyle={contentBody}>
+          <Intro entering={FadeInDown.duration(200)}>
             <Icon name="lock-closed-outline" size={28} color={colors.accent} />
-            <ThemedText variant="body" style={styles.introTitle}>
-              Your photos are encrypted
-            </ThemedText>
-            <ThemedText variant="bodySmall" color="secondary" style={styles.introText}>
+            <IntroTitle variant="body">Your photos are encrypted</IntroTitle>
+            <IntroText variant="bodySmall" color="secondary">
               Enter your password to browse them. The password is not recoverable — without it the
               photos cannot be decrypted.
-            </ThemedText>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.outline }]}
+            </IntroText>
+            <Field
               placeholder="Password"
               placeholderTextColor={colors.textDisabled}
               secureTextEntry
@@ -256,28 +256,20 @@ export default function EncryptedModeScreen() {
                 {mode.lastError}
               </ThemedText>
             ) : null}
-            <Pressable
-              style={({ pressed }) => [styles.button, { backgroundColor: colors.accent }, pressed && { opacity: 0.85 }]}
-              onPress={() => void unlock()}
-              accessibilityLabel="Unlock encrypted photos"
-            >
-              <ThemedText variant="body" style={styles.buttonLabel}>
-                Unlock
-              </ThemedText>
-            </Pressable>
-            <Pressable style={styles.textButton} onPress={disable} accessibilityLabel="Disable encrypted mode">
+            <AccentButton onPress={() => void unlock()} accessibilityLabel="Unlock encrypted photos" label="Unlock" />
+            <TextButton onPress={disable} accessibilityLabel="Disable encrypted mode">
               <ThemedText variant="bodySmall" color="secondary">
                 Disable encrypted mode (decrypt everything back)
               </ThemedText>
-            </Pressable>
-          </Animated.View>
-        </ScrollView>
+            </TextButton>
+          </Intro>
+        </Body>
       ) : (
-        <View style={styles.gridWrap}>
-          <View style={[styles.statusRow, { borderBottomColor: colors.outline }]}>
-            <ThemedText variant="bodySmall" color="secondary" style={styles.statusText}>
+        <GridWrap>
+          <StatusRow>
+            <StatusText variant="bodySmall" color="secondary">
               Unlocked · {assets.length} encrypted photo{assets.length === 1 ? '' : 's'}
-            </ThemedText>
+            </StatusText>
             <Pressable
               hitSlop={8}
               onPress={() => {
@@ -290,35 +282,40 @@ export default function EncryptedModeScreen() {
                 Lock
               </ThemedText>
             </Pressable>
-          </View>
+          </StatusRow>
           <PhotoGrid assets={unlocked ? assets : []} context="gallery" onCellPress={onCellPress} stickyMonths={false} />
-        </View>
+        </GridWrap>
       )}
-    </View>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  body: { padding: 20, gap: 14 },
-  intro: { gap: 14, alignItems: 'flex-start' },
-  introTitle: { fontWeight: '600' },
-  introText: { lineHeight: 20 },
-  input: { width: '100%', borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 },
-  button: { borderRadius: 14, paddingHorizontal: 20, paddingVertical: 13, alignSelf: 'stretch', alignItems: 'center' },
-  buttonLabel: { color: '#FFFFFF', fontWeight: '600' },
-  textButton: { alignSelf: 'center', paddingVertical: 6 },
-  statusTitle: { fontWeight: '600' },
-  gridWrap: { flex: 1 },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  statusText: { flex: 1 },
-});
+/** Shared scroll content padding/gap (same on every state branch). */
+const makeBodyContent = (space: readonly number[]) => ({ padding: space[5], gap: space[3] });
+
+/** Accent action button with pressed feedback. */
+function AccentButton({
+  onPress,
+  label,
+  accessibilityLabel,
+}: {
+  onPress: () => void;
+  label: string;
+  accessibilityLabel: string;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <PrimaryButton
+      $pressed={pressed}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={() => {
+        haptic('light');
+        onPress();
+      }}
+      accessibilityLabel={accessibilityLabel}
+    >
+      <PrimaryButtonLabel variant="body">{label}</PrimaryButtonLabel>
+    </PrimaryButton>
+  );
+}

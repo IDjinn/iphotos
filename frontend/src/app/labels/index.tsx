@@ -1,12 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  FilterBar,
+  FilterInput,
+  FilterWrap,
+  FooterNote,
+  Header,
+  HeaderTitle,
+  LabelRow,
+  ProgressWrap,
+  RowLabel,
+  Screen,
+  StatusText,
+  Track,
+  TrackFill,
+} from '@/app/labels/index.styles';
 import { listAllLabels, type LabelSummary } from '@/data/labels-repository';
+import { useTranslation } from '@/i18n/hook';
 import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useClassificationStore } from '@/stores/classification';
 import { useLocalMlStore } from '@/stores/local-ml';
@@ -25,9 +41,10 @@ function displayLabel(label: string): string {
  * indexing — folder heuristics plus the AI endpoint when one is configured.
  */
 export default function LabelsScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, localeTag } = useTranslation();
 
   const [filter, setFilter] = useState('');
   const [labels, setLabels] = useState<LabelSummary[]>(() => listAllLabels());
@@ -95,154 +112,140 @@ export default function LabelsScreen() {
   const barPct = aiRunning ? aiPct : mlRunning ? mlPct : folderPct;
 
   const statusText = aiRunning
-    ? `AI labeling… ${aiPct}% (${aiProgress?.scanned.toLocaleString('en-US')} of ${aiProgress?.total.toLocaleString('en-US')})`
+    ? t('labelsScreen.statusAi', {
+        percent: aiPct,
+        count: (aiProgress?.scanned ?? 0).toLocaleString(localeTag),
+        total: (aiProgress?.total ?? 0).toLocaleString(localeTag),
+      })
     : mlRunning
-      ? `On-device labeling… ${mlPct}% (${mlProgress?.scanned.toLocaleString('en-US')} of ${mlProgress?.total.toLocaleString('en-US')})`
+      ? t('labelsScreen.statusOnDevice', {
+          percent: mlPct,
+          count: (mlProgress?.scanned ?? 0).toLocaleString(localeTag),
+          total: (mlProgress?.total ?? 0).toLocaleString(localeTag),
+        })
       : folderRunning
         ? folderProgress && folderProgress.total > 0
-          ? `Indexing folders… ${folderPct}%`
-          : 'Indexing folders…'
+          ? t('labelsScreen.statusFoldersPct', { percent: folderPct })
+          : t('labelsScreen.statusFolders')
         : null;
 
   return (
-    <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + 2 }]}>
-        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
+    <Screen>
+      <Header $insetTop={insets.top + space[1]}>
+        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel={t('common.back')}>
           <Icon name="arrow-back" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          Labels
-        </ThemedText>
-        <Pressable hitSlop={12} onPress={reload} disabled={running} accessibilityLabel="Reload indexing">
+        <HeaderTitle variant="titleMedium">{t('labelsScreen.title')}</HeaderTitle>
+        <Pressable hitSlop={12} onPress={reload} disabled={running} accessibilityLabel={t('labelsScreen.reloadA11y')}>
           {running ? (
             <ActivityIndicator size="small" color={colors.accent} />
           ) : (
             <Icon name="refresh" size={22} />
           )}
         </Pressable>
-      </View>
+      </Header>
 
-      <View style={styles.filterWrap}>
-        <View style={[styles.filterBar, { backgroundColor: colors.surface }]}>
+      <FilterWrap>
+        <FilterBar>
           <Icon name="search-outline" size={18} color={colors.textSecondary} />
-          <TextInput
+          <FilterInput
             value={filter}
             onChangeText={setFilter}
-            placeholder="Filter labels"
+            placeholder={t('labelsScreen.filterPlaceholder')}
             placeholderTextColor={colors.textDisabled}
-            style={[styles.filterInput, { color: colors.text }]}
             autoCorrect={false}
           />
           {filter.length > 0 ? (
-            <Pressable hitSlop={12} onPress={() => setFilter('')} accessibilityLabel="Clear label filter">
+            <Pressable hitSlop={12} onPress={() => setFilter('')} accessibilityLabel={t('labelsScreen.clearFilterA11y')}>
               <Icon name="close-circle" size={16} color={colors.textSecondary} />
             </Pressable>
           ) : null}
-        </View>
-      </View>
+        </FilterBar>
+      </FilterWrap>
 
       {statusText ? (
-        <View style={styles.progressWrap}>
-          <ThemedText variant="bodySmall" color="secondary" style={styles.statusText}>
+        <ProgressWrap>
+          <StatusText variant="bodySmall" color="secondary">
             {statusText}
-          </ThemedText>
-          <View style={[styles.track, { backgroundColor: colors.outline }]}>
-            <View style={[styles.fill, { backgroundColor: colors.accent, width: `${barPct}%` }]} />
-          </View>
-        </View>
+          </StatusText>
+          <Track>
+            <TrackFill $pct={barPct} />
+          </Track>
+        </ProgressWrap>
       ) : null}
 
       {labels.length === 0 ? (
         <EmptyState
           icon="pricetag-outline"
-          title="No labels yet"
+          title={t('labelsScreen.emptyTitle')}
           subtitle={
             aiConfigured || mlAvailable
-              ? 'Tap the reload icon above to label your photos.'
-              : 'Labels come from your device folders. For smart labels (beach, dog, food…), download the on-device model in Settings → AI model.'
+              ? t('labelsScreen.emptyHintReload')
+              : t('labelsScreen.emptyHintSetup')
           }
         />
       ) : shown.length === 0 ? (
-        <EmptyState icon="pricetag-outline" title="No labels match" subtitle="Try another word." />
+        <EmptyState
+          icon="pricetag-outline"
+          title={t('labelsScreen.noMatchTitle')}
+          subtitle={t('labelsScreen.noMatchSubtitle')}
+        />
       ) : (
         <FlatList
           data={shown}
           keyExtractor={(item) => item.label}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, gap: 8 }}
           renderItem={({ item }) => (
-            <Pressable
-              style={({ pressed }) => [styles.row, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
-              onPress={() => {
-                haptic('light');
-                router.push({ pathname: '/label/[label]', params: { label: item.label } });
-              }}
-              accessibilityLabel={`Open label ${displayLabel(item.label)}`}
-            >
-              <Icon name="pricetag-outline" size={20} color={colors.icon} />
-              <ThemedText variant="body" style={styles.rowLabel} numberOfLines={1}>
-                {displayLabel(item.label)}
-              </ThemedText>
-              <ThemedText variant="bodySmall" color="secondary">
-                {item.count.toLocaleString('en-US')}
-              </ThemedText>
-              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-            </Pressable>
+            <LabelRowItem
+              label={item.label}
+              count={item.count}
+              onPress={() =>
+                router.push({ pathname: '/label/[label]', params: { label: item.label } })
+              }
+            />
           )}
           ListFooterComponent={
-            <View>
+            <>
               {lastError ? (
-                <ThemedText variant="bodySmall" color="danger" style={styles.footerError}>
+                <FooterNote variant="bodySmall" color="danger">
                   {lastError}
-                </ThemedText>
+                </FooterNote>
               ) : null}
-              <ThemedText variant="bodySmall" color="secondary" style={styles.footer}>
-                Labels come from your device folders and — when configured — from AI labeling
-                (Settings → AI labeling).
-              </ThemedText>
-            </View>
+              <FooterNote variant="bodySmall" color="secondary">
+                {t('labelsScreen.footerNote')}
+              </FooterNote>
+            </>
           }
         />
       )}
-    </View>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    height: 56,
-  },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  filterWrap: { paddingHorizontal: 16, paddingBottom: 12 },
-  filterBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: 22,
-    paddingHorizontal: 12,
-    height: 40,
-  },
-  filterInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
-  progressWrap: { paddingHorizontal: 16, paddingBottom: 12, gap: 6 },
-  statusText: { textAlign: 'center' },
-  track: { height: 5, borderRadius: 2.5, overflow: 'hidden' },
-  fill: { height: 5, borderRadius: 2.5 },
-  listContent: { paddingHorizontal: 16, paddingBottom: 32, gap: 8 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-  },
-  rowLabel: { flex: 1 },
-  footerError: { textAlign: 'center', paddingTop: 14, lineHeight: 18 },
-  footer: { textAlign: 'center', paddingTop: 14, lineHeight: 18 },
-});
+function LabelRowItem({ label, count, onPress }: { label: string; count: number; onPress: () => void }) {
+  const { colors } = useTheme();
+  const { t, localeTag } = useTranslation();
+  const [pressed, setPressed] = useState(false);
+  return (
+    <LabelRow
+      $pressed={pressed}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={() => {
+        haptic('light');
+        onPress();
+      }}
+      accessibilityLabel={t('search.openLabel', { label: displayLabel(label) })}
+    >
+      <Icon name="pricetag-outline" size={20} color={colors.icon} />
+      <RowLabel variant="body" numberOfLines={1}>
+        {displayLabel(label)}
+      </RowLabel>
+      <ThemedText variant="bodySmall" color="secondary">
+        {count.toLocaleString(localeTag)}
+      </ThemedText>
+      <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+    </LabelRow>
+  );
+}

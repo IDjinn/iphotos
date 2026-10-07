@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Icon } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
 import { SelectionBar } from '@/components/SelectionBar';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Center,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  Meta,
+  Screen,
+} from '@/app/label/[label].styles';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import { getLabelAssetIds } from '@/data/labels-repository';
 import { fetchAssetsByIds } from '@/data/media-repository';
@@ -60,34 +68,32 @@ export default function LabelAlbumScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.center, { paddingTop: insets.top }]}>
+      <Center $insetTop={insets.top}>
         <ActivityIndicator size="large" color={colors.accent} />
-      </View>
+      </Center>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <Screen $insetTop={insets.top}>
       {selectionActive ? (
-        <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} style={styles.header}>
+        <Header entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)}>
           <Pressable hitSlop={12} onPress={() => useSelectionStore.getState().end()} accessibilityLabel="Exit selection">
             <Icon name="close" size={24} />
           </Pressable>
-          <ThemedText variant="titleMedium" style={styles.headerTitle}>
-            {selectedCount} selected
-          </ThemedText>
-          <View style={{ width: 24 }} />
-        </Animated.View>
+          <HeaderTitle variant="titleMedium">{selectedCount} selected</HeaderTitle>
+          <HeaderSpacer />
+        </Header>
       ) : (
-        <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} style={styles.header}>
+        <Header entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)}>
           <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
             <Icon name="arrow-back" size={24} />
           </Pressable>
-          <ThemedText variant="titleMedium" style={styles.headerTitle} numberOfLines={1}>
+          <HeaderTitle variant="titleMedium" numberOfLines={1}>
             {title}
-          </ThemedText>
-          <View style={{ width: 24 }} />
-        </Animated.View>
+          </HeaderTitle>
+          <HeaderSpacer />
+        </Header>
       )}
 
       {assets.length === 0 ? (
@@ -98,11 +104,11 @@ export default function LabelAlbumScreen() {
         />
       ) : (
         <>
-          <View style={styles.meta}>
+          <Meta>
             <ThemedText variant="bodySmall" color="secondary">
               {assets.length.toLocaleString('en-US')} item{assets.length === 1 ? '' : 's'}
             </ThemedText>
-          </View>
+          </Meta>
           <PhotoGrid assets={assets} context="search" stickyMonths={false} />
         </>
       )}
@@ -120,7 +126,7 @@ export default function LabelAlbumScreen() {
       ) : null}
 
       <MiniToast message={toast} onDismissed={() => setToast(null)} />
-    </View>
+    </Screen>
   );
 
   function confirmDelete() {
@@ -141,18 +147,3 @@ export default function LabelAlbumScreen() {
     );
   }
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    height: 52,
-  },
-  headerTitle: { flex: 1, fontWeight: '600' },
-  meta: { paddingHorizontal: 16, paddingBottom: 8 },
-});

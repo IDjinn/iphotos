@@ -1,17 +1,35 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Icon } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
 import { PinDots, PinPad } from '@/components/PinPad';
-import { PressableScale } from '@/components/PressableScale';
 import { SelectionBar } from '@/components/SelectionBar';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  ButtonLabel,
+  Center,
+  Content,
+  Flow,
+  FlowText,
+  FlowTitle,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  LockIconWrap,
+  PrimaryButton,
+  Screen,
+  SecondaryButton,
+  UpgradeButton,
+  UpgradeButtonLabel,
+  UpgradeCard,
+  UpgradeText,
+} from '@/app/locked/index.styles';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import { fetchAssetsByIds } from '@/data/media-repository';
 import { getLockedIdList, readLockedConfig, setupLockedFolder, verifyPin, type LockedFolderConfig } from '@/data/locked-repository';
@@ -217,73 +235,67 @@ export default function LockedScreen() {
 
   // ----- Render helpers -----
   const shell = (children: React.ReactNode) => (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <Screen $insetTop={insets.top}>
+      <Header>
         <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Close">
           <Icon name="close" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          Locked Folder
-        </ThemedText>
-        <View style={{ width: 24 }} />
-      </View>
+        <HeaderTitle variant="titleMedium">Locked Folder</HeaderTitle>
+        <HeaderSpacer />
+      </Header>
       {children}
       <MiniToast message={toast} onDismissed={() => setToast(null)} />
-    </View>
+    </Screen>
   );
 
   if (!supported) {
     return shell(
-      <Animated.View entering={FadeInDown.springify().dampingRatio(0.85)} style={styles.flow}>
-        <View style={styles.lockIconWrap}>
+      <Flow entering={FadeInDown.springify().dampingRatio(0.85)}>
+        <LockIconWrap $soft={false}>
           <Icon name="lock-closed-outline" size={34} color={colors.textDisabled} />
-        </View>
-        <ThemedText variant="title" style={styles.flowTitle}>
-          Not available here
-        </ThemedText>
-        <ThemedText variant="body" color="secondary" style={styles.flowText}>
+        </LockIconWrap>
+        <FlowTitle variant="title">Not available here</FlowTitle>
+        <FlowText variant="body" color="secondary">
           The Locked Folder needs the native crypto module, which the Expo Go preview client does not
           include. Run a development build (expo run:android) to use it.
-        </ThemedText>
-      </Animated.View>
+        </FlowText>
+      </Flow>
     );
   }
 
   if (stage === 'loading') {
     return (
-      <View style={[styles.center, { paddingTop: insets.top }]}>
+      <Center $insetTop={insets.top}>
         <ActivityIndicator size="large" color={colors.accent} />
-      </View>
+      </Center>
     );
   }
 
   if (stage === 'setup-intro') {
     return shell(
-      <Animated.View entering={FadeInDown.springify().dampingRatio(0.85)} style={styles.flow}>
-        <View style={[styles.lockIconWrap, { backgroundColor: colors.accentSoft }]}>
+      <Flow entering={FadeInDown.springify().dampingRatio(0.85)}>
+        <LockIconWrap $soft>
           <Icon name="lock-closed" size={34} color={colors.accent} />
-        </View>
-        <ThemedText variant="title" style={styles.flowTitle}>
-          Set up your Locked Folder
-        </ThemedText>
-        <ThemedText variant="body" color="secondary" style={styles.flowText}>
+        </LockIconWrap>
+        <FlowTitle variant="title">Set up your Locked Folder</FlowTitle>
+        <FlowText variant="body" color="secondary">
           Move photos out of your device gallery behind a PIN and biometric unlock. Items are stored encrypted — only visible here, inside iPhotos.
-        </ThemedText>
-        <PressableScale style={[styles.primaryButton, { backgroundColor: colors.accent }]} onPress={startSetup}>
-          <ThemedText variant="body" color="inverse" style={styles.buttonLabel}>
+        </FlowText>
+        <PrimaryButton onPress={startSetup}>
+          <ButtonLabel variant="body" color="inverse">
             Choose a PIN
-          </ThemedText>
-        </PressableScale>
-      </Animated.View>
+          </ButtonLabel>
+        </PrimaryButton>
+      </Flow>
     );
   }
 
   if (stage === 'setup-pin' || stage === 'setup-confirm') {
     return shell(
-      <Animated.View entering={FadeIn.duration(150)} style={styles.flow}>
-        <ThemedText variant="titleMedium" style={styles.flowTitle}>
+      <Flow entering={FadeIn.duration(150)}>
+        <FlowTitle variant="titleMedium">
           {stage === 'setup-pin' ? 'Enter a 4-digit PIN' : 'Confirm your PIN'}
-        </ThemedText>
+        </FlowTitle>
         <PinDots length={pin.length} maxLength={PIN_LENGTH} />
         <PinPad
           length={pin.length}
@@ -299,65 +311,59 @@ export default function LockedScreen() {
             </ThemedText>
           </Pressable>
         ) : null}
-      </Animated.View>
+      </Flow>
     );
   }
 
   if (stage === 'setup-biometric') {
     return shell(
-      <Animated.View entering={FadeInDown.duration(200)} style={styles.flow}>
-        <View style={[styles.lockIconWrap, { backgroundColor: colors.accentSoft }]}>
+      <Flow entering={FadeInDown.duration(200)}>
+        <LockIconWrap $soft>
           <Icon name="finger-print-outline" size={34} color={colors.accent} />
-        </View>
-        <ThemedText variant="title" style={styles.flowTitle}>
-          Enable biometric unlock?
-        </ThemedText>
-        <ThemedText variant="body" color="secondary" style={styles.flowText}>
+        </LockIconWrap>
+        <FlowTitle variant="title">Enable biometric unlock?</FlowTitle>
+        <FlowText variant="body" color="secondary">
           Unlock faster with Face/fingerprint recognition. You can always use your PIN.
-        </ThemedText>
-        <PressableScale style={[styles.primaryButton, { backgroundColor: colors.accent }]} onPress={() => void enableBiometric(true)}>
-          <ThemedText variant="body" color="inverse" style={styles.buttonLabel}>
+        </FlowText>
+        <PrimaryButton onPress={() => void enableBiometric(true)}>
+          <ButtonLabel variant="body" color="inverse">
             Enable
-          </ThemedText>
-        </PressableScale>
-        <PressableScale style={styles.secondaryButton} onPress={() => void enableBiometric(false)}>
+          </ButtonLabel>
+        </PrimaryButton>
+        <SecondaryButton onPress={() => void enableBiometric(false)}>
           <ThemedText variant="body" color="secondary">
             Skip for now
           </ThemedText>
-        </PressableScale>
-      </Animated.View>
+        </SecondaryButton>
+      </Flow>
     );
   }
 
   if (stage === 'gate' && !unlocked) {
     return shell(
-      <Animated.View entering={FadeInDown.springify().dampingRatio(0.85)} style={styles.flow}>
-        <View style={[styles.lockIconWrap, { backgroundColor: colors.accentSoft }]}>
+      <Flow entering={FadeInDown.springify().dampingRatio(0.85)}>
+        <LockIconWrap $soft>
           <Icon name="lock-closed-outline" size={34} color={colors.accent} />
-        </View>
-        <ThemedText variant="title" style={styles.flowTitle}>
-          Locked Folder is locked
-        </ThemedText>
-        <PressableScale style={[styles.primaryButton, { backgroundColor: colors.accent }]} onPress={() => void tryBiometric()}>
-          <ThemedText variant="body" color="inverse" style={styles.buttonLabel}>
+        </LockIconWrap>
+        <FlowTitle variant="title">Locked Folder is locked</FlowTitle>
+        <PrimaryButton onPress={() => void tryBiometric()}>
+          <ButtonLabel variant="body" color="inverse">
             Unlock with biometrics
-          </ThemedText>
-        </PressableScale>
+          </ButtonLabel>
+        </PrimaryButton>
         <Pressable hitSlop={12} onPress={() => setStage('gate-pin')}>
           <ThemedText variant="bodySmall" color="accent">
             Use PIN instead
           </ThemedText>
         </Pressable>
-      </Animated.View>
+      </Flow>
     );
   }
 
   if (stage === 'gate-pin' && !unlocked) {
     return shell(
-      <Animated.View entering={FadeIn.duration(150)} style={styles.flow}>
-        <ThemedText variant="titleMedium" style={styles.flowTitle}>
-          Enter your PIN
-        </ThemedText>
+      <Flow entering={FadeIn.duration(150)}>
+        <FlowTitle variant="titleMedium">Enter your PIN</FlowTitle>
         <PinDots length={pin.length} maxLength={PIN_LENGTH} error={false} />
         <PinPad
           length={pin.length}
@@ -373,17 +379,17 @@ export default function LockedScreen() {
             </ThemedText>
           </Pressable>
         ) : null}
-      </Animated.View>
+      </Flow>
     );
   }
 
   // ----- Unlocked: the hidden grid -----
   return shell(
-    <View style={styles.content}>
+    <Content>
       {loading ? (
-        <View style={styles.center}>
+        <Center>
           <ActivityIndicator size="large" color={colors.accent} />
-        </View>
+        </Center>
       ) : assets.length === 0 && legacyCount === 0 ? (
         <EmptyState
           icon="lock-closed-outline"
@@ -391,28 +397,28 @@ export default function LockedScreen() {
           subtitle="Long-press photos on the Photos tab, then use the lock action to move them here."
         />
       ) : (
-        <View style={styles.content}>
+        <Content>
           {legacyCount > 0 ? (
-            <View style={[styles.upgradeCard, { backgroundColor: colors.surface }]}>
+            <UpgradeCard>
               <Icon name="shield-half-outline" size={20} color={colors.accent} />
-              <View style={styles.upgradeText}>
+              <UpgradeText>
                 <ThemedText variant="bodySmall" color="secondary">
                   {migrating
                     ? `Encrypting… ${migrateProgress.done}/${migrateProgress.total}`
                     : `${legacyCount} item${legacyCount === 1 ? '' : 's'} still use old hiding — visible in your device gallery.`}
                 </ThemedText>
                 {!migrating ? (
-                  <PressableScale style={[styles.upgradeButton, { backgroundColor: colors.accent }]} onPress={runMigration}>
-                    <ThemedText variant="bodySmall" color="inverse" style={styles.upgradeButtonLabel}>
+                  <UpgradeButton onPress={runMigration}>
+                    <UpgradeButtonLabel variant="bodySmall" color="inverse">
                       Encrypt now
-                    </ThemedText>
-                  </PressableScale>
+                    </UpgradeButtonLabel>
+                  </UpgradeButton>
                 ) : null}
-              </View>
-            </View>
+              </UpgradeText>
+            </UpgradeCard>
           ) : null}
           <PhotoGrid assets={assets} context="locked" stickyMonths={false} />
-        </View>
+        </Content>
       )}
 
       {selectionActive ? (
@@ -443,34 +449,6 @@ export default function LockedScreen() {
           ]}
         />
       ) : null}
-    </View>
+    </Content>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  flow: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 18 },
-  lockIconWrap: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center' },
-  upgradeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    marginBottom: 10,
-  },
-  upgradeText: { flex: 1, gap: 8 },
-  upgradeButton: { alignSelf: 'flex-start', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7 },
-  upgradeButtonLabel: { fontWeight: '600' },
-  flowTitle: { textAlign: 'center' },
-  flowText: { textAlign: 'center', maxWidth: 300, lineHeight: 20 },
-  primaryButton: { borderRadius: 24, paddingHorizontal: 32, paddingVertical: 13 },
-  secondaryButton: { padding: 8 },
-  buttonLabel: { fontWeight: '600' },
-});

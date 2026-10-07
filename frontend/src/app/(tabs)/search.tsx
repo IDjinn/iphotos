@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
@@ -9,20 +9,47 @@ import { Icon } from '@/components/Icon';
 import { TabSwipe } from '@/components/TabSwipe';
 import { ThemedText } from '@/components/ThemedText';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
+import {
+  AiCard,
+  AiCardText,
+  AiTitle,
+  AlbumMatches,
+  Center,
+  Chip,
+  ChipHeader,
+  ChipLabel,
+  ChipRow,
+  Header,
+  Input,
+  RecentChip,
+  Screen,
+  SearchBar,
+  Suggestions,
+} from '@/app/(tabs)/search.styles';
 import { listAlbums } from '@/data/albums-repository';
 import { listTopLabels, searchAssetIdsByLabel } from '@/data/labels-repository';
 import { queryAssets } from '@/data/media-repository';
 import { parseQuery } from '@/data/search-providers';
 import { addRecentSearch, clearRecentSearches, listRecentSearches, removeRecentSearch } from '@/data/search-repository';
 import type { AlbumRecord, PhotoAsset } from '@/data/types';
+import type { TranslationKey } from '@/i18n';
+import { useTranslation } from '@/i18n/hook';
 import { useClassificationStore } from '@/stores/classification';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
-const QUICK_CHIPS = ['Today', 'Yesterday', 'Videos', 'Photos', 'Favorites'];
+/** `token` is the canonical English query token `parseQuery` understands. */
+const QUICK_CHIPS: { token: string; labelKey: TranslationKey }[] = [
+  { token: 'Today', labelKey: 'search.chips.today' },
+  { token: 'Yesterday', labelKey: 'search.chips.yesterday' },
+  { token: 'Videos', labelKey: 'search.chips.videos' },
+  { token: 'Photos', labelKey: 'search.chips.photos' },
+  { token: 'Favorites', labelKey: 'search.chips.favorites' },
+];
 
 export default function SearchScreen() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -102,35 +129,34 @@ export default function SearchScreen() {
 
   return (
     <TabSwipe tab="/search">
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <Screen $insetTop={insets.top}>
         {/* Search bar */}
-      <View style={styles.header}>
-        <View style={[styles.searchBar, { backgroundColor: colors.surface }]}>
-          <Icon name="search-outline" size={20} color={colors.textSecondary} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search your photos"
-            placeholderTextColor={colors.textDisabled}
-            style={[styles.input, { color: colors.text }]}
-            returnKeyType="search"
-            onSubmitEditing={() => commitSearch(query)}
-            autoCorrect={false}
-          />
-          {query.length > 0 ? (
-            <Pressable hitSlop={12} onPress={() => setQuery('')} accessibilityLabel="Clear search">
-              <Icon name="close-circle" size={18} color={colors.textSecondary} />
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
+        <Header>
+          <SearchBar>
+            <Icon name="search-outline" size={20} color={colors.textSecondary} />
+            <Input
+              value={query}
+              onChangeText={setQuery}
+              placeholder={t('search.placeholder')}
+              placeholderTextColor={colors.textDisabled}
+              returnKeyType="search"
+              onSubmitEditing={() => commitSearch(query)}
+              autoCorrect={false}
+            />
+            {query.length > 0 ? (
+              <Pressable hitSlop={12} onPress={() => setQuery('')} accessibilityLabel={t('search.clearA11y')}>
+                <Icon name="close-circle" size={18} color={colors.textSecondary} />
+              </Pressable>
+            ) : null}
+          </SearchBar>
+        </Header>
 
       {!showResults ? (
-        <View style={styles.suggestions}>
+        <Suggestions>
           {recents.length > 0 ? (
             <Animated.View entering={FadeInDown.duration(180)}>
-              <View style={styles.chipHeader}>
-                <ThemedText variant="label">Recent searches</ThemedText>
+              <ChipHeader>
+                <ThemedText variant="label">{t('search.recentSearches')}</ThemedText>
                 <Pressable
                   hitSlop={8}
                   onPress={() => {
@@ -139,13 +165,13 @@ export default function SearchScreen() {
                   }}
                 >
                   <ThemedText variant="bodySmall" color="accent">
-                    Clear
+                    {t('search.clear')}
                   </ThemedText>
                 </Pressable>
-              </View>
-              <View style={styles.chips}>
+              </ChipHeader>
+              <ChipRow>
                 {recents.map((recent) => (
-                  <View key={recent} style={[styles.chipWithClose, { backgroundColor: colors.surface }]}>
+                  <RecentChip key={recent}>
                     <Pressable
                       onPress={() => {
                         haptic('light');
@@ -160,110 +186,100 @@ export default function SearchScreen() {
                         removeRecentSearch(recent);
                         setRecents(listRecentSearches());
                       }}
-                      accessibilityLabel={`Remove ${recent}`}
+                      accessibilityLabel={t('search.removeRecent', { query: recent })}
                     >
                       <Icon name="close" size={14} color={colors.textSecondary} />
                     </Pressable>
-                  </View>
+                  </RecentChip>
                 ))}
-              </View>
+              </ChipRow>
             </Animated.View>
           ) : null}
 
-          <ThemedText variant="label" style={styles.chipLabel}>
-            Quick filters
-          </ThemedText>
-          <View style={styles.chips}>
+          <ChipLabel variant="label">{t('search.quickFilters')}</ChipLabel>
+          <ChipRow>
             {QUICK_CHIPS.map((chip) => (
-              <Pressable
-                key={chip}
-                style={[styles.chip, { backgroundColor: colors.surface }]}
+              <Chip
+                key={chip.token}
                 onPress={() => {
                   haptic('light');
-                  if (chip === 'Favorites') {
+                  if (chip.token === 'Favorites') {
                     router.push('/album/favorites');
                   } else {
-                    setQuery(chip);
+                    setQuery(chip.token);
                   }
                 }}
               >
-                <ThemedText variant="bodySmall">{chip}</ThemedText>
-              </Pressable>
+                <ThemedText variant="bodySmall">{t(chip.labelKey)}</ThemedText>
+              </Chip>
             ))}
-          </View>
+          </ChipRow>
 
           {localSearchEnabled && topLabels.length > 0 ? (
             <Animated.View entering={FadeInDown.duration(180)}>
-              <View style={styles.chipHeader}>
-                <ThemedText variant="label">Your labels</ThemedText>
+              <ChipHeader>
+                <ThemedText variant="label">{t('search.yourLabels')}</ThemedText>
                 <Pressable
                   hitSlop={8}
                   onPress={() => {
                     haptic('light');
                     router.push('/labels');
                   }}
-                  accessibilityLabel="See all labels"
+                  accessibilityLabel={t('search.seeAllLabels')}
                 >
                   <ThemedText variant="bodySmall" color="accent">
-                    See all
+                    {t('search.seeAll')}
                   </ThemedText>
                 </Pressable>
-              </View>
-              <View style={styles.chips}>
+              </ChipHeader>
+              <ChipRow>
                 {topLabels.map((label) => (
-                  <Pressable
+                  <Chip
                     key={label}
-                    style={[styles.chip, { backgroundColor: colors.surface }]}
                     onPress={() => {
                       haptic('light');
                       router.push({ pathname: '/label/[label]', params: { label } });
                     }}
-                    accessibilityLabel={`Open label ${label}`}
+                    accessibilityLabel={t('search.openLabel', { label })}
                   >
                     <ThemedText variant="bodySmall">{label}</ThemedText>
-                  </Pressable>
+                  </Chip>
                 ))}
-              </View>
+              </ChipRow>
             </Animated.View>
           ) : null}
 
           {aiEnabled ? (
-          <View style={[styles.aiCard, { backgroundColor: colors.surface }]}>
-            <Icon name="sparkles-outline" size={22} color={colors.accent} />
-            <View style={styles.aiCardText}>
-              <ThemedText variant="body" style={styles.aiTitle}>
-                People, places &amp; things
-              </ThemedText>
-              <ThemedText variant="bodySmall" color="secondary">
-                {localSearchEnabled
-                  ? 'Folder labels power search on this device. Pick your AI model in Settings — it activates with a future update.'
-                  : 'Turn on Smart search in Settings to label your photos on this device.'}
-              </ThemedText>
-            </View>
-          </View>
+            <AiCard>
+              <Icon name="sparkles-outline" size={22} color={colors.accent} />
+              <AiCardText>
+                <AiTitle variant="body">{t('search.aiTitle')}</AiTitle>
+                <ThemedText variant="bodySmall" color="secondary">
+                  {localSearchEnabled
+                    ? t('search.aiHintOn')
+                    : t('search.aiHintOff')}
+                </ThemedText>
+              </AiCardText>
+            </AiCard>
           ) : null}
-        </View>
+        </Suggestions>
       ) : searching ? (
-        <View style={styles.center}>
+        <Center>
           <ActivityIndicator color={colors.accent} />
-        </View>
+        </Center>
       ) : (
         <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(120)} style={{ flex: 1 }}>
           {matchedAlbums.length > 0 ? (
-            <View style={styles.albumMatches}>
-              <ThemedText variant="label">Albums</ThemedText>
-              <View style={styles.chips}>
+            <AlbumMatches>
+              <ThemedText variant="label">{t('library.albums')}</ThemedText>
+              <ChipRow>
                 {matchedAlbums.map((album) => (
-                  <Pressable
-                    key={album.id}
-                    style={[styles.chip, { backgroundColor: colors.surface }]}
-                    onPress={() => router.push(`/album/${album.id}`)}
-                  >
+                  <Chip key={album.id} onPress={() => router.push(`/album/${album.id}`)}>
                     <ThemedText variant="bodySmall">{album.title}</ThemedText>
-                  </Pressable>
+                  </Chip>
                 ))}
-              </View>
-            </View>
+              </ChipRow>
+            </AlbumMatches>
           ) : null}
 
           {results && results.length > 0 ? (
@@ -271,56 +287,17 @@ export default function SearchScreen() {
           ) : (
             <EmptyState
               icon="search-outline"
-              title="No matches"
+              title={t('search.noMatches')}
               subtitle={
                 parsed.freeText
-                  ? 'Try a date like “August 2026”, a label like “screenshots”, or “Videos”.'
-                  : 'Nothing found for this filter.'
+                  ? t('search.noMatchesFreeText')
+                  : t('search.noMatchesFilter')
               }
             />
           )}
         </Animated.View>
       )}
-      </View>
+      </Screen>
     </TabSwipe>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingVertical: 10 },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: 26,
-    paddingHorizontal: 14,
-    height: 44,
-  },
-  input: { flex: 1, fontSize: 15, paddingVertical: 0 },
-  suggestions: { paddingHorizontal: 16, paddingTop: 6, gap: 10 },
-  chipHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  chipLabel: { marginTop: 6 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8 },
-  chipWithClose: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  aiCard: {
-    flexDirection: 'row',
-    gap: 14,
-    alignItems: 'center',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 10,
-  },
-  aiCardText: { flex: 1, gap: 2 },
-  aiTitle: { fontWeight: '500' },
-  albumMatches: { paddingHorizontal: 16, paddingBottom: 8, gap: 8 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-});

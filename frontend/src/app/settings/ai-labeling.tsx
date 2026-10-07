@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -7,6 +7,28 @@ import { Icon } from '@/components/Icon';
 import { LabeledInput } from '@/components/LabeledInput';
 import { MiniToast } from '@/components/MiniToast';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Body,
+  Card,
+  CardText,
+  ErrorText,
+  Footnote,
+  Form,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  PrimaryButton,
+  PrimaryButtonText,
+  ProgressBlock,
+  ProgressLine,
+  Screen,
+  Scroll,
+  TextButton,
+  Track,
+  TrackFill,
+} from '@/app/settings/ai-labeling.styles';
+import type { BulkToast } from '@/hooks/use-bulk-actions';
+import { useTranslation } from '@/i18n/hook';
 import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useClassificationStore } from '@/stores/classification';
 import { useTheme } from '@/theme/context';
@@ -19,7 +41,8 @@ import { haptic } from '@/utils/haptics';
  * stated right on the screen, and nothing is sent until this is configured.
  */
 export default function AiLabelingScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
+  const { t, localeTag } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -37,7 +60,7 @@ export default function AiLabelingScreen() {
   const [endpointDraft, setEndpointDraft] = useState(endpoint);
   const [modelDraft, setModelDraft] = useState(model);
   const [keyDraft, setKeyDraft] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<BulkToast | null>(null);
 
   const configured = endpoint.length > 0 && model.length > 0;
   const pct =
@@ -52,7 +75,7 @@ export default function AiLabelingScreen() {
     setConfig(endpointDraft, modelDraft);
     if (keyDraft.trim().length > 0) await setApiKey(keyDraft);
     setKeyDraft('');
-    setToast('Saved');
+    setToast({ key: 'common.saved' });
   };
 
   const start = () => {
@@ -62,47 +85,40 @@ export default function AiLabelingScreen() {
 
   const confirmRedo = () => {
     haptic('light');
-    Alert.alert(
-      'Redo all AI labels?',
-      'Existing AI labels are deleted and every photo is sent to the endpoint again. Folder labels are kept.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Redo', style: 'destructive', onPress: () => void runAiIndexation(true) },
-      ]
-    );
+    Alert.alert(t('aiLabeling.redoTitle'), t('aiLabeling.redoBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('aiModel.redo'), style: 'destructive', onPress: () => void runAiIndexation(true) },
+    ]);
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 40 }}
+    <Screen>
+      <Scroll
+        contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[10] }}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.header}>
-          <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
+        <Header>
+          <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel={t('common.back')}>
             <Icon name="arrow-back" size={24} />
           </Pressable>
-          <ThemedText variant="titleMedium" style={styles.headerTitle}>
-            AI labeling
-          </ThemedText>
-          <View style={{ width: 24 }} />
-        </View>
+          <HeaderTitle variant="titleMedium">{t('settings.ai.labelingTitle')}</HeaderTitle>
+          <HeaderSpacer />
+        </Header>
 
-        <View style={styles.body}>
-          <View style={[styles.card, { backgroundColor: colors.surface }]}>
+        <Body>
+          <Card>
             <Icon name="color-wand-outline" size={22} color={colors.icon} />
-            <View style={styles.cardText}>
-              <ThemedText variant="body">Smart labels for your photos</ThemedText>
+            <CardText>
+              <ThemedText variant="body">{t('aiLabeling.cardTitle')}</ThemedText>
               <ThemedText variant="bodySmall" color="secondary">
-                Connect any OpenAI-compatible vision endpoint. Each photo is sent there to generate
-                labels like “beach”, “dog” or “document”.
+                {t('aiLabeling.cardBody')}
               </ThemedText>
-            </View>
-          </View>
+            </CardText>
+          </Card>
 
-          <View style={styles.form}>
+          <Form>
             <LabeledInput
-              label="Endpoint URL"
+              label={t('aiLabeling.endpointLabel')}
               value={endpointDraft}
               onChangeText={setEndpointDraft}
               placeholder="https://api.openai.com/v1"
@@ -112,7 +128,7 @@ export default function AiLabelingScreen() {
               inputMode="url"
             />
             <LabeledInput
-              label="Model"
+              label={t('aiLabeling.modelLabel')}
               value={modelDraft}
               onChangeText={setModelDraft}
               placeholder="gpt-4o-mini"
@@ -120,7 +136,7 @@ export default function AiLabelingScreen() {
               autoCorrect={false}
             />
             <LabeledInput
-              label={hasApiKey ? 'API key (stored — leave blank to keep)' : 'API key (optional for local servers)'}
+              label={hasApiKey ? t('aiLabeling.keyStored') : t('aiLabeling.keyOptional')}
               value={keyDraft}
               onChangeText={setKeyDraft}
               placeholder={hasApiKey ? '••••••••' : 'sk-…'}
@@ -128,117 +144,96 @@ export default function AiLabelingScreen() {
               autoCorrect={false}
               secureTextEntry
             />
-            <Pressable
-              style={({ pressed }) => [
-                styles.primaryButton,
-                { backgroundColor: colors.accent },
-                pressed && { opacity: 0.85 },
-              ]}
-              onPress={() => void save()}
-            >
-              <ThemedText variant="body" style={styles.primaryButtonText}>
-                Save
-              </ThemedText>
-            </Pressable>
-          </View>
+            <SaveButton onPress={() => void save()} label={t('common.save')} />
+          </Form>
 
-          <View style={[styles.card, { backgroundColor: colors.surface }]}>
-            <View style={styles.cardText}>
+          <Card>
+            <CardText>
               <ThemedText variant="body">
-                {configured ? 'Label your photos' : 'Not configured yet'}
+                {configured ? t('aiLabeling.readyTitle') : t('aiLabeling.notConfiguredTitle')}
               </ThemedText>
               {aiRunning ? (
-                <View style={styles.progressBlock}>
-                  <View style={styles.progressLine}>
+                <ProgressBlock>
+                  <ProgressLine>
                     <ActivityIndicator size="small" color={colors.accent} />
                     <ThemedText variant="bodySmall" color="secondary">
                       {pct !== null
-                        ? `Labeling… ${pct}% (${aiProgress?.scanned.toLocaleString('en-US')} of ${aiProgress?.total.toLocaleString('en-US')})`
-                        : 'Starting…'}
+                        ? t('settings.ai.labeling', {
+                            percent: pct,
+                            count: aiProgress?.scanned.toLocaleString(localeTag) ?? '0',
+                            total: aiProgress?.total.toLocaleString(localeTag) ?? '0',
+                          })
+                        : t('aiLabeling.starting')}
                     </ThemedText>
-                  </View>
-                  <View style={[styles.track, { backgroundColor: colors.outline }]}>
-                    <View style={[styles.fill, { backgroundColor: colors.accent, width: `${pct ?? 0}%` }]} />
-                  </View>
-                </View>
+                  </ProgressLine>
+                  <Track>
+                    <TrackFill $pct={pct ?? 0} />
+                  </Track>
+                </ProgressBlock>
               ) : (
                 <ThemedText variant="bodySmall" color="secondary">
                   {configured
-                    ? 'Runs in the background — already-labeled photos are skipped, so you can stop and resume anytime.'
-                    : 'Save an endpoint and model above to enable AI labeling.'}
+                    ? t('aiLabeling.backgroundHint')
+                    : t('aiLabeling.setupHint')}
                 </ThemedText>
               )}
               {aiLastError ? (
-                <ThemedText variant="bodySmall" color="danger" style={styles.errorText}>
+                <ErrorText variant="bodySmall" color="danger">
                   {aiLastError}
-                </ThemedText>
+                </ErrorText>
               ) : null}
-            </View>
-          </View>
+            </CardText>
+          </Card>
 
           {configured ? (
-            <Pressable
-              disabled={aiRunning}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                { backgroundColor: colors.accent },
-                aiRunning && styles.buttonDisabled,
-                pressed && { opacity: 0.85 },
-              ]}
-              onPress={start}
-            >
-              <ThemedText variant="body" style={styles.primaryButtonText}>
-                {aiRunning ? 'Labeling…' : 'Label photos now'}
-              </ThemedText>
-            </Pressable>
+            <RunButton disabled={aiRunning} onPress={start} label={aiRunning ? t('aiModel.labeling') : t('aiModel.labelNow')} />
           ) : null}
           {configured && !aiRunning ? (
-            <Pressable style={styles.textButton} onPress={confirmRedo}>
+            <TextButton onPress={confirmRedo}>
               <ThemedText variant="bodySmall" color="danger">
-                Delete AI labels and redo from scratch
+                {t('aiLabeling.redoFromScratch')}
               </ThemedText>
-            </Pressable>
+            </TextButton>
           ) : null}
 
-          <ThemedText variant="bodySmall" color="secondary" style={styles.footnote}>
-            Photos are sent to the endpoint you choose, exactly as on-device AI ships later this
-            year — that version will never leave your phone. Works with OpenAI, OpenRouter, Ollama
-            (http://localhost:11434/v1) and LM Studio.
-          </ThemedText>
-        </View>
-      </ScrollView>
-      <MiniToast message={toast} onDismissed={() => setToast(null)} />
-    </View>
+          <Footnote variant="bodySmall" color="secondary">
+            {t('aiLabeling.footnote')}
+          </Footnote>
+        </Body>
+      </Scroll>
+      <MiniToast message={toast ? t(toast.key, toast.params) : null} onDismissed={() => setToast(null)} />
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  body: { paddingHorizontal: 16, gap: 16 },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  cardText: { flex: 1, gap: 4 },
-  form: { gap: 14 },
-  primaryButton: {
-    borderRadius: 14,
-    alignItems: 'center',
-    paddingVertical: 14,
-  },
-  primaryButtonText: { color: '#FFFFFF', fontWeight: '600' },
-  buttonDisabled: { opacity: 0.55 },
-  textButton: { alignItems: 'center', paddingVertical: 6 },
-  progressBlock: { gap: 8, paddingVertical: 4 },
-  progressLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  track: { height: 6, borderRadius: 3, overflow: 'hidden' },
-  fill: { height: 6, borderRadius: 3 },
-  errorText: { lineHeight: 18 },
-  footnote: { lineHeight: 18, textAlign: 'center', paddingHorizontal: 12 },
-});
+/** Save button with pressed feedback. */
+function SaveButton({ onPress, label }: { onPress: () => void; label: string }) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <PrimaryButton
+      $pressed={pressed}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+    >
+      <PrimaryButtonText variant="body">{label}</PrimaryButtonText>
+    </PrimaryButton>
+  );
+}
+
+/** Run-labeling button with pressed and disabled states. */
+function RunButton({ disabled, onPress, label }: { disabled: boolean; onPress: () => void; label: string }) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <PrimaryButton
+      $pressed={pressed}
+      $disabled={disabled}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <PrimaryButtonText variant="body">{label}</PrimaryButtonText>
+    </PrimaryButton>
+  );
+}

@@ -1,15 +1,29 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 import { Icon } from '@/components/Icon';
 import { LabeledInput } from '@/components/LabeledInput';
 import { PressableScale } from '@/components/PressableScale';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  AckRow,
+  AckText,
+  Banner,
+  BannerAction,
+  BannerText,
+  Form,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  Screen,
+  Submit,
+} from '@/app/(public)/auth.styles';
 import { register } from '@/data/api-client';
 import { authErrorMessage } from '@/data/auth-errors';
+import { useTranslation } from '@/i18n/hook';
 import { useAccountStore } from '@/stores/account';
 import { useOnboardingStore } from '@/stores/onboarding';
 import { useTheme } from '@/theme/context';
@@ -23,7 +37,8 @@ interface RegisterErrors {
 }
 
 export default function RegisterScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const complete = useOnboardingStore((s) => s.complete);
@@ -39,12 +54,12 @@ export default function RegisterScreen() {
 
   const submit = async () => {
     const next: RegisterErrors = {};
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = 'Enter a valid e-mail address.';
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = t('auth.validation.email');
     if (password.length < 8 || !/\d/.test(password)) {
-      next.password = 'Use at least 8 characters, including one number.';
+      next.password = t('auth.validation.passwordWeak');
     }
-    if (confirm !== password) next.confirm = 'Passwords do not match.';
-    if (!ack) next.ack = 'Please confirm you understand.';
+    if (confirm !== password) next.confirm = t('auth.validation.passwordMismatch');
+    if (!ack) next.ack = t('auth.validation.ackRequired');
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
@@ -69,31 +84,28 @@ export default function RegisterScreen() {
   };
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 }}
+    <Screen
+      contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: insets.bottom + space[8] }}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.header}>
-        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
+      <Header>
+        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel={t('common.back')}>
           <Icon name="arrow-back" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          Create account
-        </ThemedText>
-        <View style={{ width: 24 }} />
-      </View>
+        <HeaderTitle variant="titleMedium">{t('auth.createAccount')}</HeaderTitle>
+        <HeaderSpacer />
+      </Header>
 
-      <Animated.View entering={FadeInDown.duration(200)} style={styles.form}>
+      <Form entering={FadeInDown.duration(200)}>
         <LabeledInput
-          label="Name (optional)"
+          label={t('auth.register.nameLabel')}
           value={name}
           onChangeText={setName}
           autoCapitalize="words"
           autoComplete="name"
         />
         <LabeledInput
-          label="E-mail"
+          label={t('auth.emailLabel')}
           value={email}
           onChangeText={(text) => {
             setEmail(text);
@@ -106,7 +118,7 @@ export default function RegisterScreen() {
           inputMode="email"
         />
         <LabeledInput
-          label="Password"
+          label={t('auth.passwordLabel')}
           value={password}
           onChangeText={(text) => {
             setPassword(text);
@@ -117,7 +129,7 @@ export default function RegisterScreen() {
           autoComplete="new-password"
         />
         <LabeledInput
-          label="Confirm password"
+          label={t('auth.register.confirmPasswordLabel')}
           value={confirm}
           onChangeText={(text) => {
             setConfirm(text);
@@ -128,8 +140,7 @@ export default function RegisterScreen() {
           autoComplete="new-password"
         />
 
-        <Pressable
-          style={styles.ackRow}
+        <AckRow
           onPress={() => {
             haptic('light');
             setAck((value) => !value);
@@ -137,43 +148,38 @@ export default function RegisterScreen() {
           }}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: ack }}
-          accessibilityLabel="Acknowledge encrypted backup recovery"
+          accessibilityLabel={t('auth.register.ackA11y')}
         >
           <Icon name={ack ? 'checkbox' : 'square-outline'} size={22} color={ack ? colors.accent : colors.iconInactive} />
-          <ThemedText variant="bodySmall" color="secondary" style={styles.ackText}>
-            I understand that password reset is not available yet — losing my password
-            will make my cloud backups unrecoverable.
-          </ThemedText>
-        </Pressable>
+          <AckText variant="bodySmall" color="secondary">
+            {t('auth.register.ackBody')}
+          </AckText>
+        </AckRow>
         {errors.ack ? (
           <ThemedText variant="bodySmall" color="danger">
             {errors.ack}
           </ThemedText>
         ) : null}
 
-        <PressableScale
-          style={[styles.submit, { backgroundColor: colors.accent }]}
+        <Submit
           onPress={submit}
           accessibilityRole="button"
-          accessibilityLabel="Create account"
+          accessibilityLabel={t('auth.createAccount')}
           disabled={submitting}
         >
           {submitting ? (
             <ActivityIndicator color={colors.background} />
           ) : (
-            <ThemedText variant="titleMedium" style={{ color: colors.background }}>
-              Create account
+            <ThemedText variant="titleMedium" color="inverse">
+              {t('auth.createAccount')}
             </ThemedText>
           )}
-        </PressableScale>
+        </Submit>
 
         {unavailable ? (
-          <Animated.View
-            entering={FadeIn.duration(160)}
-            style={[styles.banner, { backgroundColor: colors.accentSoft }]}
-          >
+          <Banner entering={FadeIn.duration(160)}>
             <Icon name="cloud-offline-outline" size={20} color={colors.accent} />
-            <View style={styles.bannerText}>
+            <BannerText>
               <ThemedText variant="bodySmall" color="secondary">
                 {unavailable}
               </ThemedText>
@@ -181,28 +187,16 @@ export default function RegisterScreen() {
                 hitSlop={8}
                 onPress={continueOffline}
                 accessibilityRole="button"
-                accessibilityLabel="Continue offline"
+                accessibilityLabel={t('auth.continueOffline')}
               >
-                <ThemedText variant="bodySmall" color="accent" style={styles.bannerAction}>
-                  Continue offline
-                </ThemedText>
+                <BannerAction variant="bodySmall" color="accent">
+                  {t('auth.continueOffline')}
+                </BannerAction>
               </Pressable>
-            </View>
-          </Animated.View>
+            </BannerText>
+          </Banner>
         ) : null}
-      </Animated.View>
-    </ScrollView>
+      </Form>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  form: { paddingHorizontal: 24, paddingTop: 16, gap: 16 },
-  ackRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  ackText: { flex: 1, lineHeight: 18 },
-  submit: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  banner: { flexDirection: 'row', gap: 12, borderRadius: 14, padding: 14, alignItems: 'flex-start' },
-  bannerText: { flex: 1, gap: 8 },
-  bannerAction: { fontWeight: '600' },
-});

@@ -1,10 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Body,
+  BreakdownRow,
+  Card,
+  CardColumn,
+  CardRow,
+  CardText,
+  ErrorText,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  Note,
+  Screen,
+  UsageBar,
+  UsageFill,
+  UsageHeader,
+  UsageRemainder,
+} from '@/app/settings/backup.styles';
 import { getUsage, type CloudUsage } from '@/data/cloud-photos-repository';
 import { isExpoGo } from '@/data/native-crypto';
 import type { BackupProgress } from '@/data/backup-engine';
@@ -76,7 +94,7 @@ function useBackupEta(progress: BackupProgress | null, running: boolean): string
 }
 
 export default function BackupSettingsScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const mode = useAccountStore((s) => s.mode);
@@ -173,291 +191,276 @@ export default function BackupSettingsScreen() {
     : [];
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 40 }}
+    <Screen
+      contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[10] }}
     >
-      <View style={styles.header}>
+      <Header>
         <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
           <Icon name="arrow-back" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          Backup
-        </ThemedText>
-        <View style={{ width: 24 }} />
-      </View>
+        <HeaderTitle variant="titleMedium">Backup</HeaderTitle>
+        <HeaderSpacer />
+      </Header>
 
-      <View style={styles.body}>
+      <Body>
         {cloudOnly ? (
           <>
-            <View style={[styles.cardColumn, { backgroundColor: colors.surface }]}>
-              <View style={styles.usageHeader}>
+            <CardColumn>
+              <UsageHeader>
                 <ThemedText variant="body">Cloud storage</ThemedText>
                 <ThemedText variant="bodySmall" color="secondary">
                   {usage ? `${formatBytes(usage.usedBytes)} of ${formatBytes(usage.quotaBytes)}` : ' '}
                 </ThemedText>
-              </View>
+              </UsageHeader>
               {usage && usage.quotaBytes > 0 ? (
-                <View style={[styles.usageBar, { backgroundColor: colors.outline }]}>
-                  <View
-                    style={[
-                      styles.usageFill,
-                      { backgroundColor: colors.accent, flex: Math.max(0.02, Math.min(1, usage.usedBytes / usage.quotaBytes)) },
-                    ]}
-                  />
-                  <View style={{ flex: Math.max(0, 1 - Math.min(1, usage.usedBytes / usage.quotaBytes)) }} />
-                </View>
+                <UsageBar>
+                  <UsageFill $fraction={Math.max(0.02, Math.min(1, usage.usedBytes / usage.quotaBytes))} />
+                  <UsageRemainder $fraction={1 - Math.min(1, usage.usedBytes / usage.quotaBytes)} />
+                </UsageBar>
               ) : null}
               <ThemedText variant="bodySmall" color="secondary">
                 {usage
                   ? `${formatCount(usage.photoCount)} photo${usage.photoCount === 1 ? '' : 's'} stored in your account`
                   : 'Could not reach the backend — sign in and try again.'}
               </ThemedText>
-            </View>
+            </CardColumn>
 
-            <Pressable
-              style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
+            <ActionCard
               onPress={() => {
                 haptic('light');
                 router.push('/settings/import-zip');
               }}
               accessibilityLabel="Add photos via ZIP import"
             >
-              <View style={styles.cardRow}>
+              <CardRow>
                 <Icon name="archive-outline" size={22} color={colors.accent} />
-                <View style={styles.cardText}>
+                <CardText>
                   <ThemedText variant="body">Add photos via ZIP import</ThemedText>
                   <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
                     Upload a ZIP (Google Takeout style) — processed on the server
                   </ThemedText>
-                </View>
+                </CardText>
                 <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-              </View>
-            </Pressable>
+              </CardRow>
+            </ActionCard>
 
-            <ThemedText variant="bodySmall" color="secondary" style={styles.note}>
+            <Note variant="bodySmall" color="secondary">
               Scanning and uploading this phone&apos;s gallery needs the native build — the Expo Go preview client
               cannot access the device media library. Photos you import via ZIP appear in the cloud and on the
               Photos tab normally.
-            </ThemedText>
+            </Note>
           </>
         ) : (
           <>
-        <View style={[styles.cardColumn, { backgroundColor: colors.surface }]}>
-          {stats && stats.totalItems > 0 ? (
-            <>
-              <View style={styles.usageHeader}>
-                <ThemedText variant="body">Local inventory</ThemedText>
-                <ThemedText variant="bodySmall" color="secondary">
-                  {formatBytes(stats.totalBytes)}
-                </ThemedText>
-              </View>
-              <ThemedText variant="bodySmall" color="secondary">
-                {formatCount(stats.totalItems)} photos tracked on this device · {formatBytes(stats.uploadedBytes)}{' '}
-                backed up
-              </ThemedText>
-              {breakdown
-                .filter((row) => row.count > 0)
-                .map((row) => (
-                  <View key={row.label} style={styles.breakdownRow}>
+            <CardColumn>
+              {stats && stats.totalItems > 0 ? (
+                <>
+                  <UsageHeader>
+                    <ThemedText variant="body">Local inventory</ThemedText>
                     <ThemedText variant="bodySmall" color="secondary">
-                      {row.label}
+                      {formatBytes(stats.totalBytes)}
                     </ThemedText>
-                    <ThemedText variant="bodySmall">
-                      {formatCount(row.count)}
-                      {row.bytes !== null && row.bytes > 0 ? ` · ${formatBytes(row.bytes)}` : ''}
+                  </UsageHeader>
+                  <ThemedText variant="bodySmall" color="secondary">
+                    {formatCount(stats.totalItems)} photos tracked on this device · {formatBytes(stats.uploadedBytes)}{' '}
+                    backed up
+                  </ThemedText>
+                  {breakdown
+                    .filter((row) => row.count > 0)
+                    .map((row) => (
+                      <BreakdownRow key={row.label}>
+                        <ThemedText variant="bodySmall" color="secondary">
+                          {row.label}
+                        </ThemedText>
+                        <ThemedText variant="bodySmall">
+                          {formatCount(row.count)}
+                          {row.bytes !== null && row.bytes > 0 ? ` · ${formatBytes(row.bytes)}` : ''}
+                        </ThemedText>
+                      </BreakdownRow>
+                    ))}
+                </>
+              ) : (
+                <ThemedText variant="bodySmall" color="secondary">
+                  {backup.scanning ? 'Building your inventory…' : 'No inventory yet — run a scan to index your photos.'}
+                </ThemedText>
+              )}
+            </CardColumn>
+
+            {backup.lastError ? (
+              <ErrorText variant="bodySmall" color="danger">
+                {backup.lastError}
+              </ErrorText>
+            ) : null}
+
+            {heldFolders.length > 0 ? (
+              <ActionCard accent onPress={() => router.push('/settings/backup/folders')} accessibilityLabel="Review new folders">
+                <CardRow>
+                  <Icon name="alert-circle-outline" size={22} color={colors.accent} />
+                  <CardText>
+                    <ThemedText variant="body" color="accent">
+                      {heldFolders.length} new folder{heldFolders.length === 1 ? '' : 's'} detected
                     </ThemedText>
-                  </View>
-                ))}
-            </>
-          ) : (
-            <ThemedText variant="bodySmall" color="secondary">
-              {backup.scanning ? 'Building your inventory…' : 'No inventory yet — run a scan to index your photos.'}
-            </ThemedText>
-          )}
-        </View>
+                    <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                      {heldFolders[0].title}
+                      {heldFolders.length > 1 ? ` and ${heldFolders.length - 1} more` : ''} — choose whether to back them up
+                    </ThemedText>
+                  </CardText>
+                  <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+                </CardRow>
+              </ActionCard>
+            ) : null}
 
-        {backup.lastError ? (
-          <ThemedText variant="bodySmall" color="danger" style={styles.error}>
-            {backup.lastError}
-          </ThemedText>
-        ) : null}
+            <ActionCard onPress={() => router.push('/settings/backup/folders')} accessibilityLabel="Backup folders">
+              <CardRow>
+                <Icon name="folder-open-outline" size={22} color={colors.icon} />
+                <CardText>
+                  <ThemedText variant="body">Backup folders</ThemedText>
+                  <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                    Choose which folders enter the backup
+                  </ThemedText>
+                </CardText>
+                <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+              </CardRow>
+            </ActionCard>
 
-        {heldFolders.length > 0 ? (
-          <Pressable
-            style={({ pressed }) => [styles.card, { backgroundColor: colors.accentSoft }, pressed && { opacity: 0.75 }]}
-            onPress={() => {
-              haptic('light');
-              router.push('/settings/backup/folders');
-            }}
-            accessibilityLabel="Review new folders"
-          >
-            <View style={styles.cardRow}>
-              <Icon name="alert-circle-outline" size={22} color={colors.accent} />
-              <View style={styles.cardText}>
-                <ThemedText variant="body" color="accent">
-                  {heldFolders.length} new folder{heldFolders.length === 1 ? '' : 's'} detected
-                </ThemedText>
-                <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
-                  {heldFolders[0].title}
-                  {heldFolders.length > 1 ? ` and ${heldFolders.length - 1} more` : ''} — choose whether to back them up
-                </ThemedText>
-              </View>
-              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-            </View>
-          </Pressable>
-        ) : null}
+            {backup.quotaExceeded ? (
+              <ActionCard accent onPress={() => router.push('/settings/subscription')} accessibilityLabel="Upgrade storage">
+                <CardRow>
+                  <Icon name="cloud-circle-outline" size={22} color={colors.accent} />
+                  <CardText>
+                    <ThemedText variant="body" color="accent">
+                      Upgrade storage
+                    </ThemedText>
+                    <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                      See cloud plans and keep backing up
+                    </ThemedText>
+                  </CardText>
+                  <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+                </CardRow>
+              </ActionCard>
+            ) : null}
+            {backup.scanError ? (
+              <ErrorText variant="bodySmall" color="danger">
+                {backup.scanError}
+              </ErrorText>
+            ) : null}
 
-        <Pressable
-          style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
-          onPress={() => {
-            haptic('light');
-            router.push('/settings/backup/folders');
-          }}
-          accessibilityLabel="Backup folders"
-        >
-          <View style={styles.cardRow}>
-            <Icon name="folder-open-outline" size={22} color={colors.icon} />
-            <View style={styles.cardText}>
-              <ThemedText variant="body">Backup folders</ThemedText>
-              <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
-                Choose which folders enter the backup
-              </ThemedText>
-            </View>
-            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </View>
-        </Pressable>
+            <ActionCard
+              disabled={busy}
+              onPress={() => {
+                if (!busy) void startScan();
+              }}
+              accessibilityLabel="Scan your library"
+            >
+              <CardRow>
+                <Icon name="refresh-outline" size={22} color={colors.icon} />
+                <CardText>
+                  <ThemedText variant="body">Scan now</ThemedText>
+                  <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                    {scanCaption ?? 'Index your photos and find what changed — works offline'}
+                  </ThemedText>
+                </CardText>
+                {backup.scanning ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+                )}
+              </CardRow>
+              {scanBar !== null ? (
+                <UsageBar>
+                  <UsageFill $fraction={Math.max(0.02, scanBar)} />
+                  <UsageRemainder $fraction={1 - scanBar} />
+                </UsageBar>
+              ) : null}
+            </ActionCard>
 
-        {backup.quotaExceeded ? (
-          <Pressable
-            style={({ pressed }) => [styles.card, { backgroundColor: colors.accentSoft }, pressed && { opacity: 0.75 }]}
-            onPress={() => {
-              haptic('light');
-              router.push('/settings/subscription');
-            }}
-            accessibilityLabel="Upgrade storage"
-          >
-            <View style={styles.cardRow}>
-              <Icon name="cloud-circle-outline" size={22} color={colors.accent} />
-              <View style={styles.cardText}>
-                <ThemedText variant="body" color="accent">
-                  Upgrade storage
-                </ThemedText>
-                <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
-                  See cloud plans and keep backing up
-                </ThemedText>
-              </View>
-              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-            </View>
-          </Pressable>
-        ) : null}
-        {backup.scanError ? (
-          <ThemedText variant="bodySmall" color="danger" style={styles.error}>
-            {backup.scanError}
-          </ThemedText>
-        ) : null}
+            <ActionCard
+              dimmed={mode !== 'cloud' || busy}
+              disabled={busy || mode !== 'cloud'}
+              hapticKind="medium"
+              onPress={() => {
+                if (!busy) void startBackup();
+              }}
+              accessibilityLabel="Back up photos"
+            >
+              <CardRow>
+                <Icon
+                  name="cloud-upload-outline"
+                  size={22}
+                  color={mode === 'cloud' ? colors.accent : colors.iconInactive}
+                />
+                <CardText>
+                  <ThemedText variant="body">Back up now</ThemedText>
+                  <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
+                    {backupCaption
+                      ? eta
+                        ? `${backupCaption} · ${eta}`
+                        : backupCaption
+                      : mode === 'cloud'
+                        ? 'Upload everything new to the cloud'
+                        : 'Requires Cloud mode — log in to back up your photos'}
+                  </ThemedText>
+                </CardText>
+                {backup.running ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
+                )}
+              </CardRow>
+              {backupBar !== null ? (
+                <UsageBar>
+                  <UsageFill $fraction={Math.max(0.02, backupBar)} />
+                  <UsageRemainder $fraction={1 - backupBar} />
+                </UsageBar>
+              ) : null}
+            </ActionCard>
 
-        <Pressable
-          style={({ pressed }) => [styles.card, { backgroundColor: colors.surface }, pressed && { opacity: 0.75 }]}
-          onPress={() => {
-            haptic('light');
-            if (!busy) void startScan();
-          }}
-          disabled={busy}
-          accessibilityLabel="Scan your library"
-        >
-          <View style={styles.cardRow}>
-            <Icon name="refresh-outline" size={22} color={colors.icon} />
-            <View style={styles.cardText}>
-              <ThemedText variant="body">Scan now</ThemedText>
-              <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
-                {scanCaption ?? 'Index your photos and find what changed — works offline'}
-              </ThemedText>
-            </View>
-            {backup.scanning ? (
-              <ActivityIndicator size="small" color={colors.accent} />
-            ) : (
-              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-            )}
-          </View>
-          {scanBar !== null ? (
-            <View style={[styles.usageBar, { backgroundColor: colors.outline }]}>
-              <View style={[styles.usageFill, { backgroundColor: colors.accent, flex: Math.max(0.02, scanBar) }]} />
-              <View style={{ flex: 1 - scanBar }} />
-            </View>
-          ) : null}
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.card,
-            { backgroundColor: colors.surface },
-            (mode !== 'cloud' || busy) && { opacity: 0.6 },
-            pressed && { opacity: 0.75 },
-          ]}
-          onPress={() => {
-            haptic('medium');
-            if (!busy) void startBackup();
-          }}
-          disabled={busy || mode !== 'cloud'}
-          accessibilityLabel="Back up photos"
-        >
-          <View style={styles.cardRow}>
-            <Icon
-              name="cloud-upload-outline"
-              size={22}
-              color={mode === 'cloud' ? colors.accent : colors.iconInactive}
-            />
-            <View style={styles.cardText}>
-              <ThemedText variant="body">Back up now</ThemedText>
-              <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
-                {backupCaption
-                  ? eta
-                    ? `${backupCaption} · ${eta}`
-                    : backupCaption
-                  : mode === 'cloud'
-                    ? 'Upload everything new to the cloud'
-                    : 'Requires Cloud mode — log in to back up your photos'}
-              </ThemedText>
-            </View>
-            {backup.running ? (
-              <ActivityIndicator size="small" color={colors.accent} />
-            ) : (
-              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-            )}
-          </View>
-          {backupBar !== null ? (
-            <View style={[styles.usageBar, { backgroundColor: colors.outline }]}>
-              <View style={[styles.usageFill, { backgroundColor: colors.accent, flex: Math.max(0.02, backupBar) }]} />
-              <View style={{ flex: 1 - backupBar }} />
-            </View>
-          ) : null}
-        </Pressable>
-
-        <ThemedText variant="bodySmall" color="secondary" style={styles.note}>
-          The inventory tracks the size, modification time and content hash of each photo, so unchanged photos
-          are never re-hashed or re-uploaded. Items in the Locked Folder and the Safe Folder never enter the
-          backup.
-        </ThemedText>
+            <Note variant="bodySmall" color="secondary">
+              The inventory tracks the size, modification time and content hash of each photo, so unchanged photos
+              are never re-hashed or re-uploaded. Items in the Locked Folder and the Safe Folder never enter the
+              backup.
+            </Note>
           </>
         )}
-      </View>
-    </ScrollView>
+      </Body>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  body: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
-  card: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, gap: 12 },
-  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  cardText: { flex: 1, gap: 2 },
-  cardColumn: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, gap: 10 },
-  usageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  usageBar: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden' },
-  usageFill: { borderRadius: 4 },
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  error: { lineHeight: 18 },
-  note: { lineHeight: 18, textAlign: 'center', marginTop: 8 },
-});
+/** Pressable settings card with pressed feedback (parity with the opacity dip). */
+function ActionCard({
+  onPress,
+  accent,
+  dimmed,
+  disabled,
+  hapticKind = 'light',
+  accessibilityLabel,
+  children,
+}: {
+  onPress: () => void;
+  accent?: boolean;
+  dimmed?: boolean;
+  disabled?: boolean;
+  hapticKind?: 'light' | 'medium';
+  accessibilityLabel?: string;
+  children: React.ReactNode;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Card
+      $pressed={pressed}
+      $accent={accent}
+      $dimmed={dimmed}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={() => {
+        haptic(hapticKind);
+        onPress();
+      }}
+      disabled={disabled}
+      accessibilityLabel={accessibilityLabel}
+    >
+      {children}
+    </Card>
+  );
+}

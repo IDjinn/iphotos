@@ -1,10 +1,31 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Alert, Pressable, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  Body,
+  Card,
+  CardText,
+  EmptyText,
+  FilterChip,
+  FilterRow,
+  FolderRow,
+  Group,
+  GroupTitle,
+  Header,
+  HeaderSpacer,
+  HeaderTitle,
+  HeldRow,
+  Note,
+  NoteCard,
+  Pill,
+  Screen,
+  Search,
+  Summary,
+} from '@/app/settings/backup/folders.styles';
 import { runFolderScan } from '@/data/backup-inventory';
 import {
   getBackupFolderViews,
@@ -47,7 +68,7 @@ function statusCaption(view: BackupFolderView): string {
 }
 
 export default function BackupFoldersScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const mode = useAccountStore((s) => s.mode);
@@ -128,88 +149,71 @@ export default function BackupFoldersScreen() {
   const isExcluded = (view: BackupFolderView) => view.rule === 'exclude';
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 40 }}
+    <Screen
+      contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[10] }}
     >
-      <View style={styles.header}>
+      <Header>
         <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
           <Icon name="arrow-back" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          Backup folders
-        </ThemedText>
-        <View style={{ width: 24 }} />
-      </View>
+        <HeaderTitle variant="titleMedium">Backup folders</HeaderTitle>
+        <HeaderSpacer />
+      </Header>
 
-      <View style={styles.body}>
+      <Body>
         {mode !== 'cloud' ? (
-          <View style={[styles.noteCard, { backgroundColor: colors.surface }]}>
+          <NoteCard>
             <Icon name="information-circle-outline" size={20} color={colors.accent} />
             <ThemedText variant="bodySmall" color="secondary" style={{ flex: 1 }}>
               Folder rules are saved now and applied when Cloud mode is on.
             </ThemedText>
-          </View>
+          </NoteCard>
         ) : null}
 
         {held.length > 0 ? (
-          <View style={styles.group}>
-            <ThemedText variant="label" style={styles.groupTitle}>
-              Needs a decision
-            </ThemedText>
-            <View style={[styles.card, { backgroundColor: colors.surface }]}>
+          <Group>
+            <GroupTitle variant="label">Needs a decision</GroupTitle>
+            <Card>
               {held.map((view, index) => (
-                <View
-                  key={view.id}
-                  style={[styles.heldRow, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.outline }]}
-                >
-                  <View style={styles.cardText}>
+                <HeldRow key={view.id} $divided={index > 0}>
+                  <CardText>
                     <ThemedText variant="body">{view.title}</ThemedText>
                     <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
                       {view.items.toLocaleString('en-US')} items · {formatBytes(view.bytes)} — new folder, not backed
                       up until you decide
                     </ThemedText>
-                  </View>
-                  <Pressable
-                    style={[styles.pill, { backgroundColor: colors.accentSoft }]}
-                    onPress={() => applyRule(view, 'include')}
-                    accessibilityLabel={`Include ${view.title}`}
-                  >
+                  </CardText>
+                  <Pill $tone="accent" onPress={() => applyRule(view, 'include')} accessibilityLabel={`Include ${view.title}`}>
                     <ThemedText variant="bodySmall" color="accent">
                       Include
                     </ThemedText>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.pill, { backgroundColor: colors.outline }]}
-                    onPress={() => applyRule(view, 'exclude')}
-                    accessibilityLabel={`Exclude ${view.title}`}
-                  >
+                  </Pill>
+                  <Pill $tone="outline" onPress={() => applyRule(view, 'exclude')} accessibilityLabel={`Exclude ${view.title}`}>
                     <ThemedText variant="bodySmall" color="secondary">
                       Exclude
                     </ThemedText>
-                  </Pressable>
-                </View>
+                  </Pill>
+                </HeldRow>
               ))}
-            </View>
-          </View>
+            </Card>
+          </Group>
         ) : null}
 
-        <TextInput
+        <Search
           value={query}
           onChangeText={setQuery}
           placeholder="Search folders"
           placeholderTextColor={colors.textDisabled}
-          style={[styles.search, { backgroundColor: colors.surface, color: colors.text }]}
           accessibilityLabel="Search folders"
         />
 
-        <View style={styles.filterRow}>
+        <FilterRow>
           {FILTERS.map((f) => {
             const active = filter === f.key;
             return (
-              <Pressable
+              <FilterChip
                 key={f.key}
-                style={[styles.filterChip, { backgroundColor: active ? colors.accentSoft : colors.surface }]}
+                $active={active}
                 onPress={() => {
                   haptic('light');
                   setFilter(f.key);
@@ -219,14 +223,14 @@ export default function BackupFoldersScreen() {
                 <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
                   {f.label}
                 </ThemedText>
-              </Pressable>
+              </FilterChip>
             );
           })}
-        </View>
+        </FilterRow>
 
-        <View style={[styles.card, { backgroundColor: colors.surface }]}>
+        <Card>
           {filtered.length === 0 ? (
-            <ThemedText variant="bodySmall" color="secondary" style={styles.emptyText}>
+            <EmptyText variant="bodySmall" color="secondary">
               {views === null
                 ? 'Loading folders…'
                 : views.length === 0
@@ -234,22 +238,16 @@ export default function BackupFoldersScreen() {
                     ? 'The Expo Go preview cannot access the device library — run the native build.'
                     : 'No inventory yet — run a scan from the Backup screen first.'
                   : 'No folders match this view.'}
-            </ThemedText>
+            </EmptyText>
           ) : (
             filtered.map((view, index) => (
-              <View
-                key={view.id}
-                style={[
-                  styles.folderRow,
-                  index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.outline },
-                ]}
-              >
-                <View style={styles.cardText}>
+              <FolderRow key={view.id} $divided={index > 0}>
+                <CardText>
                   <ThemedText variant="body">{view.title}</ThemedText>
                   <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
                     {view.items.toLocaleString('en-US')} items · {formatBytes(view.bytes)} — {statusCaption(view)}
                   </ThemedText>
-                </View>
+                </CardText>
                 {view.status === 'held' ? (
                   <ThemedText variant="bodySmall" color="accent">
                     Pending
@@ -263,42 +261,22 @@ export default function BackupFoldersScreen() {
                     accessibilityLabel={`Back up ${view.title}`}
                   />
                 )}
-              </View>
+              </FolderRow>
             ))
           )}
-        </View>
+        </Card>
 
         {summary ? (
-          <ThemedText variant="bodySmall" color="secondary" style={styles.summary}>
+          <Summary variant="bodySmall" color="secondary">
             {summary}
-          </ThemedText>
+          </Summary>
         ) : null}
 
-        <ThemedText variant="bodySmall" color="secondary" style={styles.note}>
+        <Note variant="bodySmall" color="secondary">
           Rules apply at the next scan — unchanged photos are never re-hashed or re-uploaded. The Locked Folder and
           the Safe Folder never enter the backup.
-        </ThemedText>
-      </View>
-    </ScrollView>
+        </Note>
+      </Body>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-  body: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
-  group: { gap: 8 },
-  groupTitle: { textTransform: 'uppercase' },
-  card: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 4, overflow: 'hidden' },
-  folderRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12 },
-  heldRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  cardText: { flex: 1, gap: 2 },
-  pill: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
-  search: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
-  filterRow: { flexDirection: 'row', gap: 8 },
-  filterChip: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7 },
-  emptyText: { paddingVertical: 14, textAlign: 'center' },
-  summary: { textAlign: 'center' },
-  note: { lineHeight: 18, textAlign: 'center', marginTop: 8 },
-  noteCard: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
-});

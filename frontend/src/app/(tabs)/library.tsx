@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert } from 'react-native';
 import { Image } from 'expo-image';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,16 +10,31 @@ import { Icon, type IconName } from '@/components/Icon';
 import { PressableScale } from '@/components/PressableScale';
 import { TabSwipe } from '@/components/TabSwipe';
 import { ThemedText } from '@/components/ThemedText';
+import {
+  AlbumCardWrap,
+  AlbumCover,
+  AlbumCoverImage,
+  AlbumGrid,
+  AlbumTitle,
+  Header,
+  Screen,
+  SectionHeader,
+  Utilities,
+  UtilityCard,
+  UtilityIcon,
+  UtilityMeta,
+  UtilityTitle,
+} from '@/app/(tabs)/library.styles';
 import { deleteAlbum } from '@/data/albums-repository';
 import { fetchAssetsByIds } from '@/data/media-repository';
 import { readLockedConfig } from '@/data/locked-repository';
+import { useTranslation } from '@/i18n/hook';
 import { useLibraryStore } from '@/stores/library';
 import { useTheme } from '@/theme/context';
-import { formatCount } from '@/utils/format';
 import { haptic } from '@/utils/haptics';
 
 /** Utility card row at the top (Favorites / Locked Folder). */
-function UtilityCard({
+function UtilityCardRow({
   icon,
   title,
   subtitle,
@@ -32,25 +47,24 @@ function UtilityCard({
 }) {
   const { colors } = useTheme();
   return (
-    <PressableScale style={[styles.utilityCard, { backgroundColor: colors.surface }]} onPress={onPress}>
-      <View style={[styles.utilityIcon, { backgroundColor: colors.accentSoft }]}>
+    <UtilityCard onPress={onPress}>
+      <UtilityIcon>
         <Icon name={icon} size={22} color={colors.accent} />
-      </View>
-      <View style={styles.utilityMeta}>
-        <ThemedText variant="body" style={styles.utilityTitle}>
-          {title}
-        </ThemedText>
+      </UtilityIcon>
+      <UtilityMeta>
+        <UtilityTitle variant="body">{title}</UtilityTitle>
         <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
           {subtitle}
         </ThemedText>
-      </View>
+      </UtilityMeta>
       <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-    </PressableScale>
+    </UtilityCard>
   );
 }
 
 export default function LibraryScreen() {
-  const { colors } = useTheme();
+  const { colors, space } = useTheme();
+  const { t, tCount } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const albums = useLibraryStore((s) => s.albums);
@@ -86,20 +100,20 @@ export default function LibraryScreen() {
     haptic('medium');
     Alert.alert(title, undefined, [
       {
-        text: 'Rename',
+        text: t('albums.rename'),
         onPress: () => {
           // RN has no built-in prompt on Android; rename inline via alert input workaround:
-          Alert.alert('Rename album', 'Rename is available from the album screen header.', [{ text: 'OK' }]);
+          Alert.alert(t('albums.renameTitle'), t('albums.renameHint'), [{ text: t('common.ok') }]);
         },
       },
       {
-        text: 'Delete album',
+        text: t('albums.delete'),
         style: 'destructive',
         onPress: () => {
-          Alert.alert(`Delete “${title}”?`, 'Photos stay in your library — only the album is removed.', [
-            { text: 'Cancel', style: 'cancel' },
+          Alert.alert(t('albums.deleteConfirmTitle', { title }), t('albums.deleteConfirmBody'), [
+            { text: t('common.cancel'), style: 'cancel' },
             {
-              text: 'Delete',
+              text: t('common.delete'),
               style: 'destructive',
               onPress: () => {
                 deleteAlbum(albumId);
@@ -109,7 +123,7 @@ export default function LibraryScreen() {
           ]);
         },
       },
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
     ]);
   };
 
@@ -122,98 +136,75 @@ export default function LibraryScreen() {
 
   return (
     <TabSwipe tab="/library">
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 32 }}
+      <Screen
+        contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[8] }}
         showsVerticalScrollIndicator={false}
       >
-      <View style={styles.header}>
-        <ThemedText variant="display">Library</ThemedText>
-        <PressableScale hitSlop={8} onPress={createNewAlbum} accessibilityLabel="Create album">
-          <Icon name="add" size={26} color={colors.accent} />
-        </PressableScale>
-      </View>
+        <Header>
+          <ThemedText variant="display">{t('tabs.library')}</ThemedText>
+          <PressableScale hitSlop={8} onPress={createNewAlbum} accessibilityLabel={t('albums.create')}>
+            <Icon name="add" size={26} color={colors.accent} />
+          </PressableScale>
+        </Header>
 
-      <View style={styles.utilities}>
-        <UtilityCard
-          icon="heart"
-          title="Favorites"
-          subtitle={formatCount(favoriteIds.length, 'item', 'items')}
-          onPress={() => router.push('/album/favorites')}
-        />
-        <UtilityCard
-          icon={lockedEnabled ? 'lock-closed' : 'lock-closed-outline'}
-          title="Locked Folder"
-          subtitle={lockedEnabled ? formatCount(lockedCount, 'item', 'items') : 'Set up private storage'}
-          onPress={() => router.push('/locked')}
-        />
-      </View>
+        <Utilities>
+          <UtilityCardRow
+            icon="heart"
+            title={t('library.favorites')}
+            subtitle={tCount('units.items', favoriteIds.length)}
+            onPress={() => router.push('/album/favorites')}
+          />
+          <UtilityCardRow
+            icon={lockedEnabled ? 'lock-closed' : 'lock-closed-outline'}
+            title={t('settings.privacy.lockedFolder')}
+            subtitle={lockedEnabled ? tCount('units.items', lockedCount) : t('library.lockedSetupRequired')}
+            onPress={() => router.push('/locked')}
+          />
+        </Utilities>
 
-      <View style={styles.sectionHeader}>
-        <ThemedText variant="label">Albums</ThemedText>
-      </View>
+        <SectionHeader>
+          <ThemedText variant="label">{t('library.albums')}</ThemedText>
+        </SectionHeader>
 
-      {albums.length === 0 ? (
-        <EmptyState
-          icon="albums-outline"
-          title="No albums yet"
-          subtitle="Create an album to organize your favorite moments."
-        />
-      ) : (
-        <View style={styles.albumGrid}>
-          {albums.map((album, i) => {
-            const cover = album.coverAssetId ? covers[album.coverAssetId] : undefined;
-            return (
-              <Animated.View key={album.id} entering={FadeInDown.delay(Math.min(i * 40, 240)).springify().dampingRatio(0.85)} style={styles.albumCardWrap}>
-                <Pressable
-                  onPress={() => {
-                    haptic('light');
-                    router.push(`/album/${album.id}`);
-                  }}
-                  onLongPress={() => showAlbumMenu(album.id, album.title)}
-                >
-                  <View style={[styles.albumCover, { backgroundColor: colors.placeholder }]}>
-                    {cover ? (
-                      <Image source={{ uri: cover }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
-                    ) : (
-                      <Icon name="images-outline" size={26} color={colors.textSecondary} />
-                    )}
-                  </View>
-                  <ThemedText variant="bodySmall" numberOfLines={1} style={styles.albumTitle}>
-                    {album.title}
-                  </ThemedText>
-                  <ThemedText variant="bodySmall" color="secondary">
-                    {formatCount(album.itemCount, 'item', 'items')}
-                  </ThemedText>
-                </Pressable>
-              </Animated.View>
-            );
-          })}
-        </View>
-      )}
-      </ScrollView>
+        {albums.length === 0 ? (
+          <EmptyState
+            icon="albums-outline"
+            title={t('library.empty.title')}
+            subtitle={t('library.empty.subtitle')}
+          />
+        ) : (
+          <AlbumGrid>
+            {albums.map((album, i) => {
+              const cover = album.coverAssetId ? covers[album.coverAssetId] : undefined;
+              return (
+                <AlbumCardWrap key={album.id}>
+                  <Animated.View entering={FadeInDown.delay(Math.min(i * 40, 240)).springify().dampingRatio(0.85)}>
+                    <AlbumCover
+                      onPress={() => {
+                        haptic('light');
+                        router.push(`/album/${album.id}`);
+                      }}
+                      onLongPress={() => showAlbumMenu(album.id, album.title)}
+                    >
+                      {cover ? (
+                        <AlbumCoverImage source={{ uri: cover }} contentFit="cover" transition={150} />
+                      ) : (
+                        <Icon name="images-outline" size={26} color={colors.textSecondary} />
+                      )}
+                    </AlbumCover>
+                    <AlbumTitle variant="bodySmall" numberOfLines={1}>
+                      {album.title}
+                    </AlbumTitle>
+                    <ThemedText variant="bodySmall" color="secondary">
+                      {tCount('units.items', album.itemCount)}
+                    </ThemedText>
+                  </Animated.View>
+                </AlbumCardWrap>
+              );
+            })}
+          </AlbumGrid>
+        )}
+      </Screen>
     </TabSwipe>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 8 },
-  utilities: { paddingHorizontal: 16, gap: 8, paddingTop: 4 },
-  utilityCard: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 16, padding: 14 },
-  utilityIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  utilityMeta: { flex: 1, gap: 1 },
-  utilityTitle: { fontWeight: '500' },
-  sectionHeader: { paddingHorizontal: 16, paddingTop: 22, paddingBottom: 10 },
-  albumGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, paddingHorizontal: 16 },
-  albumCardWrap: { width: '47.5%' },
-  albumCover: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  albumTitle: { paddingTop: 8, fontWeight: '500' },
-});

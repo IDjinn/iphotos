@@ -1,10 +1,11 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { CloudGallery } from '@/components/CloudGallery';
 import { Icon } from '@/components/Icon';
-import { ThemedText } from '@/components/ThemedText';
+import { Header, HeaderSpacer, HeaderTitle, Screen } from '@/app/cloud-photos.styles';
+import { useTranslation } from '@/i18n/hook';
 import { useTheme } from '@/theme/context';
 
 /**
@@ -13,28 +14,22 @@ import { useTheme } from '@/theme/context';
  * `CloudGallery` (shared with the Photos tab in Expo Go).
  */
 export default function CloudPhotosScreen() {
-  const { colors } = useTheme();
+  const { space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t } = useTranslation();
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top + 8 }}>
-      <View style={styles.header}>
-        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">
+    <Screen $insetTop={insets.top + space[2]}>
+      <Header>
+        <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel={t('common.back')}>
           <Icon name="arrow-back" size={24} />
         </Pressable>
-        <ThemedText variant="titleMedium" style={styles.headerTitle}>
-          Photos in the cloud
-        </ThemedText>
-        <View style={{ width: 24 }} />
-      </View>
+        <HeaderTitle variant="titleMedium">{t('cloudPhotos.title')}</HeaderTitle>
+        <HeaderSpacer />
+      </Header>
 
-      <CloudGallery contentContainerStyle={{ paddingBottom: insets.bottom + 24 }} />
-    </View>
+      <CloudGallery contentContainerStyle={{ paddingBottom: insets.bottom + space[6] }} />
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, height: 52 },
-  headerTitle: { flex: 1, textAlign: 'center', fontWeight: '600' },
-});
