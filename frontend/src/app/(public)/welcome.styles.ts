@@ -20,8 +20,8 @@ export const Hero = styled(Animated.View)`
 `;
 
 export const Logo = styled.View`
-  width: 96px;
-  height: 96px;
+  width: ${({ theme }) => theme.ms(96)}px;
+  height: ${({ theme }) => theme.ms(96)}px;
   border-radius: ${({ theme }) => theme.radius.xl}px;
   align-items: center;
   justify-content: center;
@@ -57,7 +57,7 @@ export const Actions = styled(Animated.View)`
 `;
 
 export const PrimaryButton = styled(PressableScale)`
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
   border-radius: ${({ theme }) => theme.radius.md}px;
   align-items: center;
   justify-content: center;
@@ -65,7 +65,7 @@ export const PrimaryButton = styled(PressableScale)`
 `;
 
 export const SecondaryButton = styled(PressableScale)`
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
   border-radius: ${({ theme }) => theme.radius.md}px;
   align-items: center;
   justify-content: center;

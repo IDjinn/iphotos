@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, View } from 'react-native';
+import { Alert, BackHandler, useWindowDimensions, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Animated, {
   Easing,
@@ -33,7 +33,6 @@ import { readLockedConfig } from '@/data/locked-repository';
 import { deleteFromVault, exportFromVault, importToVault } from '@/data/vault-repository';
 import { useLibraryStore } from '@/stores/library';
 import { useViewerStore } from '@/stores/viewer';
-import { SCREEN_HEIGHT, SCREEN_WIDTH } from '@/theme/tokens';
 import { useTheme } from '@/theme/context';
 import { fullDateLabel, timeLabel } from '@/utils/dates';
 import { formatDuration } from '@/utils/format';
@@ -55,6 +54,7 @@ export function ViewerOverlay() {
   const { colors } = useTheme();
   const router = useRouter();
   const reducedMotion = useReducedMotion();
+  const { width: viewW, height: viewH } = useWindowDimensions();
 
   const visible = useViewerStore((s) => s.visible);
   const assets = useViewerStore((s) => s.assets);
@@ -81,8 +81,8 @@ export function ViewerOverlay() {
   // Hero flight frame.
   const heroX = useSharedValue(0);
   const heroY = useSharedValue(0);
-  const heroW = useSharedValue(SCREEN_WIDTH);
-  const heroH = useSharedValue(SCREEN_HEIGHT);
+  const heroW = useSharedValue(viewW);
+  const heroH = useSharedValue(viewH);
   const heroOpacity = useSharedValue(0);
   const pagerOpacity = useSharedValue(0);
   const backdropOpacity = useSharedValue(0);
@@ -110,9 +110,9 @@ export function ViewerOverlay() {
       if (origin && !reducedMotion) {
         // Fly to the image's final "contain" frame — the exact rect the
         // pager renders — so the flight never zooms past the resting size.
-        const fit = containFit(current?.width ?? 0, current?.height ?? 0);
-        const targetX = (SCREEN_WIDTH - fit.w) / 2;
-        const targetY = (SCREEN_HEIGHT - fit.h) / 2;
+        const fit = containFit(current?.width ?? 0, current?.height ?? 0, viewW, viewH);
+        const targetX = (viewW - fit.w) / 2;
+        const targetY = (viewH - fit.h) / 2;
 
         heroX.value = origin.x;
         heroY.value = origin.y;
@@ -162,11 +162,11 @@ export function ViewerOverlay() {
       if (target) {
         // Start the flight from wherever the drag left the page: the
         // contain-fit rect with the dismiss drag's scale/translate applied.
-        const fit = containFit(current?.width ?? 0, current?.height ?? 0);
+        const fit = containFit(current?.width ?? 0, current?.height ?? 0, viewW, viewH);
         const startW = fit.w * dismissScale.value;
         const startH = fit.h * dismissScale.value;
-        heroX.value = (SCREEN_WIDTH - startW) / 2;
-        heroY.value = (SCREEN_HEIGHT - startH) / 2 + dismissTy.value;
+        heroX.value = (viewW - startW) / 2;
+        heroY.value = (viewH - startH) / 2 + dismissTy.value;
         heroW.value = startW;
         heroH.value = startH;
         heroOpacity.value = 1;

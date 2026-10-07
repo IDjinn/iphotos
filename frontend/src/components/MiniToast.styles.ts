@@ -16,5 +16,5 @@ export const Wrap = styled(Animated.View)<{ $top: number }>`
 `;
 
 export const Text = styled(ThemedText)`
-  max-width: 280px;
+  max-width: ${({ theme }) => theme.ms(280)}px;
 `;

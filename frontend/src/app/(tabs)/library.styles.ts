@@ -34,8 +34,8 @@ export const UtilityCard = styled(PressableScale)`
 `;
 
 export const UtilityIcon = styled.View`
-  width: 42px;
-  height: 42px;
+  width: ${({ theme }) => theme.ms(42)}px;
+  height: ${({ theme }) => theme.ms(42)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   align-items: center;
   justify-content: center;
@@ -61,11 +61,13 @@ export const AlbumGrid = styled.View`
   flex-wrap: wrap;
   gap: ${({ theme }) => theme.space[3]}px;
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
+  justify-content: center;
 `;
 
-/** Album tile width — percentage of the wrapping grid, not a scale value. */
+/** Album tile width — percentage of the wrapping grid, capped for wide screens. */
 export const AlbumCardWrap = styled.View`
   width: 47.5%;
+  max-width: ${({ theme }) => theme.ms(200)}px;
 `;
 
 export const AlbumCover = styled(Pressable)`

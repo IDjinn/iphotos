@@ -34,8 +34,8 @@ export const HandleWrap = styled.View`
 `;
 
 export const Handle = styled.View`
-  width: 36px;
-  height: 4px;
-  border-radius: 2px;
+  width: ${({ theme }) => theme.ms(36)}px;
+  height: ${({ theme }) => theme.ms(4)}px;
+  border-radius: ${({ theme }) => theme.ms(2)}px;
   background-color: ${({ theme }) => theme.colors.outline};
 `;

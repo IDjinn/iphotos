@@ -22,7 +22,7 @@ export const Header = styled(Animated.View)`
   justify-content: space-between;
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
   padding-vertical: ${({ theme }) => theme.space[2]}px;
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
 `;
 
 export const HeaderTitle = styled(ThemedText)`

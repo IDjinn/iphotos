@@ -13,7 +13,7 @@ export const Header = styled.View`
   align-items: center;
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
   padding-vertical: ${({ theme }) => theme.space[2]}px;
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
 `;
 
 export const HeaderTitle = styled(ThemedText)`
@@ -23,7 +23,7 @@ export const HeaderTitle = styled(ThemedText)`
 `;
 
 export const HeaderSpacer = styled.View`
-  width: 24px;
+  width: ${({ theme }) => theme.ms(24)}px;
 `;
 
 export const Section = styled.View`
@@ -90,7 +90,7 @@ export const ThemeOption = styled(Pressable)<{ $active: boolean }>`
 `;
 
 export const CacheInput = styled(TextInput)`
-  width: 72px;
+  width: ${({ theme }) => theme.ms(72)}px;
   border-width: ${({ theme }) => theme.border.width}px;
   border-radius: ${({ theme }) => theme.radius.sm}px;
   padding-horizontal: ${({ theme }) => theme.space[2]}px;
@@ -102,7 +102,7 @@ export const CacheInput = styled(TextInput)`
 `;
 
 export const BackupBarTrack = styled.View`
-  height: 4px;
+  height: ${({ theme }) => theme.ms(4)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   flex-direction: row;
   margin-top: ${({ theme }) => theme.space[1]}px;

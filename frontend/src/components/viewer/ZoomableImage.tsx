@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useCallback, useMemo } from 'react';
+import { useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, {
   clamp,
@@ -13,7 +14,7 @@ import Animated, {
 
 import { ZoomFill } from '@/components/viewer/ZoomableImage.styles';
 import type { PhotoAsset } from '@/data/types';
-import { Durations, SCREEN_HEIGHT, SCREEN_WIDTH, Springs } from '@/theme/tokens';
+import { Durations, Springs } from '@/theme/tokens';
 
 const MAX_SCALE = 5;
 const DOUBLE_TAP_SCALE = 2.5;
@@ -59,14 +60,14 @@ interface ZoomableImageProps {
   onTap: () => void;
 }
 
-/** "Contain" fit of an image inside the viewport. */
-export function containFit(width: number, height: number) {
-  if (!(width > 0) || !(height > 0)) return { w: SCREEN_WIDTH, h: SCREEN_HEIGHT };
+/** "Contain" fit of an image inside the given viewport. */
+export function containFit(width: number, height: number, viewW: number, viewH: number) {
+  if (!(width > 0) || !(height > 0) || !(viewW > 0) || !(viewH > 0)) return { w: viewW, h: viewH };
   const aspect = width / height;
-  let w = SCREEN_WIDTH;
+  let w = viewW;
   let h = w / aspect;
-  if (h > SCREEN_HEIGHT) {
-    h = SCREEN_HEIGHT;
+  if (h > viewH) {
+    h = viewH;
     w = h * aspect;
   }
   return { w, h };
@@ -79,7 +80,11 @@ export function containFit(width: number, height: number) {
  */
 export function ZoomableImage({ asset, controller, pagerPan, onTap }: ZoomableImageProps) {
   const { scale, tx, ty, boundX, boundY, pinching } = controller;
-  const layout = useMemo(() => containFit(asset.width, asset.height), [asset.width, asset.height]);
+  const { width: viewW, height: viewH } = useWindowDimensions();
+  const layout = useMemo(
+    () => containFit(asset.width, asset.height, viewW, viewH),
+    [asset.width, asset.height, viewW, viewH]
+  );
 
   const startScale = useSharedValue(1);
   const startTx = useSharedValue(0);
@@ -99,8 +104,8 @@ export function ZoomableImage({ asset, controller, pagerPan, onTap }: ZoomableIm
     .onUpdate((event) => {
       const newScale = clamp(startScale.value * event.scale, 1, MAX_SCALE);
       const ratio = newScale / startScale.value;
-      const bx = Math.max(0, (layout.w * newScale - SCREEN_WIDTH) / 2);
-      const by = Math.max(0, (layout.h * newScale - SCREEN_HEIGHT) / 2);
+      const bx = Math.max(0, (layout.w * newScale - viewW) / 2);
+      const by = Math.max(0, (layout.h * newScale - viewH) / 2);
       scale.value = newScale;
       boundX.value = bx;
       boundY.value = by;
@@ -132,17 +137,17 @@ export function ZoomableImage({ asset, controller, pagerPan, onTap }: ZoomableIm
         boundX.value = 0;
         boundY.value = 0;
       } else {
-        const bx = Math.max(0, (layout.w * DOUBLE_TAP_SCALE - SCREEN_WIDTH) / 2);
-        const by = Math.max(0, (layout.h * DOUBLE_TAP_SCALE - SCREEN_HEIGHT) / 2);
+        const bx = Math.max(0, (layout.w * DOUBLE_TAP_SCALE - viewW) / 2);
+        const by = Math.max(0, (layout.h * DOUBLE_TAP_SCALE - viewH) / 2);
         boundX.value = bx;
         boundY.value = by;
         scale.value = withTiming(DOUBLE_TAP_SCALE, { duration: Durations.normal });
         tx.value = withTiming(
-          clamp(-1.5 * (event.x - SCREEN_WIDTH / 2), -bx, bx),
+          clamp(-1.5 * (event.x - viewW / 2), -bx, bx),
           { duration: Durations.normal }
         );
         ty.value = withTiming(
-          clamp(-1.5 * (event.y - SCREEN_HEIGHT / 2), -by, by),
+          clamp(-1.5 * (event.y - viewH / 2), -by, by),
           { duration: Durations.normal }
         );
       }

@@ -11,8 +11,8 @@ export const Container = styled(Animated.View)`
 `;
 
 export const IconWrap = styled.View`
-  width: 72px;
-  height: 72px;
+  width: ${({ theme }) => theme.ms(72)}px;
+  height: ${({ theme }) => theme.ms(72)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   align-items: center;
   justify-content: center;
@@ -26,5 +26,5 @@ export const Title = styled(ThemedText)`
 
 export const Subtitle = styled(ThemedText)`
   text-align: center;
-  max-width: 260px;
+  max-width: ${({ theme }) => theme.ms(260)}px;
 `;

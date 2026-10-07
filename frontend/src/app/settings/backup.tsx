@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CONTENT_MAX_WIDTH } from '@/theme/scale';
 import { ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -192,7 +193,7 @@ export default function BackupSettingsScreen() {
 
   return (
     <Screen
-      contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[10] }}
+      contentContainerStyle={{ width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center', paddingTop: insets.top + space[2], paddingBottom: space[10] }}
     >
       <Header>
         <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel="Back">

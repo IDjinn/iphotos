@@ -21,7 +21,7 @@ export const Header = styled(Animated.View)`
   gap: ${({ theme }) => theme.space[3]}px;
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
   padding-vertical: ${({ theme }) => theme.space[2]}px;
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
 `;
 
 export const HeaderTitle = styled(ThemedText)`
@@ -30,7 +30,7 @@ export const HeaderTitle = styled(ThemedText)`
 `;
 
 export const HeaderSpacer = styled.View`
-  width: 24px;
+  width: ${({ theme }) => theme.ms(24)}px;
 `;
 
 export const Meta = styled.View`

@@ -1,13 +1,14 @@
 import { FlashList, type FlashListRef, type ListRenderItem } from '@shopify/flash-list';
 import { useCallback, useMemo, useRef } from 'react';
-import { RefreshControl } from 'react-native';
+import { RefreshControl, useWindowDimensions } from 'react-native';
 
 import { measureHeroCell } from '@/animations/hero';
 import { buildGridData, type GridItem } from '@/data/grouping';
 import type { PhotoAsset } from '@/data/types';
 import { useSelectionStore } from '@/stores/selection';
 import { useViewerStore, type ViewerContext } from '@/stores/viewer';
-import { GRID_CELL_SIZE, GRID_COLUMNS, GRID_GAP } from '@/theme/tokens';
+import { cellSizeFor, columnsFor } from '@/theme/scale';
+import { GRID_GAP } from '@/theme/tokens';
 import { useTheme } from '@/theme/context';
 
 import { DayHeader, GridRow, MonthHeader } from './GridHeaders';
@@ -42,8 +43,11 @@ export function PhotoGrid({
   const { colors } = useTheme();
   const listRef = useRef<FlashListRef<GridItem>>(null);
   const openViewer = useViewerStore((s) => s.open);
+  const { width } = useWindowDimensions();
+  const columns = columnsFor(width);
+  const cellSize = cellSizeFor(width, columns, GRID_GAP);
 
-  const gridData = useMemo(() => buildGridData(assets, GRID_COLUMNS), [assets]);
+  const gridData = useMemo(() => buildGridData(assets, columns), [assets, columns]);
 
   const defaultCellPress = useCallback(
     (asset: PhotoAsset) => {
@@ -83,11 +87,11 @@ export function PhotoGrid({
           return <DayHeader label={item.label} />;
         case 'row':
           return (
-            <GridRow assets={item.assets} cellSize={GRID_CELL_SIZE} gap={GRID_GAP} onPress={handleCellPress} />
+            <GridRow assets={item.assets} cellSize={cellSize} gap={GRID_GAP} onPress={handleCellPress} />
           );
       }
     },
-    [handleCellPress]
+    [handleCellPress, cellSize]
   );
 
   return (
@@ -96,6 +100,7 @@ export function PhotoGrid({
         ref={listRef}
         data={gridData.items}
         renderItem={renderItem}
+        extraData={cellSize}
         keyExtractor={(item) => item.key}
         stickyHeaderIndices={stickyMonths ? gridData.stickyIndices : undefined}
         showsVerticalScrollIndicator={false}

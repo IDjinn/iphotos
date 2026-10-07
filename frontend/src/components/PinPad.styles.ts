@@ -9,21 +9,21 @@ export const PadWrap = styled(Animated.View)`
 export const Grid = styled.View`
   flex-direction: row;
   flex-wrap: wrap;
-  width: 264px;
+  width: ${({ theme }) => theme.ms(264)}px;
   gap: ${({ theme }) => theme.space[4]}px;
   justify-content: center;
 `;
 
 export const Key = styled(Pressable)`
-  width: 72px;
-  height: 72px;
+  width: ${({ theme }) => theme.ms(72)}px;
+  height: ${({ theme }) => theme.ms(72)}px;
   align-items: center;
   justify-content: center;
 `;
 
 export const KeySpacer = styled.View`
-  width: 72px;
-  height: 72px;
+  width: ${({ theme }) => theme.ms(72)}px;
+  height: ${({ theme }) => theme.ms(72)}px;
 `;
 
 export const DigitKey = styled(Key)<{ $pressed: boolean }>`
@@ -35,15 +35,15 @@ export const DigitKey = styled(Key)<{ $pressed: boolean }>`
 export const DotsWrap = styled.View`
   flex-direction: row;
   gap: ${({ theme }) => theme.space[3]}px;
-  height: 16px;
+  height: ${({ theme }) => theme.ms(16)}px;
   align-items: center;
 `;
 
 export type DotState = 'filled' | 'error' | 'empty';
 
 export const Dot = styled.View<{ $state: DotState }>`
-  width: 12px;
-  height: 12px;
+  width: ${({ theme }) => theme.ms(12)}px;
+  height: ${({ theme }) => theme.ms(12)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   background-color: ${({ theme, $state }) =>
     $state === 'filled'

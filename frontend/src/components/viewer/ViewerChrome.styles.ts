@@ -46,8 +46,8 @@ export const Spacer = styled.View`
 `;
 
 export const IconButton = styled(Pressable)`
-  width: 46px;
-  height: 46px;
+  width: ${({ theme }) => theme.ms(46)}px;
+  height: ${({ theme }) => theme.ms(46)}px;
   align-items: center;
   justify-content: center;
 `;

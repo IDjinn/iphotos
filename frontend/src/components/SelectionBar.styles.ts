@@ -20,14 +20,14 @@ export const Wrap = styled(Animated.View)<{ $bottom: number }>`
 `;
 
 export const Exit = styled(Pressable)`
-  width: 40px;
-  height: 40px;
+  width: ${({ theme }) => theme.ms(40)}px;
+  height: ${({ theme }) => theme.ms(40)}px;
   align-items: center;
   justify-content: center;
 `;
 
 export const CountPill = styled.View`
-  min-width: 32px;
+  min-width: ${({ theme }) => theme.ms(32)}px;
   padding-horizontal: ${({ theme }) => theme.space[2]}px;
   padding-vertical: ${({ theme }) => theme.space[1]}px;
   border-radius: ${({ theme }) => theme.radius.md}px;
@@ -46,8 +46,8 @@ export const Actions = styled.View`
 `;
 
 export const ActionButton = styled(Pressable)`
-  width: 44px;
-  height: 44px;
+  width: ${({ theme }) => theme.ms(44)}px;
+  height: ${({ theme }) => theme.ms(44)}px;
   align-items: center;
   justify-content: center;
 `;

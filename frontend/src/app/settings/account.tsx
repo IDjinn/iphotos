@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CONTENT_MAX_WIDTH } from '@/theme/scale';
 import { ActivityIndicator, Alert, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -84,7 +85,7 @@ export default function AccountSettingsScreen() {
 
   return (
     <Screen
-      contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[10] }}
+      contentContainerStyle={{ width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center', paddingTop: insets.top + space[2], paddingBottom: space[10] }}
     >
       <Header>
         <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel={t('common.back')}>

@@ -13,7 +13,7 @@ export const Header = styled.View`
   align-items: center;
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
   padding-vertical: ${({ theme }) => theme.space[2]}px;
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
 `;
 
 export const HeaderTitle = styled(ThemedText)`
@@ -23,7 +23,7 @@ export const HeaderTitle = styled(ThemedText)`
 `;
 
 export const HeaderSpacer = styled.View`
-  width: 24px;
+  width: ${({ theme }) => theme.ms(24)}px;
 `;
 
 export const Body = styled.View`
@@ -66,7 +66,7 @@ export const UsageHeader = styled.View`
 
 export const UsageBar = styled.View`
   flex-direction: row;
-  height: 8px;
+  height: ${({ theme }) => theme.ms(8)}px;
   border-radius: ${({ theme }) => theme.radius.xs}px;
   overflow: hidden;
   background-color: ${({ theme }) => theme.colors.outline};

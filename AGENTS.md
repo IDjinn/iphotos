@@ -6,6 +6,7 @@
 - **DO** keep the frontend dependent on explicit API contracts (`src/data/*` typed modules) — never encode backend implementation details, business rules, or pricing into the app.
 - **DO** follow the roadmap workflow in `docs/plans/00-roadmap.md`: read the doc for the topic before coding, update the §5 status table and task checkboxes when a stage is done.
 - **DO** style the mobile app exclusively with styled-components/native in sibling `<Component>.styles.ts` files (decision D17, doc 16): theme scales only (`theme.space`/`type`/`radius`), transient `$` props for dynamic values — never `StyleSheet`, inline styles, or color literals (sanctioned exceptions: Reanimated `useAnimatedStyle`, intrinsic sizes, runtime-measured values).
+- **DO** keep mobile dimensions responsive (decision D18, doc 17): never reintroduce static screen constants (`Dimensions.get` at module scope, `SCREEN_WIDTH`-style exports) — derive layout from `useWindowDimensions` + `src/theme/scale.ts` helpers (`columnsFor`, `cellSizeFor`, `ms`); sizes come from the theme (already scaled) or `theme.ms(N)` for intrinsic control sizes — no raw `Npx` literals (N ≥ 2) in styles files.
 
 ## Docker (local compose)
 

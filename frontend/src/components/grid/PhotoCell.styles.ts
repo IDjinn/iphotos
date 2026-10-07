@@ -22,8 +22,8 @@ export const VideoBadge = styled.View`
   position: absolute;
   top: ${({ theme }) => theme.space[1]}px;
   left: ${({ theme }) => theme.space[1]}px;
-  width: 22px;
-  height: 22px;
+  width: ${({ theme }) => theme.ms(22)}px;
+  height: ${({ theme }) => theme.ms(22)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   background-color: ${({ theme }) => theme.colors.scrim};
   align-items: center;
@@ -51,8 +51,8 @@ export const CheckWrap = styled(Animated.View)`
 `;
 
 export const CheckCircle = styled.View<{ $selected: boolean }>`
-  width: 22px;
-  height: 22px;
+  width: ${({ theme }) => theme.ms(22)}px;
+  height: ${({ theme }) => theme.ms(22)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   border-width: ${({ theme }) => theme.border.wide}px;
   border-color: ${({ theme }) => theme.colors.textInverse};

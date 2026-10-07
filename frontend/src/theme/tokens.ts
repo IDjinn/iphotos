@@ -1,13 +1,12 @@
-import { Dimensions, PixelRatio } from 'react-native';
+import { PixelRatio } from 'react-native';
 
-/** Grid layout constants for photo grids. */
+/**
+ * Grid layout constants for photo grids. Phone defaults — actual column
+ * count and cell size are derived from the live window width via
+ * `columnsFor`/`cellSizeFor` (theme/scale.ts).
+ */
 export const GRID_COLUMNS = 3;
 export const GRID_GAP = 2;
-export const SCREEN_WIDTH = Dimensions.get('window').width;
-export const SCREEN_HEIGHT = Dimensions.get('window').height;
-export const GRID_CELL_SIZE = Math.floor(
-  (SCREEN_WIDTH - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS
-);
 
 /** Motion durations in milliseconds. */
 export const Durations = {
@@ -52,6 +51,7 @@ export const TYPE = {
     bodySmall: 13,
     label: 12,
     caption: 11,
+    micro: 10,
   },
   weight: {
     regular: '400',

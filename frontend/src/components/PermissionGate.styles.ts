@@ -14,12 +14,12 @@ export const Container = styled.View`
 export const Content = styled(Animated.View)`
   align-items: center;
   gap: ${({ theme }) => theme.space[3]}px;
-  max-width: 340px;
+  max-width: ${({ theme }) => theme.ms(340)}px;
 `;
 
 export const IconWrap = styled.View`
-  width: 88px;
-  height: 88px;
+  width: ${({ theme }) => theme.ms(88)}px;
+  height: ${({ theme }) => theme.ms(88)}px;
   border-radius: ${({ theme }) => theme.radius.xl}px;
   align-items: center;
   justify-content: center;

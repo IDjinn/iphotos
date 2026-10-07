@@ -13,7 +13,7 @@ export const Header = styled.View`
   align-items: center;
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
   padding-vertical: ${({ theme }) => theme.space[2]}px;
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
 `;
 
 export const HeaderTitle = styled(ThemedText)`
@@ -23,7 +23,7 @@ export const HeaderTitle = styled(ThemedText)`
 `;
 
 export const HeaderSpacer = styled.View`
-  width: 24px;
+  width: ${({ theme }) => theme.ms(24)}px;
 `;
 
 export const Section = styled(View)`
@@ -79,7 +79,7 @@ export const Badge = styled(View)`
 `;
 
 export const BadgeText = styled(ThemedText)`
-  font-size: 10px;
+  font-size: ${({ theme }) => theme.type.size.micro}px;
   font-weight: ${({ theme }) => theme.type.weight.semibold};
 `;
 
@@ -102,14 +102,14 @@ export const ProgressLine = styled(View)`
 `;
 
 export const Track = styled(View)`
-  height: 6px;
+  height: ${({ theme }) => theme.ms(6)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   overflow: hidden;
   background-color: ${({ theme }) => theme.colors.outline};
 `;
 
 export const TrackFill = styled.View<{ $pct: number }>`
-  height: 6px;
+  height: ${({ theme }) => theme.ms(6)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   width: ${({ $pct }) => $pct}%;
   background-color: ${({ theme }) => theme.colors.accent};

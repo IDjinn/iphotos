@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable } from 'react-native';
+import { CONTENT_MAX_WIDTH } from '@/theme/scale';
+import { ActivityIndicator, Alert, Pressable, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FadeInDown } from 'react-native-reanimated';
@@ -165,7 +166,7 @@ export default function EncryptedModeScreen() {
       : null;
 
   // Shared scroll content padding/gap (same on every state branch).
-  const contentBody = { padding: space[5], gap: space[3] };
+  const contentBody: ViewStyle = { width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center', padding: space[5], gap: space[3] };
 
   return (
     <Screen>

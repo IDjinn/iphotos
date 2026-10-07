@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, {
   clamp,
@@ -12,12 +13,11 @@ import Animated, {
 
 import { Page, PagerContainer } from '@/components/viewer/ViewerPager.styles';
 import type { PhotoAsset } from '@/data/types';
-import { SCREEN_HEIGHT, SCREEN_WIDTH, Springs } from '@/theme/tokens';
+import { Springs } from '@/theme/tokens';
 
 import { VideoPage } from './VideoPage';
 import { useZoomController, ZoomableImage, type ZoomController } from './ZoomableImage';
 
-const W = SCREEN_WIDTH;
 const PAGE_WINDOW = 1;
 
 /** 0 = undecided, 1 = horizontal swipe, 2 = vertical dismiss, 3 = zoom pan. */
@@ -44,6 +44,7 @@ interface ViewerPagerProps {
 function PagerPage({
   asset,
   pageIndex,
+  pageWidth,
   active,
   videoPlaying,
   videoMuted,
@@ -53,6 +54,7 @@ function PagerPage({
 }: {
   asset: PhotoAsset;
   pageIndex: number;
+  pageWidth: number;
   active: boolean;
   videoPlaying: boolean;
   videoMuted: boolean;
@@ -68,7 +70,7 @@ function PagerPage({
   }, [pageIndex, controller, onRegister]);
 
   return (
-    <Page $left={pageIndex * W}>
+    <Page $left={pageIndex * pageWidth} $width={pageWidth}>
       {asset.mediaType === 'video' ? (
         <VideoPage
           asset={asset}
@@ -102,7 +104,8 @@ export function ViewerPager({
   videoPlaying,
   videoMuted,
 }: ViewerPagerProps) {
-  const offset = useSharedValue(-index * W);
+  const { width: pageWidth } = useWindowDimensions();
+  const offset = useSharedValue(-index * pageWidth);
   const axis = useSharedValue(AXIS_NONE);
   const baseOffset = useSharedValue(0);
   const baseZoomTx = useSharedValue(0);
@@ -111,14 +114,15 @@ export function ViewerPager({
   const startTy = useSharedValue(0);
   const controllers = useRef<Map<number, ZoomController>>(new Map());
 
-  // Keep the container glued to the (possibly new) page without jumping.
+  // Keep the container glued to the (possibly new) page or window size
+  // without jumping.
   useEffect(() => {
-    offset.value = -index * W;
+    offset.value = -index * pageWidth;
     // Reset zoom on pages that are no longer active.
     controllers.current.forEach((controller, i) => {
       if (i !== index) controller.reset();
     });
-  }, [index, offset]);
+  }, [index, pageWidth, offset]);
 
   const registerController = useMemo(
     () => (pageIndex: number, controller: ZoomController | null) => {
@@ -165,7 +169,7 @@ export function ViewerPager({
 
         if (axis.value === AXIS_HORIZONTAL) {
           let raw = baseOffset.value + dx;
-          const min = -(assets.length - 1) * W;
+          const min = -(assets.length - 1) * pageWidth;
           const max = 0;
           if (raw > max) raw = max + (raw - max) * 0.3;
           if (raw < min) raw = min + (raw - min) * 0.3;
@@ -192,9 +196,9 @@ export function ViewerPager({
         const dy = event.translationY - startTy.value;
 
         if (axis.value === AXIS_HORIZONTAL) {
-          const projected = -(baseOffset.value + dx + event.velocityX * 0.2) / W;
+          const projected = -(baseOffset.value + dx + event.velocityX * 0.2) / pageWidth;
           const target = clamp(Math.round(projected), 0, assets.length - 1);
-          offset.value = withSpring(-target * W, { velocity: event.velocityX, ...Springs.gentle }, (finished) => {
+          offset.value = withSpring(-target * pageWidth, { velocity: event.velocityX, ...Springs.gentle }, (finished) => {
             if (finished) runOnJS(onIndexChange)(target);
           });
         } else if (axis.value === AXIS_VERTICAL) {
@@ -212,7 +216,7 @@ export function ViewerPager({
         axis.value = AXIS_NONE;
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, assets.length, dismissTy, dismissScale, backdropOpacity, offset, onIndexChange, onDismiss]);
+  }, [index, assets.length, pageWidth, dismissTy, dismissScale, backdropOpacity, offset, onIndexChange, onDismiss]);
 
   const containerStyle = useAnimatedStyle(() => ({
     transform: [
@@ -235,6 +239,7 @@ export function ViewerPager({
             key={assets[i].id}
             asset={assets[i]}
             pageIndex={i}
+            pageWidth={pageWidth}
             active={i === index}
             videoPlaying={videoPlaying}
             videoMuted={videoMuted}

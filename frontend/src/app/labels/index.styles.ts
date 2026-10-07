@@ -14,7 +14,7 @@ export const Header = styled.View<{ $insetTop: number }>`
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
   padding-vertical: ${({ theme }) => theme.space[2]}px;
   padding-top: ${({ $insetTop }) => $insetTop}px;
-  height: 56px;
+  height: ${({ theme }) => theme.ms(56)}px;
 `;
 
 export const HeaderTitle = styled(ThemedText)`
@@ -34,7 +34,7 @@ export const FilterBar = styled.View`
   gap: ${({ theme }) => theme.space[2]}px;
   border-radius: ${({ theme }) => theme.radius.xl}px;
   padding-horizontal: ${({ theme }) => theme.space[3]}px;
-  height: 40px;
+  height: ${({ theme }) => theme.ms(40)}px;
   background-color: ${({ theme }) => theme.colors.surface};
 `;
 
@@ -56,14 +56,14 @@ export const StatusText = styled(ThemedText)`
 `;
 
 export const Track = styled.View`
-  height: 5px;
+  height: ${({ theme }) => theme.ms(5)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   overflow: hidden;
   background-color: ${({ theme }) => theme.colors.outline};
 `;
 
 export const TrackFill = styled.View<{ $pct: number }>`
-  height: 5px;
+  height: ${({ theme }) => theme.ms(5)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   width: ${({ $pct }) => $pct}%;
   background-color: ${({ theme }) => theme.colors.accent};

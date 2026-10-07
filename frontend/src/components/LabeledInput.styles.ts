@@ -8,7 +8,7 @@ export const Wrap = styled.View`
 export const Field = styled(TextInput)<{ $error: boolean }>`
   border-radius: ${({ theme }) => theme.radius.md}px;
   border-width: ${({ theme }) => theme.border.thick}px;
-  height: 48px;
+  height: ${({ theme }) => theme.ms(48)}px;
   padding-horizontal: ${({ theme }) => theme.space[3]}px;
   font-size: ${({ theme }) => theme.type.size.body}px;
   background-color: ${({ theme }) => theme.colors.surface};

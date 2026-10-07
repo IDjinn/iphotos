@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'expo-router';
+import { useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   cancelAnimation,
@@ -14,14 +15,11 @@ import { useReducedMotion } from '@/animations/useReducedMotion';
 import { beginTabEnter, takeTabEnter } from '@/navigation/tab-transition';
 import { useSelectionStore } from '@/stores/selection';
 import { Fill } from '@/components/TabSwipe.styles';
-import { SCREEN_WIDTH } from '@/theme/tokens';
 
 /** Bottom-tab routes in bar order — a committed horizontal swipe moves between them. */
 const TABS = ['/', '/search', '/library'] as const;
 type TabPath = (typeof TABS)[number];
 
-const EXIT_DISTANCE = SCREEN_WIDTH * 0.25;
-const ENTER_DISTANCE = SCREEN_WIDTH * 0.3;
 const EXIT_DURATION = 140;
 const ENTER_DURATION = 220;
 
@@ -38,6 +36,9 @@ export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode 
   const isActive = pathname === tab;
   const reducedMotion = useReducedMotion();
   const selectionActive = useSelectionStore((s) => s.active);
+  const { width } = useWindowDimensions();
+  const exitDistance = Math.round(width * 0.25);
+  const enterDistance = Math.round(width * 0.3);
 
   const x = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -51,7 +52,7 @@ export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode 
     const pending = takeTabEnter(tab);
     if (pending) {
       const easing = Easing.out(Easing.cubic);
-      x.value = pending.dir * ENTER_DISTANCE;
+      x.value = pending.dir * enterDistance;
       opacity.value = 0;
       x.value = withTiming(0, { duration: ENTER_DURATION, easing });
       opacity.value = withTiming(1, { duration: ENTER_DURATION, easing });
@@ -62,7 +63,7 @@ export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode 
       x.value = 0;
       opacity.value = 1;
     }
-  }, [isActive, tab, x, opacity]);
+  }, [isActive, tab, x, opacity, enterDistance]);
 
   const pan = useMemo(() => {
     const commit = (target: TabPath, dir: 1 | -1) => {
@@ -76,7 +77,7 @@ export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode 
       cancelAnimation(x);
       cancelAnimation(opacity);
       const easing = Easing.out(Easing.cubic);
-      x.value = withTiming(dir * -EXIT_DISTANCE, { duration: EXIT_DURATION, easing });
+      x.value = withTiming(dir * -exitDistance, { duration: EXIT_DURATION, easing });
       opacity.value = withTiming(0, { duration: EXIT_DURATION, easing });
       // Phase 2: hand off — the target slides in from the opposite side.
       setTimeout(() => {
@@ -98,7 +99,7 @@ export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode 
         const dir: 1 | -1 = event.translationX < 0 ? 1 : -1;
         runOnJS(commit)(TABS[next], dir);
       });
-  }, [tab, router, isActive, selectionActive, reducedMotion, x, opacity, exitSeq]);
+  }, [tab, router, isActive, selectionActive, reducedMotion, x, opacity, exitSeq, exitDistance]);
 
   const style = useAnimatedStyle(() => ({
     transform: [{ translateX: x.value }],

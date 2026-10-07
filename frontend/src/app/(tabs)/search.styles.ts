@@ -19,7 +19,7 @@ export const SearchBar = styled.View`
   gap: ${({ theme }) => theme.space[2]}px;
   border-radius: ${({ theme }) => theme.radius.xl}px;
   padding-horizontal: ${({ theme }) => theme.space[3]}px;
-  height: 44px;
+  height: ${({ theme }) => theme.ms(44)}px;
   background-color: ${({ theme }) => theme.colors.surface};
 `;
 

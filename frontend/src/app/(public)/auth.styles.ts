@@ -15,7 +15,7 @@ export const Header = styled.View`
   align-items: center;
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
   padding-vertical: ${({ theme }) => theme.space[2]}px;
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
 `;
 
 export const HeaderTitle = styled(ThemedText)`
@@ -26,7 +26,7 @@ export const HeaderTitle = styled(ThemedText)`
 
 /** Spacer mirroring the back icon so the centered title stays centered. */
 export const HeaderSpacer = styled.View`
-  width: 24px;
+  width: ${({ theme }) => theme.ms(24)}px;
 `;
 
 export const Form = styled(Animated.View)`
@@ -40,7 +40,7 @@ export const Forgot = styled(ThemedText)`
 `;
 
 export const Submit = styled(PressableScale)`
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
   border-radius: ${({ theme }) => theme.radius.md}px;
   align-items: center;
   justify-content: center;

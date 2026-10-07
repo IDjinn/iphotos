@@ -43,8 +43,8 @@ export const CloseButton = styled(Pressable)<{ $top: number }>`
   position: absolute;
   right: ${({ theme }) => theme.space[5]}px;
   top: ${({ $top }) => $top}px;
-  width: 40px;
-  height: 40px;
+  width: ${({ theme }) => theme.ms(40)}px;
+  height: ${({ theme }) => theme.ms(40)}px;
   align-items: center;
   justify-content: center;
 `;

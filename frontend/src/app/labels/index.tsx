@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { CONTENT_MAX_WIDTH } from '@/theme/scale';
 import { ActivityIndicator, FlatList, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -195,7 +196,7 @@ export default function LabelsScreen() {
           data={shown}
           keyExtractor={(item) => item.label}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, gap: 8 }}
+          contentContainerStyle={{ width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center', paddingHorizontal: 16, paddingBottom: 32, gap: 8 }}
           renderItem={({ item }) => (
             <LabelRowItem
               label={item.label}

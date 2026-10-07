@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CONTENT_MAX_WIDTH } from '@/theme/scale';
 import { Alert } from 'react-native';
 import { Image } from 'expo-image';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -137,7 +138,7 @@ export default function LibraryScreen() {
   return (
     <TabSwipe tab="/library">
       <Screen
-        contentContainerStyle={{ paddingTop: insets.top + space[2], paddingBottom: space[8] }}
+        contentContainerStyle={{ width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center', paddingTop: insets.top + space[2], paddingBottom: space[8] }}
         showsVerticalScrollIndicator={false}
       >
         <Header>

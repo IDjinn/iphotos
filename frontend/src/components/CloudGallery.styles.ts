@@ -49,8 +49,8 @@ export const VideoBadge = styled.View`
   position: absolute;
   top: ${({ theme }) => theme.space[1]}px;
   left: ${({ theme }) => theme.space[1]}px;
-  width: 22px;
-  height: 22px;
+  width: ${({ theme }) => theme.ms(22)}px;
+  height: ${({ theme }) => theme.ms(22)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   background-color: ${({ theme }) => theme.colors.scrim};
   align-items: center;

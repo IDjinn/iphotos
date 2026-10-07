@@ -25,7 +25,7 @@ export const Header = styled.View`
   align-items: center;
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
   padding-vertical: ${({ theme }) => theme.space[2]}px;
-  height: 52px;
+  height: ${({ theme }) => theme.ms(52)}px;
 `;
 
 export const HeaderTitle = styled(ThemedText)`
@@ -36,7 +36,7 @@ export const HeaderTitle = styled(ThemedText)`
 
 /** Spacer mirroring the close icon so the centered title stays centered. */
 export const HeaderSpacer = styled.View`
-  width: 24px;
+  width: ${({ theme }) => theme.ms(24)}px;
 `;
 
 export const Flow = styled(Animated.View)`
@@ -48,8 +48,8 @@ export const Flow = styled(Animated.View)`
 `;
 
 export const LockIconWrap = styled.View<{ $soft: boolean }>`
-  width: 76px;
-  height: 76px;
+  width: ${({ theme }) => theme.ms(76)}px;
+  height: ${({ theme }) => theme.ms(76)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
   align-items: center;
   justify-content: center;
@@ -62,7 +62,7 @@ export const FlowTitle = styled(ThemedText)`
 
 export const FlowText = styled(ThemedText)`
   text-align: center;
-  max-width: 300px;
+  max-width: ${({ theme }) => theme.ms(300)}px;
   line-height: ${({ theme }) => theme.type.line.body}px;
 `;
 

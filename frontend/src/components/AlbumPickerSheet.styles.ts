@@ -73,8 +73,8 @@ export const AlbumRow = styled(Pressable)<{ $pressed: boolean }>`
 `;
 
 export const Cover = styled.View`
-  width: 44px;
-  height: 44px;
+  width: ${({ theme }) => theme.ms(44)}px;
+  height: ${({ theme }) => theme.ms(44)}px;
   border-radius: ${({ theme }) => theme.radius.sm}px;
   align-items: center;
   justify-content: center;
