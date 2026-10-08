@@ -51,6 +51,25 @@ export function getCachedThumbnailUri(assetId: string): string | null {
 
 const pending = new Set<string>();
 
+/** Caps concurrent native resize jobs so a fast scroll doesn't flood the device. */
+const MAX_CONCURRENT_GENERATION = 3;
+let activeGenerations = 0;
+const generationQueue: (() => void)[] = [];
+
+async function acquireGenerationSlot(): Promise<void> {
+  if (activeGenerations < MAX_CONCURRENT_GENERATION) {
+    activeGenerations++;
+    return;
+  }
+  await new Promise<void>((resolve) => generationQueue.push(resolve));
+  activeGenerations++;
+}
+
+function releaseGenerationSlot(): void {
+  activeGenerations--;
+  generationQueue.shift()?.();
+}
+
 /**
  * Generates a thumbnail for `asset` if missing. Returns the URI when one
  * already exists; otherwise resolves with the new URI once generated (or
@@ -64,22 +83,31 @@ export async function ensureThumbnail(asset: PhotoAsset): Promise<string | null>
 
   pending.add(asset.id);
   try {
-    const { manipulateAsync, SaveFormat } = await import('expo-image-manipulator');
-    const result = await manipulateAsync(
-      asset.uri,
-      [{ resize: { width: THUMBNAIL_EDGE, height: THUMBNAIL_EDGE } }],
-      { format: SaveFormat.JPEG, compress: THUMBNAIL_QUALITY }
-    );
-    const dest = thumbnailFile(asset.id);
-    const source = new File(result.uri);
-    // manipulateAsync writes to the cache dir; move it into our persistent dir.
-    source.move(dest);
-    db.runSync('INSERT OR REPLACE INTO thumbnails (asset_id, created_at) VALUES (?, ?)', [
-      asset.id,
-      Date.now(),
-    ]);
-    knownThumbnails.add(asset.id);
-    return dest.uri;
+    await acquireGenerationSlot();
+    try {
+      const { manipulateAsync, SaveFormat } = await import('expo-image-manipulator');
+      const result = await manipulateAsync(
+        asset.uri,
+        [{ resize: { width: THUMBNAIL_EDGE, height: THUMBNAIL_EDGE } }],
+        { format: SaveFormat.JPEG, compress: THUMBNAIL_QUALITY }
+      );
+      const dest = thumbnailFile(asset.id);
+      const source = new File(result.uri);
+      // `move` requires the parent directory to exist; create it up front.
+      thumbnailDirectory().create({ idempotent: true, intermediates: true });
+      // manipulateAsync writes to the cache dir; move it into our persistent dir.
+      // `move` fails if the destination already exists; clear any stale file.
+      if (dest.exists) dest.delete();
+      source.move(dest);
+      db.runSync('INSERT OR REPLACE INTO thumbnails (asset_id, created_at) VALUES (?, ?)', [
+        asset.id,
+        Date.now(),
+      ]);
+      knownThumbnails.add(asset.id);
+      return dest.uri;
+    } finally {
+      releaseGenerationSlot();
+    }
   } catch {
     return null;
   } finally {

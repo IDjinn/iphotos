@@ -26,7 +26,10 @@ export function useThumbnailUri(asset: PhotoAsset): string {
     return () => {
       cancelled = true;
     };
-  }, [asset]);
+    // Keyed on id/uri, not object identity: parents recreate asset objects on
+    // every query, and re-running generation per identity would thrash cells.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asset.id, asset.uri]);
 
   // A cheap in-memory Set lookup — no filesystem access on the render path.
   return generated ?? getCachedThumbnailUri(asset.id) ?? asset.uri;
