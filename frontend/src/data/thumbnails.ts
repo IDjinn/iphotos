@@ -7,10 +7,11 @@ import type { PhotoAsset } from '@/data/types';
 /**
  * Local low-resolution preview pipeline (docs/plans/13-encrypted-mode.md).
  *
- * Grid cells render a ~512px JPEG thumbnail instead of the full-resolution
+ * Grid cells render a JPEG thumbnail capped at ~512px on the long edge
+ * (aspect ratio preserved) instead of the full-resolution
  * original so scrolling stays smooth on large libraries, and so the encrypted
  * offline mode has a small preview to show without decrypting originals.
- * Files live in `Documents/thumbnails/{assetId}.jpg`; the SQLite table is
+ * Files live in `Documents/thumbnails/{assetId}.v{FILE_VERSION}.jpg`; the SQLite table is
  * bookkeeping only (existence is also checked on disk, since files can be
  * evicted by the OS while the DB row survives).
  */
@@ -18,12 +19,19 @@ import type { PhotoAsset } from '@/data/types';
 const THUMBNAIL_EDGE = 512;
 const THUMBNAIL_QUALITY = 0.75;
 
+/**
+ * Bumped whenever generation changes in a way that alters existing output
+ * (e.g. v1 was a stretched square); stale-format files are ignored and
+ * reclaimed by the prune pass, then regenerated on demand.
+ */
+const FILE_VERSION = 2;
+
 function thumbnailDirectory(): Directory {
   return new Directory(Paths.document, 'thumbnails');
 }
 
 function thumbnailFile(assetId: string): File {
-  return new File(thumbnailDirectory(), `${assetId}.jpg`);
+  return new File(thumbnailDirectory(), `${assetId}.v${FILE_VERSION}.jpg`);
 }
 
 /** In-memory existence cache so grid cells never touch the filesystem while rendering. */
@@ -86,9 +94,22 @@ export async function ensureThumbnail(asset: PhotoAsset): Promise<string | null>
     await acquireGenerationSlot();
     try {
       const { manipulateAsync, SaveFormat } = await import('expo-image-manipulator');
+      // Aspect-preserving fit: cap the long edge at THUMBNAIL_EDGE without
+      // upscaling (mirrors the backend's ResizeMode.Max policy). Passing both
+      // dimensions at 512×512 would stretch every non-square photo.
+      const longEdge = Math.max(asset.width, asset.height);
+      if (!longEdge) return null; // unusable metadata — grid falls back to the original
+      const scale = Math.min(1, THUMBNAIL_EDGE / longEdge);
       const result = await manipulateAsync(
         asset.uri,
-        [{ resize: { width: THUMBNAIL_EDGE, height: THUMBNAIL_EDGE } }],
+        [
+          {
+            resize: {
+              width: Math.max(1, Math.round(asset.width * scale)),
+              height: Math.max(1, Math.round(asset.height * scale)),
+            },
+          },
+        ],
         { format: SaveFormat.JPEG, compress: THUMBNAIL_QUALITY }
       );
       const dest = thumbnailFile(asset.id);
@@ -181,9 +202,15 @@ export function pruneOrphanThumbnails(): void {
     const rowIds = new Set(rows.map((r) => r.asset_id));
     const dir = thumbnailDirectory();
     if (dir.exists) {
+      const currentSuffix = `.v${FILE_VERSION}.jpg`;
       for (const child of dir.list()) {
-        const match = /^([^./]+)\.jpg$/.exec(child.name);
-        if (match && !rowIds.has(match[1])) child.delete();
+        if (child.name.endsWith(currentSuffix)) {
+          const assetId = child.name.slice(0, child.name.length - currentSuffix.length);
+          if (!rowIds.has(assetId)) child.delete();
+        } else if (child.name.endsWith('.jpg')) {
+          // Older FILE_VERSION output (e.g. v1 stretched squares) — never served.
+          child.delete();
+        }
       }
     }
     for (const id of rowIds) {
