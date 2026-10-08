@@ -20,6 +20,11 @@ export interface PhotoAsset {
    * their playable file lazily through `resolveVaultPlayback(vaultId)`.
    */
   vaultId?: string;
+  /**
+   * HTTP headers required to fetch `uri` — set on cloud-backed assets whose
+   * URI is the authenticated remote file URL instead of a local cache path.
+   */
+  sourceHeaders?: Record<string, string>;
 }
 
 export interface AlbumRecord {

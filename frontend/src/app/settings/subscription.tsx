@@ -24,7 +24,7 @@ import {
   Screen,
   SubscribeButton,
   SubscribeLabel,
-} from '@/app/settings/subscription.styles';
+} from '@/screens/settings/subscription.styles';
 import {
   getBillingCatalog,
   getBillingStatus,

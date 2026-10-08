@@ -25,7 +25,7 @@ import {
   UtilityIcon,
   UtilityMeta,
   UtilityTitle,
-} from '@/app/(tabs)/library.styles';
+} from '@/screens/(tabs)/library.styles';
 import { deleteAlbum } from '@/data/albums-repository';
 import { fetchAssetsByIds } from '@/data/media-repository';
 import { readLockedConfig } from '@/data/locked-repository';

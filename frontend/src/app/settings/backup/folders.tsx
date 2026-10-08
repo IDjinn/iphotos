@@ -27,7 +27,7 @@ import {
   Screen,
   Search,
   Summary,
-} from '@/app/settings/backup/folders.styles';
+} from '@/screens/settings/backup/folders.styles';
 import { runFolderScan } from '@/data/backup-inventory';
 import {
   getBackupFolderViews,

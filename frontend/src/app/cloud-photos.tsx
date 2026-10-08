@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 
 import { CloudGallery } from '@/components/CloudGallery';
 import { Icon } from '@/components/Icon';
-import { Header, HeaderSpacer, HeaderTitle, Screen } from '@/app/cloud-photos.styles';
+import { Header, HeaderSpacer, HeaderTitle, Screen } from '@/screens/cloud-photos.styles';
 import { useTranslation } from '@/i18n/hook';
 import { useTheme } from '@/theme/context';
 

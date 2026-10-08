@@ -24,7 +24,7 @@ import {
   UsageFill,
   UsageHeader,
   UsageRemainder,
-} from '@/app/settings/account.styles';
+} from '@/screens/settings/account.styles';
 import { useTranslation } from '@/i18n/hook';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';

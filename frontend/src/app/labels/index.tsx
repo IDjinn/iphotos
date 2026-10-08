@@ -21,7 +21,7 @@ import {
   StatusText,
   Track,
   TrackFill,
-} from '@/app/labels/index.styles';
+} from '@/screens/labels/index.styles';
 import { listAllLabels, type LabelSummary } from '@/data/labels-repository';
 import { useTranslation } from '@/i18n/hook';
 import { useAiLabelingStore } from '@/stores/ai-labeling';

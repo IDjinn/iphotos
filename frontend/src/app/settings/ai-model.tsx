@@ -32,7 +32,7 @@ import {
   TextButtonRow,
   Track,
   TrackFill,
-} from '@/app/settings/ai-model.styles';
+} from '@/screens/settings/ai-model.styles';
 import {
   MODEL_CATALOG,
   formatRam,

@@ -23,7 +23,7 @@ import {
   UsageFill,
   UsageHeader,
   UsageRemainder,
-} from '@/app/settings/backup.styles';
+} from '@/screens/settings/backup.styles';
 import { getUsage, type CloudUsage } from '@/data/cloud-photos-repository';
 import { isExpoGo } from '@/data/native-crypto';
 import type { BackupProgress } from '@/data/backup-engine';

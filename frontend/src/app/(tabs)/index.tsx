@@ -21,7 +21,7 @@ import {
   Header,
   HeaderTitle,
   Screen,
-} from '@/app/(tabs)/index.styles';
+} from '@/screens/(tabs)/index.styles';
 import { useBulkActions, BULK_TOAST, type BulkToast } from '@/hooks/use-bulk-actions';
 import { useGalleryFeed } from '@/hooks/use-gallery-feed';
 import { useTranslation } from '@/i18n/hook';

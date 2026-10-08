@@ -25,7 +25,7 @@ import {
   StatusText,
   StatusTitle,
   TextButton,
-} from '@/app/settings/encrypted-mode.styles';
+} from '@/screens/settings/encrypted-mode.styles';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import { loadEncryptedGridAssets, resolveEncryptedOriginal } from '@/data/encrypted-mode-repository';
 import { isEncryptedModeSupported } from '@/data/encrypted-crypto';

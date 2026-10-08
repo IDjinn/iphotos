@@ -27,7 +27,7 @@ import {
   TextButton,
   Track,
   TrackFill,
-} from '@/app/settings/ai-labeling.styles';
+} from '@/screens/settings/ai-labeling.styles';
 import type { BulkToast } from '@/hooks/use-bulk-actions';
 import { useTranslation } from '@/i18n/hook';
 import { useAiLabelingStore } from '@/stores/ai-labeling';

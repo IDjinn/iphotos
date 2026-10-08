@@ -26,7 +26,7 @@ import {
   StaticRow,
   ThemeOption,
   ThemeRow,
-} from '@/app/settings.styles';
+} from '@/screens/settings.styles';
 import type { CloudCacheMode } from '@/data/cloud-media-cache';
 import { cloudCacheModeChanged } from '@/data/cloud-media-cache';
 import { countLabeledAssets } from '@/data/labels-repository';

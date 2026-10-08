@@ -22,7 +22,7 @@ import {
   HeaderTitle,
   RenameInput,
   Screen,
-} from '@/app/album/[id].styles';
+} from '@/screens/album/[id].styles';
 import { createAlbum, getAlbum, getAlbumAssetIds, renameAlbum } from '@/data/albums-repository';
 import { fetchAssetsByIds } from '@/data/media-repository';
 import { listFavoriteIds } from '@/data/favorites-repository';

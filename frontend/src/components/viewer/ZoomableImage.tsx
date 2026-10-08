@@ -178,7 +178,7 @@ export function ZoomableImage({ asset, controller, pagerPan, onTap }: ZoomableIm
     <GestureDetector gesture={composed}>
       <ZoomFill style={animatedStyle}>
         <Image
-          source={{ uri: asset.uri }}
+          source={{ uri: asset.uri, headers: asset.sourceHeaders }}
           style={{ width: layout.w, height: layout.h }}
           contentFit="contain"
           transition={120}

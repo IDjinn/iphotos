@@ -32,6 +32,13 @@ Registrada como decisão **D17** no `00-roadmap.md` §6.
 - `import styled from 'styled-components/native'`; arquivos irmãos
   `<Component>.styles.ts` contendo **somente** styled definitions e helpers
   `css` locais (sem JSX/hooks/lógica).
+- **Exceção de localização para telas-rota** (`src/app/**`): o expo-router
+  registra todo `.[jt]sx?` sob o app root como rota (sem ignore list nem opção
+  de filtro — verificado no código do expo-router 57), então o styles file de
+  uma tela-rota **não pode ser irmão**. Ele vive em `src/screens/` espelhando
+  o caminho da rota (ex.: `src/app/(tabs)/index.tsx` →
+  `src/screens/(tabs)/index.styles.ts`), importado via `@/screens/...`.
+  Componentes fora de `src/app/` mantêm o arquivo irmão.
 - Toda dimensão sai de uma escala do tema; o sufixo `px` é a convenção do
   styled-components no RN (o número chega unitless em dp ao RN).
 - Props dinâmicas usam o prefixo transient `$` (ex.: `$pressed`, `$selected`,
@@ -140,7 +147,9 @@ Helpers compartilhados em `src/theme/shared.ts`: `absoluteFill` (substitui
 1. Nenhum `StyleSheet` (import, `create`, `flatten`, `absoluteFill`,
    `hairlineWidth`) em `frontend/src`.
 2. Todo estilo de UI vive em `<Component>.styles.ts` (ou helpers de tema),
-   com dimensões vindas das escalas do tema.
+   com dimensões vindas das escalas do tema; para telas-rota de `src/app/**`
+   o arquivo vive em `src/screens/` espelhando o caminho da rota (o
+   expo-router trata todo `.ts`/`.tsx` do app root como rota).
 3. `useTheme()` continua disponível com a mesma API.
 4. Checks estáticos verdes; mudanças visuais limitadas aos snapps da grade
    de 4pt documentados no §6.

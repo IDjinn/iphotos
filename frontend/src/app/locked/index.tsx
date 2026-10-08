@@ -29,7 +29,7 @@ import {
   UpgradeButtonLabel,
   UpgradeCard,
   UpgradeText,
-} from '@/app/locked/index.styles';
+} from '@/screens/locked/index.styles';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import { fetchAssetsByIds } from '@/data/media-repository';
 import { getLockedIdList, readLockedConfig, setupLockedFolder, verifyPin, type LockedFolderConfig } from '@/data/locked-repository';

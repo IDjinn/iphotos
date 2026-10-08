@@ -27,7 +27,7 @@ import {
   SecondaryButtonText,
   UsageBar,
   UsageFill,
-} from '@/app/settings/import-zip.styles';
+} from '@/screens/settings/import-zip.styles';
 import { pickZipFile } from '@/data/import-repository';
 import { useAccountStore } from '@/stores/account';
 import { useImportZipStore } from '@/stores/import-zip';

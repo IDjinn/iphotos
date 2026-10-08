@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import type { HeroFrame } from '@/animations/hero';
 import type { PhotoAsset } from '@/data/types';
 
-export type ViewerContext = 'gallery' | 'album' | 'favorites' | 'search' | 'locked';
+export type ViewerContext = 'gallery' | 'album' | 'favorites' | 'search' | 'locked' | 'cloud';
 
 /**
  * Global viewer state. The viewer renders as an overlay above all

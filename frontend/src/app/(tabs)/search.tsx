@@ -25,7 +25,7 @@ import {
   Screen,
   SearchBar,
   Suggestions,
-} from '@/app/(tabs)/search.styles';
+} from '@/screens/(tabs)/search.styles';
 import { listAlbums } from '@/data/albums-repository';
 import { listTopLabels, searchAssetIdsByLabel } from '@/data/labels-repository';
 import { queryAssets } from '@/data/media-repository';

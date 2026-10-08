@@ -46,6 +46,15 @@ const REJECTED_PERMISSIONS = {
   accessPrivileges: 'none',
 } as MediaLibrary.PermissionResponse;
 
+/**
+ * iOS Live Photos surface their motion component as a separate asset with
+ * the dedicated `pairedVideo` media type. It is not a user-facing video —
+ * filter it everywhere so galleries and backups only see the still image.
+ */
+function isPairedVideo(a: MediaLibrary.Asset): boolean {
+  return a.mediaType === ('pairedVideo' as MediaLibrary.MediaTypeValue);
+}
+
 export function mapAsset(a: MediaLibrary.Asset): PhotoAsset {
   const type =
     a.mediaType === MediaLibrary.MediaType.photo
@@ -137,7 +146,7 @@ export async function queryAssets(query: AssetQuery = {}): Promise<GalleryPage> 
         createdBefore: query.createdBefore,
       })
     );
-    const mapped = page.assets.map(mapAsset);
+    const mapped = page.assets.filter((a) => !isPairedVideo(a)).map(mapAsset);
     const kept = exclude ? mapped.filter((a) => !exclude.has(a.id)) : mapped;
     collected.push(...kept);
     hasNextPage = page.hasNextPage;
@@ -163,7 +172,7 @@ export async function fetchAssetsByIds(ids: string[]): Promise<PhotoAsset[]> {
       chunk.map(async (id) => {
         try {
           const info = await MediaLibrary.getAssetInfoAsync(id, { shouldDownloadFromNetwork: false });
-          results.set(id, mapAsset(info));
+          results.set(id, isPairedVideo(info) ? null : mapAsset(info));
         } catch {
           results.set(id, null);
         }
@@ -176,7 +185,7 @@ export async function fetchAssetsByIds(ids: string[]): Promise<PhotoAsset[]> {
 export async function getAssetById(id: string): Promise<PhotoAsset | null> {
   try {
     const info = await MediaLibrary.getAssetInfoAsync(id, { shouldDownloadFromNetwork: false });
-    return mapAsset(info);
+    return isPairedVideo(info) ? null : mapAsset(info);
   } catch {
     return null;
   }
@@ -218,7 +227,7 @@ export async function forEachFolderAsset(
       })
     );
     if (page.assets.length > 0) {
-      const proceed = await handle(page.assets.map(mapAsset));
+      const proceed = await handle(page.assets.filter((a) => !isPairedVideo(a)).map(mapAsset));
       if (proceed === false) return;
     }
     hasNextPage = page.hasNextPage;

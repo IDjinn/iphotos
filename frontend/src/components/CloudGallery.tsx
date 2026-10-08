@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList } from 'react-native';
-import { Image } from 'expo-image';
-import * as MediaLibrary from 'expo-media-library/legacy';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList } from 'react-native';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
@@ -21,14 +19,16 @@ import {
   StateBadge,
   VideoBadge,
 } from '@/components/CloudGallery.styles';
-import { prefetchRecentPreviews } from '@/data/cloud-media-cache';
+import { prefetchRecentPreviews, getCachedCloudFileUri } from '@/data/cloud-media-cache';
 import {
-  deletePhoto,
-  downloadFile,
+  fileUrl,
   listPhotos,
   type CloudPhoto,
 } from '@/data/cloud-photos-repository';
+import { authHeaders } from '@/data/api-client';
+import type { PhotoAsset } from '@/data/types';
 import { useCloudThumbnailUri } from '@/hooks/use-cloud-file';
+import { useViewerStore } from '@/stores/viewer';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 import { formatDuration } from '@/utils/format';
@@ -196,6 +196,16 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     });
   }, [state, mediaFilter, order]);
 
+  // The viewer deletes straight from the cloud store — refresh when it closes.
+  const closedAt = useViewerStore((s) => s.closedAt);
+  const lastSeenClose = useRef(0);
+  useEffect(() => {
+    if (closedAt === 0 || closedAt === lastSeenClose.current) return;
+    lastSeenClose.current = closedAt;
+    if (useViewerStore.getState().context !== 'cloud') return;
+    void load(1, mediaFilter, order);
+  }, [closedAt, load, mediaFilter, order]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await load(1, mediaFilter, order);
@@ -208,42 +218,19 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     void load(state.page + 1, mediaFilter, order);
   };
 
-  const confirmDelete = (photo: CloudPhoto) => {
-    haptic('medium');
-    Alert.alert('Delete from cloud', `"${photo.fileName}" will be removed from your backup.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await deletePhoto(photo.id).catch(() => Alert.alert('Delete failed', 'Try again later.'));
-          void load(1, mediaFilter, order);
-        },
-      },
-    ]);
-  };
-
-  const download = async (photo: CloudPhoto) => {
-    haptic('light');
-    try {
-      const file = await downloadFile(photo.id, 'original');
-      const { Buffer } = await import('buffer');
-      const { writeAsStringAsync, documentDirectory } = await import('expo-file-system/legacy');
-      const dotExt = photo.fileName.includes('.') ? photo.fileName.slice(photo.fileName.lastIndexOf('.')) : '.bin';
-      const localUri = `${documentDirectory}iphotos-${photo.id}${dotExt}`;
-      const base64 = Buffer.from(file).toString('base64');
-      await writeAsStringAsync(localUri, base64, { encoding: 'base64' });
-      try {
-        await MediaLibrary.saveToLibraryAsync(localUri);
-        Alert.alert('Saved', 'File saved back to your library.');
-      } catch {
-        // Expo Go cannot grant media access — the bytes are still in the cache.
-        Alert.alert('Saved', 'File saved to the app cache directory.');
-      }
-    } catch (error) {
-      Alert.alert('Download failed', error instanceof Error ? error.message : 'Try again later.');
-    }
-  };
+  /** Maps a cloud photo to the shared viewer asset, preferring the cached preview. */
+  const toViewerAsset = (photo: CloudPhoto): PhotoAsset => ({
+    id: photo.id,
+    uri: getCachedCloudFileUri(photo.id, 'preview') ?? fileUrl(photo.id, 'preview'),
+    filename: photo.title || photo.fileName,
+    mediaType: 'photo',
+    width: photo.width ?? 0,
+    height: photo.height ?? 0,
+    creationTime: new Date(photo.takenAt ?? photo.createdAt).getTime(),
+    modificationTime: new Date(photo.createdAt).getTime(),
+    // Harmless on cached local files, required on the authenticated remote fallback.
+    sourceHeaders: authHeaders(),
+  });
 
   const openPhoto = (photo: CloudPhoto) => {
     haptic('light');
@@ -251,18 +238,10 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
       setPlaying(photo);
       return;
     }
-    const details = [
-      photo.description,
-      new Date(photo.takenAt ?? photo.createdAt).toLocaleString(),
-      photo.state,
-    ]
-      .filter(Boolean)
-      .join('\n');
-    Alert.alert(photo.title || photo.fileName, details, [
-      { text: 'Download original', onPress: () => void download(photo) },
-      { text: 'Delete', style: 'destructive', onPress: () => confirmDelete(photo) },
-      { text: 'Close', style: 'cancel' },
-    ]);
+    const photos = state.status === 'ready' ? state.items.filter((item) => item.mediaType !== 'Video') : [];
+    const list = photos.length > 0 ? photos : [photo];
+    const index = Math.max(0, list.findIndex((item) => item.id === photo.id));
+    useViewerStore.getState().open(list.map(toViewerAsset), index, 'cloud');
   };
 
   const setFilter = (next: MediaTypeFilter | SortOrder) => {

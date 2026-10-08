@@ -19,7 +19,7 @@ import {
   HeaderTitle,
   Screen,
   Submit,
-} from '@/app/(public)/auth.styles';
+} from '@/screens/(public)/auth.styles';
 import { login } from '@/data/api-client';
 import { authErrorMessage } from '@/data/auth-errors';
 import { useTranslation } from '@/i18n/hook';

@@ -18,7 +18,7 @@ import {
   SkipRow,
   Tagline,
   Title,
-} from '@/app/(public)/welcome.styles';
+} from '@/screens/(public)/welcome.styles';
 import type { TranslationKey } from '@/i18n';
 import { useTranslation } from '@/i18n/hook';
 import { useOnboardingStore } from '@/stores/onboarding';

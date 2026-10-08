@@ -63,11 +63,14 @@ interface ViewerChromeProps {
   playing: boolean;
   muted: boolean;
   favoriteKey: number;
+  /** 'cloud' swaps device actions (share/favorite/more) for download. */
+  variant?: 'device' | 'cloud';
   onClose: () => void;
   onInfo: () => void;
   onShare: () => void;
   onToggleFavorite: () => void;
   onDelete: () => void;
+  onDownload?: () => void;
   onMore: () => void;
   onTogglePlay: () => void;
   onToggleMute: () => void;
@@ -76,6 +79,7 @@ interface ViewerChromeProps {
 /** Viewer top and bottom bars: slide/fade in sync, white-on-media icons. */
 export function ViewerChrome(props: ViewerChromeProps) {
   const { space } = useTheme();
+  const cloud = props.variant === 'cloud';
   const insets = useSafeAreaInsets();
   const progress = useSharedValue(0);
 
@@ -124,16 +128,22 @@ export function ViewerChrome(props: ViewerChromeProps) {
           </>
         ) : null}
         <Spacer />
-        <ChromeButton icon="share-outline" label="Share" onPress={props.onShare} />
-        <ChromeButton
-          icon={props.isFavorite ? 'heart' : 'heart-outline'}
-          label="Favorite"
-          filled={props.isFavorite}
-          pop={props.isFavorite}
-          onPress={props.onToggleFavorite}
-        />
+        {cloud ? (
+          <ChromeButton icon="cloud-download-outline" label="Download" onPress={() => props.onDownload?.()} />
+        ) : (
+          <>
+            <ChromeButton icon="share-outline" label="Share" onPress={props.onShare} />
+            <ChromeButton
+              icon={props.isFavorite ? 'heart' : 'heart-outline'}
+              label="Favorite"
+              filled={props.isFavorite}
+              pop={props.isFavorite}
+              onPress={props.onToggleFavorite}
+            />
+          </>
+        )}
         <ChromeButton icon="trash-outline" label="Delete" onPress={props.onDelete} />
-        <ChromeButton icon="ellipsis-horizontal-circle" label="More" onPress={props.onMore} />
+        {cloud ? null : <ChromeButton icon="ellipsis-horizontal-circle" label="More" onPress={props.onMore} />}
       </BottomBar>
     </>
   );

@@ -31,9 +31,11 @@ import {
 import { addAssetsToAlbum, removeAssetsFromAlbum } from '@/data/albums-repository';
 import { readLockedConfig } from '@/data/locked-repository';
 import { deleteFromVault, exportFromVault, importToVault } from '@/data/vault-repository';
+import { deletePhoto } from '@/data/cloud-photos-repository';
 import { useLibraryStore } from '@/stores/library';
 import { useViewerStore } from '@/stores/viewer';
 import { useTheme } from '@/theme/context';
+import { downloadCloudOriginal } from '@/utils/cloud-download';
 import { fullDateLabel, timeLabel } from '@/utils/dates';
 import { formatDuration } from '@/utils/format';
 import { haptic } from '@/utils/haptics';
@@ -215,11 +217,20 @@ export function ViewerOverlay() {
   };
 
   const handleShare = () => {
+    if (context === 'cloud') return;
     if (current) void shareAssets([current]);
   };
 
-  const handleFavorite = () => {
+  const handleDownload = () => {
     if (!current) return;
+    haptic('light');
+    void downloadCloudOriginal({ id: current.id, fileName: current.filename })
+      .then((message) => setToast(message))
+      .catch(() => setToast('Download failed — try again later'));
+  };
+
+  const handleFavorite = () => {
+    if (!current || context === 'cloud') return;
     const wasFavorite = useLibraryStore.getState().favoriteSet.has(current.id);
     useLibraryStore.getState().toggleFavorite(current.id);
     setToast(wasFavorite ? 'Removed from favorites' : 'Added to favorites');
@@ -227,6 +238,22 @@ export function ViewerOverlay() {
 
   const handleDelete = () => {
     if (!current) return;
+    if (context === 'cloud') {
+      Alert.alert('Delete from cloud?', 'This photo will be removed from your backup on all devices.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            haptic('warning');
+            void deletePhoto(current.id)
+              .then(() => removeCurrentFromList('Deleted from cloud'))
+              .catch(() => setToast('Delete failed — try again later'));
+          },
+        },
+      ]);
+      return;
+    }
     if (context === 'locked' && current.vaultId) {
       Alert.alert(
         'Delete from Locked Folder?',
@@ -372,7 +399,7 @@ export function ViewerOverlay() {
       </PagerLayer>
 
       <Animated.View style={heroStyle} pointerEvents="none">
-        <HeroImage source={{ uri: current.uri }} contentFit="cover" transition={0} />
+        <HeroImage source={{ uri: current.uri, headers: current.sourceHeaders }} contentFit="cover" transition={0} />
       </Animated.View>
 
       <ViewerChrome
@@ -383,11 +410,13 @@ export function ViewerOverlay() {
         playing={videoPlaying}
         muted={videoMuted}
         favoriteKey={0}
+        variant={context === 'cloud' ? 'cloud' : 'device'}
         onClose={requestClose}
         onInfo={() => setInfoVisible(true)}
         onShare={handleShare}
         onToggleFavorite={handleFavorite}
         onDelete={handleDelete}
+        onDownload={handleDownload}
         onMore={() => setMoreVisible(true)}
         onTogglePlay={() => setVideoPlaying((v) => !v)}
         onToggleMute={() => setVideoMuted((v) => !v)}
@@ -405,7 +434,13 @@ export function ViewerOverlay() {
         <InfoRow label="Dimensions" value={current.width > 0 ? `${current.width} × ${current.height}` : '—'} />
         <InfoRow
           label="Storage"
-          value={current.vaultId ? 'Encrypted in the Locked Folder' : 'On device · cloud backup arrives in phase 2'}
+          value={
+            context === 'cloud'
+              ? 'Cloud backup'
+              : current.vaultId
+                ? 'Encrypted in the Locked Folder'
+                : 'On device · cloud backup arrives in phase 2'
+          }
         />
       </BottomSheet>
 

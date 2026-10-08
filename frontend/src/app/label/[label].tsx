@@ -16,7 +16,7 @@ import {
   HeaderTitle,
   Meta,
   Screen,
-} from '@/app/label/[label].styles';
+} from '@/screens/label/[label].styles';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import { getLabelAssetIds } from '@/data/labels-repository';
 import { fetchAssetsByIds } from '@/data/media-repository';
