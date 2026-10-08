@@ -27,12 +27,12 @@ const LIMIT_HEADROOM_BYTES = 16 * 1024 * 1024;
 
 export type CloudCacheMode = 'default' | 'limited' | 'all';
 
-function cacheDirectory(): string {
-  return `${Paths.document}/cloud-cache`;
+function cacheDirectory(): Directory {
+  return new Directory(Paths.document, 'cloud-cache');
 }
 
 function cacheFile(photoId: string, kind: VariantKind): File {
-  return new File(`${cacheDirectory()}/${photoId}.${kind}`);
+  return new File(cacheDirectory(), `${photoId}.${kind}`);
 }
 
 const knownFiles = new Set<string>();
@@ -46,7 +46,7 @@ function loadKnownFromDisk(): void {
   if (knownLoaded) return;
   knownLoaded = true;
   try {
-    const dir = new Directory(cacheDirectory());
+    const dir = cacheDirectory();
     if (!dir.exists) return;
     for (const child of dir.list()) {
       const match = /^([^./]+)\.(thumbnail|preview|original)$/.exec(child.name);
@@ -81,7 +81,7 @@ export async function ensureCloudFile(photoId: string, kind: VariantKind): Promi
   pending.add(key);
   try {
     const { downloadAsync } = await import('expo-file-system/legacy');
-    new Directory(cacheDirectory()).create({ idempotent: true, intermediates: true });
+    cacheDirectory().create({ idempotent: true, intermediates: true });
     let result = await downloadAsync(fileUrl(photoId, kind), cacheFile(photoId, kind).uri, {
       headers: authHeaders(),
     });
@@ -148,7 +148,7 @@ export async function prefetchRecentPreviews(photos: CloudPhoto[]): Promise<void
 /** Removes cached previews whose photo is no longer among the recent window. */
 function evictStalePreviews(keepPhotoIds: Set<string>): void {
   try {
-    const dir = new Directory(cacheDirectory());
+    const dir = cacheDirectory();
     if (!dir.exists) return;
     for (const child of dir.list()) {
       const photoId = parseCacheFileName(child.name, 'preview');
@@ -185,7 +185,7 @@ function enforceCacheLimitIfConfigured(): void {
   const { cloudCacheMode, cloudCacheLimitMb } = useSettingsStore.getState();
   if (cloudCacheMode !== 'limited') return;
   try {
-    const dir = new Directory(cacheDirectory());
+    const dir = cacheDirectory();
     if (!dir.exists) return;
     const ceiling = cloudCacheLimitMb * 1024 * 1024 - LIMIT_HEADROOM_BYTES;
     const kinds: VariantKind[] = ['thumbnail', 'preview', 'original'];
@@ -195,7 +195,7 @@ function enforceCacheLimitIfConfigured(): void {
       for (const kind of kinds) {
         const photoId = parseCacheFileName(child.name, kind);
         if (photoId === null) continue;
-        const file = new File(`${cacheDirectory()}/${child.name}`);
+        const file = new File(cacheDirectory(), child.name);
         if (!file.exists) break;
         totalBytes += file.size;
         entries.push({
@@ -227,7 +227,7 @@ function enforceCacheLimitIfConfigured(): void {
 /** Drops every cached cloud file (e.g. on sign-out). */
 export function purgeCloudMediaCache(): void {
   try {
-    const dir = new Directory(cacheDirectory());
+    const dir = cacheDirectory();
     if (dir.exists) dir.delete();
   } catch {
     // Best-effort.

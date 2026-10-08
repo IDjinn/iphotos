@@ -18,12 +18,12 @@ import type { PhotoAsset } from '@/data/types';
 const THUMBNAIL_EDGE = 512;
 const THUMBNAIL_QUALITY = 0.75;
 
-export function thumbnailDirectory(): string {
-  return `${Paths.document}/thumbnails`;
+function thumbnailDirectory(): Directory {
+  return new Directory(Paths.document, 'thumbnails');
 }
 
 function thumbnailFile(assetId: string): File {
-  return new File(`${thumbnailDirectory()}/${assetId}.jpg`);
+  return new File(thumbnailDirectory(), `${assetId}.jpg`);
 }
 
 /** In-memory existence cache so grid cells never touch the filesystem while rendering. */
@@ -151,7 +151,7 @@ export function pruneOrphanThumbnails(): void {
   try {
     const rows = db.getAllSync<{ asset_id: string }>('SELECT asset_id FROM thumbnails');
     const rowIds = new Set(rows.map((r) => r.asset_id));
-    const dir = new Directory(thumbnailDirectory());
+    const dir = thumbnailDirectory();
     if (dir.exists) {
       for (const child of dir.list()) {
         const match = /^([^./]+)\.jpg$/.exec(child.name);
