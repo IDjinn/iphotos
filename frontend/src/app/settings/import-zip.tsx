@@ -1,17 +1,14 @@
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { CONTENT_MAX_WIDTH } from '@/theme/scale';
 import { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
-import { EmptyState } from '@/components/EmptyState';
 import { Icon, type IconName } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
 import {
   Body,
-  Card,
   CardColumn,
-  CardText,
   ErrorText,
   Header,
   HeaderSpacer,
@@ -29,7 +26,6 @@ import {
   UsageFill,
 } from '@/screens/settings/import-zip.styles';
 import { pickZipFile } from '@/data/import-repository';
-import { useAccountStore } from '@/stores/account';
 import { useImportZipStore } from '@/stores/import-zip';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -51,7 +47,6 @@ export default function ImportZipScreen() {
   const { colors, space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const mode = useAccountStore((s) => s.mode);
   const {
     phase,
     uploadProgress,
@@ -102,31 +97,7 @@ export default function ImportZipScreen() {
       </Header>
 
       <Body>
-        {mode !== 'cloud' ? (
-          <>
-            <EmptyState
-              icon="cloud-offline"
-              title="Cloud import unavailable"
-              subtitle="Sign in and switch to Cloud mode to import photo archives into your cloud library."
-            />
-            <AccountCard
-              onPress={() => {
-                haptic('light');
-                router.push('/settings/account');
-              }}
-              accessibilityLabel="Go to account settings"
-            >
-              <Icon name="person-circle-outline" size={22} color={colors.accent} />
-              <CardText>
-                <ThemedText variant="body">Review your account</ThemedText>
-                <ThemedText variant="bodySmall" color="secondary">
-                  Sign in or switch the sync mode
-                </ThemedText>
-              </CardText>
-              <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-            </AccountCard>
-          </>
-        ) : phase === 'idle' ? (
+        {phase === 'idle' ? (
           <>
             <CardColumn>
               <RuleRow>
@@ -317,34 +288,7 @@ export default function ImportZipScreen() {
   );
 }
 
-/** Pressable account row card with pressed feedback. */
-function AccountCard({
-  onPress,
-  accessibilityLabel,
-  children,
-}: {
-  onPress: () => void;
-  accessibilityLabel: string;
-  children: React.ReactNode;
-}) {
-  const [pressed, setPressed] = useState(false);
-  return (
-    <Card
-      $pressed={pressed}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onPress={() => {
-        haptic('light');
-        onPress();
-      }}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-    >
-      {children}
-    </Card>
-  );
-}
-
+/** Rows of the post-import report card. */
 const REPORT_ROWS: {
   label: string;
   key: 'imported' | 'videosImported' | 'duplicated' | 'ignored' | 'failed';

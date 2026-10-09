@@ -148,6 +148,51 @@ public static class PhotoEndpoints
             return Results.Ok(await photos.ListAsync(principal.GetUserId(), filter, cancellationToken));
         });
 
+        // Month buckets for fast-scroll rails: same owner scoping and filters as
+        // the listing above, so clients can map timeline positions to months.
+        group.MapGet("/months", async (
+            ClaimsPrincipal principal,
+            PhotoService photos,
+            [FromQuery] string? mediaType,
+            [FromQuery] string? sortBy,
+            CancellationToken cancellationToken) =>
+        {
+            MediaType? parsedMediaType = null;
+            if (!string.IsNullOrWhiteSpace(mediaType))
+            {
+                if (!Enum.TryParse(mediaType, ignoreCase: true, out MediaType parsed)
+                    || !Enum.IsDefined(parsed))
+                {
+                    return Results.BadRequest(new
+                    {
+                        error = $"Unknown media type '{mediaType}'. Use 'photo' or 'video'.",
+                        code = ErrorCodes.PhotosInvalidMediaType,
+                    });
+                }
+
+                parsedMediaType = parsed;
+            }
+
+            sortBy = sortBy?.Trim().ToLowerInvariant() switch
+            {
+                null or "" => "takenAt",
+                "takenat" => "takenAt",
+                "createdat" => "createdAt",
+                var other => other,
+            };
+            if (sortBy is not ("takenAt" or "createdAt"))
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"Unknown sort field '{sortBy}'. Use 'takenAt' or 'createdAt'.",
+                    code = ErrorCodes.PhotosInvalidSort,
+                });
+            }
+
+            return Results.Ok(
+                await photos.ListMonthBucketsAsync(principal.GetUserId(), sortBy, parsedMediaType, cancellationToken));
+        });
+
         group.MapGet("/{id:guid}", async (
             Guid id,
             ClaimsPrincipal principal,

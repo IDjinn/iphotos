@@ -66,6 +66,7 @@ export const TYPE = {
   line: {
     body: 20,
     small: 18,
+    title: 22,
   },
 } as const;
 

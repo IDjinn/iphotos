@@ -140,3 +140,11 @@ export function holdFolderItems(folder: string): void {
   excludeFolderItems(folder, FOLDER_HOLD_EXCLUSION_REASON);
   invalidateFolderStats();
 }
+
+/** Drops every rule and scan decision — part of the sign-out cleanup. */
+export function resetSyncRules(): void {
+  db.runSync('DELETE FROM sync_rules');
+  kv.remove(POLICY_KEY);
+  kv.remove(KNOWN_FOLDERS_KEY);
+  kv.remove(PENDING_DECISIONS_KEY);
+}

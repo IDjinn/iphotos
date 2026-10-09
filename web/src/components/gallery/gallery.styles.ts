@@ -38,6 +38,62 @@ export const GridScroll = styled.div`
   }
 `;
 
+export const GalleryBody = styled.div`
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+`;
+
+export const MonthRailTrack = styled.div`
+  position: absolute;
+  right: 0.375rem;
+  top: 1rem;
+  bottom: 1rem;
+  width: 1.5rem;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  touch-action: none;
+  cursor: grab;
+
+  &:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+`;
+
+export const MonthRailThumb = styled.div<{ $active: boolean }>`
+  width: 0.3rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: ${({ $active }) => ($active ? "var(--primary)" : "var(--border)")};
+  transition: background var(--duration-fast) ease;
+  will-change: transform;
+`;
+
+export const MonthRailBubble = styled.div<{ $visible: boolean }>`
+  position: absolute;
+  right: 1.875rem;
+  top: 0;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translateY(-50%);
+  pointer-events: none;
+  opacity: ${({ $visible }) => ($visible ? 1 : 0)};
+  transition: opacity var(--duration-fast) var(--ease-out);
+`;
+
 export const GridInner = styled.div`
   position: relative;
   width: 100%;

@@ -1,4 +1,4 @@
-import { dayGroupLabel, monthKey, monthLabel } from '@/utils/dates';
+import { dayGroupLabel, monthKey, monthLabel, oneMonthAgoStart } from '@/utils/dates';
 import { GRID_COLUMNS } from '@/theme/tokens';
 
 import type { PhotoAsset } from './types';
@@ -18,12 +18,21 @@ export interface GridData {
 /**
  * Groups a newest-first asset list into flat grid items:
  * month header → day header → rows of `columns` cells.
+ * Photos older than one month (see `oneMonthAgoStart`) get the month
+ * header only — no per-day headers.
  */
-export function buildGridData(assets: PhotoAsset[], columns = GRID_COLUMNS): GridData {
+export function buildGridData(
+  assets: PhotoAsset[],
+  columns = GRID_COLUMNS,
+  { now = Date.now() }: { now?: number } = {}
+): GridData {
   const items: GridItem[] = [];
   const stickyIndices: number[] = [];
+  const dayCutoff = oneMonthAgoStart(now);
   let currentMonth = '';
   let currentDay = '';
+  // The list is newest-first, so the cutoff is crossed at most once.
+  let pastDayCutoff = false;
   let rowBuffer: PhotoAsset[] = [];
 
   const flushRow = () => {
@@ -34,6 +43,7 @@ export function buildGridData(assets: PhotoAsset[], columns = GRID_COLUMNS): Gri
   };
 
   for (const asset of assets) {
+    if (!pastDayCutoff && asset.creationTime < dayCutoff) pastDayCutoff = true;
     const mKey = monthKey(asset.creationTime);
     if (mKey !== currentMonth) {
       flushRow();
@@ -43,9 +53,9 @@ export function buildGridData(assets: PhotoAsset[], columns = GRID_COLUMNS): Gri
       currentDay = '';
     }
     const dKey = `${mKey}-${new Date(asset.creationTime).getDate()}`;
-    if (dKey !== currentDay) {
+    if (!pastDayCutoff && dKey !== currentDay) {
       flushRow();
-      items.push({ kind: 'day', key: `d-${dKey}`, label: dayGroupLabel(asset.creationTime) });
+      items.push({ kind: 'day', key: `d-${dKey}`, label: dayGroupLabel(asset.creationTime, now) });
       currentDay = dKey;
     }
     rowBuffer.push(asset);

@@ -16,5 +16,5 @@ export function authErrorMessage(error: unknown): string {
         return error.message;
     }
   }
-  return 'Could not reach the cloud service — check your connection or continue in offline mode.';
+  return 'Could not reach the cloud service — check your connection and try again.';
 }

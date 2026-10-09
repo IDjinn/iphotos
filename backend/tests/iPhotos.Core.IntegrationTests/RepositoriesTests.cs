@@ -103,6 +103,38 @@ public sealed class RepositoriesTests(PostgresFixture fixture)
     }
 
     [Fact]
+    public async Task PhotoRepository_ListMonthBuckets_GroupsByTakenAtUndatedLast()
+    {
+        await using var db = await TestDatabase.CreateAsync(fixture);
+        var user = NewUser();
+        var other = NewUser();
+        db.Users.AddRange(user, other);
+        await db.SaveChangesAsync();
+
+        var undated = NewPhoto(user, takenAt: null);
+        var jan = NewPhoto(user, takenAt: new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero));
+        var jun1 = NewPhoto(user, takenAt: new DateTimeOffset(2025, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var jun2 = NewPhoto(user, takenAt: new DateTimeOffset(2025, 6, 20, 0, 0, 0, TimeSpan.Zero));
+        var video = NewPhoto(user, takenAt: new DateTimeOffset(2025, 6, 10, 0, 0, 0, TimeSpan.Zero));
+        video.MediaType = MediaType.Video;
+        var foreign = NewPhoto(other, takenAt: new DateTimeOffset(2025, 6, 5, 0, 0, 0, TimeSpan.Zero));
+        db.Photos.AddRange(undated, jan, jun1, jun2, video, foreign);
+        await db.SaveChangesAsync();
+
+        var repository = new PhotoRepository(db);
+
+        var buckets = await repository.ListMonthBucketsAsync(user.Id, sortBy: null, mediaType: null);
+        buckets.Select(b => (b.Month, b.Count))
+            .ShouldBe([("2025-06", 3), ("2025-01", 1), ("", 1)]);
+
+        var videosOnly = await repository.ListMonthBucketsAsync(user.Id, sortBy: null, mediaType: MediaType.Video);
+        videosOnly.Select(b => (b.Month, b.Count)).ShouldBe([("2025-06", 1)]);
+
+        var byCreated = await repository.ListMonthBucketsAsync(user.Id, sortBy: "createdAt", mediaType: null);
+        byCreated.Select(b => (b.Month, b.Count)).ShouldBe([("2026-01", 5)]);
+    }
+
+    [Fact]
     public async Task PhotoRepository_List_FiltersByFileNameAndCamera()
     {
         await using var db = await TestDatabase.CreateAsync(fixture);

@@ -81,3 +81,8 @@ export function rememberPurchaseToken(token: string): void {
 export function lastPurchaseToken(): string | null {
   return kv.get(PURCHASE_TOKEN_KEY) ?? null;
 }
+
+/** Drops the stored purchase token — part of the sign-out cleanup. */
+export function clearPurchaseToken(): void {
+  kv.remove(PURCHASE_TOKEN_KEY);
+}

@@ -112,6 +112,9 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS idx_inventory_folder ON backup_inventory(folder);
   `,
+  `
+  DELETE FROM asset_labels WHERE source IN ('ml', 'ai', 'local');
+  `,
 ];
 
 db.execSync('PRAGMA journal_mode = WAL;');

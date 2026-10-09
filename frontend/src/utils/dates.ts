@@ -77,3 +77,32 @@ export function monthKey(ms: number): string {
   const d = new Date(ms);
   return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
 }
+
+/**
+ * Start of the day one calendar month before `now` — the cutoff under
+ * which photos group by month only (no per-day headers).
+ */
+export function oneMonthAgoStart(now: number): number {
+  const d = new Date(now);
+  d.setMonth(d.getMonth() - 1);
+  return startOfDay(d.getTime());
+}
+
+/** Human label for a month bucket key: "2026-08" → "August 2026"; "" → "Undated". */
+export function monthBucketLabel(month: string): string {
+  if (!month) return 'Undated';
+  const [year, m] = month.split('-');
+  return `${MONTHS[Number(m) - 1] ?? m} ${year}`;
+}
+
+/** First millisecond of a month bucket key, in UTC ("2026-08" → ISO string). */
+export function monthStartIso(month: string): string {
+  const [year, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(year, m - 1, 1)).toISOString();
+}
+
+/** Last millisecond of a month bucket key, in UTC ("2026-08" → ISO string). */
+export function monthEndIso(month: string): string {
+  const [year, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(year, m, 1) - 1).toISOString();
+}

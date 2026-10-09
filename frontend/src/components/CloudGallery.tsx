@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, type LayoutChangeEvent } from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
 import { CloudVideoPlayer } from '@/components/CloudVideoPlayer';
+import { FastScroll, type FastScrollHandle } from '@/components/grid/FastScroll';
 import {
   Cell,
   CellImage,
@@ -22,15 +24,19 @@ import {
 import { prefetchRecentPreviews, getCachedCloudFileUri } from '@/data/cloud-media-cache';
 import {
   fileUrl,
+  listPhotoMonths,
   listPhotos,
   type CloudPhoto,
+  type PhotoMonthBucket,
 } from '@/data/cloud-photos-repository';
+import type { GridLayoutMetrics } from '@/data/grid-metrics';
 import { authHeaders } from '@/data/api-client';
 import type { PhotoAsset } from '@/data/types';
 import { useCloudThumbnailUri } from '@/hooks/use-cloud-file';
 import { useViewerStore } from '@/stores/viewer';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
+import { monthBucketLabel, monthEndIso, monthStartIso } from '@/utils/dates';
 import { formatDuration } from '@/utils/format';
 
 const PAGE_SIZE = 60;
@@ -139,6 +145,19 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
   const [state, setState] = useState<ListState>({ status: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
   const [playing, setPlaying] = useState<CloudPhoto | null>(null);
+  const [months, setMonths] = useState<PhotoMonthBucket[] | null>(null);
+  const [layout, setLayout] = useState({ width: 0, height: 0 });
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const listRef = useRef<FlatList<CloudPhoto>>(null);
+  const fastScrollRef = useRef<FastScrollHandle>(null);
+  const scrollOffset = useSharedValue(0);
+
+  /** Month buckets for the fast-scroll jump targets — display order follows `order`. */
+  const fetchMonths = useCallback((activeMedia: MediaTypeFilter, activeOrder: SortOrder) => {
+    listPhotoMonths({ mediaType: activeMedia === 'All' ? undefined : activeMedia })
+      .then((buckets) => setMonths(activeOrder === 'desc' ? buckets : [...buckets].reverse()))
+      .catch(() => setMonths(null));
+  }, []);
 
   const load = useCallback(
     async (page: number, activeMedia: MediaTypeFilter, activeOrder: SortOrder) => {
@@ -168,6 +187,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
+    fetchMonths(mediaFilter, order);
     listPhotos({
       page: 1,
       pageSize: PAGE_SIZE,
@@ -185,7 +205,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     return () => {
       cancelled = true;
     };
-  }, [mediaFilter, order]);
+  }, [mediaFilter, order, fetchMonths]);
 
   // Warm the persistent caches: previews of the newest photos are prefetched
   // so opening them is instant; thumbnails cache themselves on first render.
@@ -203,14 +223,101 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     if (closedAt === 0 || closedAt === lastSeenClose.current) return;
     lastSeenClose.current = closedAt;
     if (useViewerStore.getState().context !== 'cloud') return;
+    fetchMonths(mediaFilter, order);
     void load(1, mediaFilter, order);
-  }, [closedAt, load, mediaFilter, order]);
+  }, [closedAt, load, fetchMonths, mediaFilter, order]);
 
   const onRefresh = async () => {
     setRefreshing(true);
+    fetchMonths(mediaFilter, order);
     await load(1, mediaFilter, order);
     setRefreshing(false);
   };
+
+  /**
+   * Rebases the loaded window onto a month: page 1 starting at that month
+   * (desc = newest ≤ month end; asc = oldest ≥ month start). Undated photos
+   * ride the ends of the timeline — scroll to them without a refetch.
+   */
+  const jumpToMonth = async (month: string) => {
+    if (month === '') {
+      if (order === 'asc') void load(1, mediaFilter, order);
+      else listRef.current?.scrollToEnd({ animated: true });
+      return;
+    }
+    const range = order === 'desc' ? { to: monthEndIso(month) } : { from: monthStartIso(month) };
+    try {
+      const result = await listPhotos({
+        page: 1,
+        pageSize: PAGE_SIZE,
+        mediaType: mediaFilter === 'All' ? undefined : mediaFilter,
+        order,
+        ...range,
+      });
+      if (result.items.length === 0) {
+        void load(1, mediaFilter, order);
+        return;
+      }
+      setState({ status: 'ready', items: result.items, page: 1, totalPages: result.totalPages, loadingMore: false });
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    } catch {
+      // The rail is a shortcut — keep the current window on failure.
+    }
+  };
+
+  /**
+   * Fast-scroll metrics on the FULL timeline scale (from the month buckets),
+   * so the rail covers months that aren't loaded yet: scrubbing inside the
+   * loaded window scrolls live, above it previews and a release jumps.
+   */
+  const railMetrics = useMemo<GridLayoutMetrics | null>(() => {
+    if (!months || months.length === 0 || layout.width <= 0 || layout.height <= 0) return null;
+    const rowHeight = layout.width / 3; // Cell is a 1/3-width square.
+    const totalPhotos = months.reduce((sum, bucket) => sum + bucket.count, 0);
+    const markers: GridLayoutMetrics['months'] = [];
+    let cum = 0;
+    for (const bucket of months) {
+      markers.push({
+        itemIndex: cum,
+        offset: headerHeight + Math.floor(cum / 3) * rowHeight,
+        key: `m-${bucket.month}`,
+        label: monthBucketLabel(bucket.month),
+      });
+      cum += bucket.count;
+    }
+    return {
+      offsets: [],
+      contentHeight: headerHeight + Math.ceil(totalPhotos / 3) * rowHeight,
+      months: markers,
+    };
+  }, [months, layout, headerHeight]);
+
+  /** Timeline Y of the loaded window's top (its first item's month start). */
+  const windowOffset = useMemo(() => {
+    if (state.status !== 'ready' || state.items.length === 0 || !months || layout.width <= 0) return 0;
+    const first = state.items[0];
+    const key = first.takenAt ? first.takenAt.slice(0, 7) : '';
+    const rowHeight = layout.width / 3;
+    let cum = 0;
+    for (const bucket of months) {
+      if (bucket.month === key) break;
+      cum += bucket.count;
+    }
+    return headerHeight + Math.floor(cum / 3) * rowHeight;
+  }, [state, months, layout.width, headerHeight]);
+
+  /** Loaded content height on the timeline scale. */
+  const loadedHeight = useMemo(() => {
+    if (state.status !== 'ready' || layout.width <= 0) return 0;
+    const rowHeight = layout.width / 3;
+    return headerHeight + Math.ceil(state.items.length / 3) * rowHeight;
+  }, [state, layout.width, headerHeight]);
+
+  const handleListLayout = useCallback((e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setLayout((current) =>
+      current.width === width && current.height === height ? current : { width, height });
+  }, []);
 
   const onEndReached = () => {
     if (state.status !== 'ready' || state.loadingMore || state.page >= state.totalPages) return;
@@ -251,7 +358,12 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
   };
 
   const filterHeader = (
-    <FilterRow>
+    <FilterRow
+      onLayout={(e) => {
+        const height = e.nativeEvent.layout.height;
+        setHeaderHeight((current) => (current === height ? current : height));
+      }}
+    >
       {MEDIA_FILTERS.map((option) => (
         <FilterChip
           key={option.value}
@@ -321,6 +433,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
   return (
     <>
       <FlatList
+        ref={listRef}
         data={state.items}
         keyExtractor={(item) => item.id}
         numColumns={3}
@@ -331,6 +444,12 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
         refreshing={refreshing}
         onRefresh={onRefresh}
         ListFooterComponent={state.loadingMore ? <FooterSpin color={colors.accent} /> : null}
+        onLayout={handleListLayout}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          scrollOffset.value = e.nativeEvent.contentOffset.y;
+          fastScrollRef.current?.reveal();
+        }}
         renderItem={({ item }) => (
           <CloudPhotoCell
             item={item}
@@ -339,6 +458,21 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
           />
         )}
       />
+      {railMetrics ? (
+        <FastScroll
+          ref={fastScrollRef}
+          metrics={railMetrics}
+          viewportHeight={layout.height}
+          scrollOffset={scrollOffset}
+          scrollToOffset={(offset, animated) => listRef.current?.scrollToOffset({ offset, animated })}
+          windowOffset={windowOffset}
+          windowHeight={loadedHeight}
+          onJumpToMonth={(index) => {
+            const bucket = months?.[index];
+            if (bucket) void jumpToMonth(bucket.month);
+          }}
+        />
+      ) : null}
       <CloudVideoPlayer photo={playing} onClose={() => setPlaying(null)} />
     </>
   );

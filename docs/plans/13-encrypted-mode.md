@@ -1,8 +1,10 @@
 # 13 — AI kill-switch, local previews and encrypted offline mode
 
-Status: **implemented** (2026-08-20).
+Status: **implemented** (2026-08-20). The AI master switch was **removed on
+2026-10-09** together with the rest of on-device labeling (doc 05) — §1 below is
+kept as historical record; the previews (§2) and encrypted mode (§3) remain.
 
-## 1. AI master switch
+## 1. AI master switch (removed 2026-10-09)
 
 - `useClassificationStore.aiEnabled` (persisted, default `true`) + `setAiEnabled`.
 - Settings → Privacy → **Artificial intelligence** switch. When off:

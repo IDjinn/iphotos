@@ -15,13 +15,11 @@ import {
   Logo,
   PrimaryButton,
   SecondaryButton,
-  SkipRow,
   Tagline,
   Title,
 } from '@/screens/(public)/welcome.styles';
 import type { TranslationKey } from '@/i18n';
 import { useTranslation } from '@/i18n/hook';
-import { useOnboardingStore } from '@/stores/onboarding';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
@@ -36,13 +34,6 @@ export default function WelcomeScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const complete = useOnboardingStore((s) => s.complete);
-
-  const continueOffline = () => {
-    haptic('light');
-    complete('offline');
-    router.replace('/');
-  };
 
   return (
     <Container
@@ -95,25 +86,7 @@ export default function WelcomeScreen() {
             {t('auth.logIn')}
           </ThemedText>
         </SecondaryButton>
-        <PressableSkipRow onPress={continueOffline} label={t('auth.continueWithoutAccount')} />
       </Actions>
     </Container>
-  );
-}
-
-function PressableSkipRow({ onPress, label }: { onPress: () => void; label: string }) {
-  const { colors } = useTheme();
-  return (
-    <SkipRow
-      hitSlop={12}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <ThemedText variant="bodySmall" color="accent">
-        {label}
-      </ThemedText>
-      <Icon name="arrow-forward" size={14} color={colors.accent} />
-    </SkipRow>
   );
 }

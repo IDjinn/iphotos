@@ -98,6 +98,12 @@ public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSi
     public int TotalPages => PageSize <= 0 ? 0 : (int)Math.Ceiling(TotalCount / (double)PageSize);
 }
 
+/// <summary>
+/// One timeline month of the owner's library ("yyyy-MM" + photo count), for
+/// fast-scroll rails. Photos without TakenAt come last under Month "".
+/// </summary>
+public sealed record PhotoMonthBucket(string Month, int Count);
+
 public sealed record UsageStats(long UsedBytes, int PhotoCount, int VariantCount);
 
 public sealed record UsageSummary(long UsedBytes, long QuotaBytes, int PhotoCount, int VariantCount);

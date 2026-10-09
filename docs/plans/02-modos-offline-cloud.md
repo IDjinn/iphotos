@@ -1,5 +1,16 @@
 # 02 — Modos principais: Offline e Cloud
 
+> **⚠️ Obsoleto (2026-10-09): o modo Offline foi removido.** O app agora **exige
+> login**: não existe mais `AppMode`/`account.mode`, o botão "Continuar sem conta"
+> do welcome e a escapatória offline de login/registro saíram, e o gate de rotas
+> (`_layout.tsx`) redireciona tudo fora de `(public)` para `/login` enquanto não
+> houver sessão. O logout (`signOut`/`resetSession`) limpa os caches e metadados
+> da conta (`src/data/logout-cleanup.ts`) e volta para a tela de login; dados do
+> usuário (cofre, modo encriptado, biblioteca local) permanecem no dispositivo.
+> As seções abaixo ficam como referência histórica do design original e para o
+> futuro hosting custom (§4); a matriz do §2 e a regra de UI do §2.2 **não**
+> descrevem mais o app.
+
 > **Status: 🟡 base implementada (2026-08-16)** — `AppMode`, store `account` (mode/user/plan/signOut) e matriz refletida na UI (Settings mostra modo local + recursos desabilitados com explicação). `StorageProvider`, transições cloud e billing ainda não implementados (§3, §5, §6).
 >
 > **Atualização 2026-08-18 (D11):** o backend do modo Cloud **v1 já existe** e é um

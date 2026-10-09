@@ -2,7 +2,7 @@ import { Text } from 'react-native';
 import styled, { css } from 'styled-components/native';
 
 export type Variant = 'display' | 'title' | 'titleMedium' | 'body' | 'bodySmall' | 'label';
-export type Tone = 'primary' | 'secondary' | 'accent' | 'danger' | 'inverse';
+export type Tone = 'primary' | 'secondary' | 'accent' | 'danger' | 'inverse' | 'textInverse';
 
 const REGULAR_VARIANTS: readonly Variant[] = ['display', 'body', 'bodySmall'];
 
@@ -19,7 +19,9 @@ export const ThemedTextBase = styled(Text)<{ $variant: Variant; $tone: Tone }>`
           ? theme.colors.danger
           : $tone === 'inverse'
             ? theme.colors.background
-            : theme.colors.text};
+            : $tone === 'textInverse'
+              ? theme.colors.textInverse
+              : theme.colors.text};
   ${({ $variant, theme }) =>
     $variant === 'label' &&
     css`

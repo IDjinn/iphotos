@@ -10,7 +10,6 @@ import { PressableScale } from '@/components/PressableScale';
 import { ThemedText } from '@/components/ThemedText';
 import {
   Banner,
-  BannerAction,
   BannerText,
   Forgot,
   Form,
@@ -54,18 +53,13 @@ export default function LoginScreen() {
     try {
       const user = await login(email.trim(), password);
       useAccountStore.getState().signIn(user);
-      complete('cloud');
+      complete();
       router.replace('/');
     } catch (error) {
       setUnavailable(authErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const continueOffline = () => {
-    complete('offline');
-    router.replace('/');
   };
 
   return (
@@ -138,16 +132,6 @@ export default function LoginScreen() {
               <ThemedText variant="bodySmall" color="secondary">
                 {unavailable}
               </ThemedText>
-              <Pressable
-                hitSlop={8}
-                onPress={continueOffline}
-                accessibilityRole="button"
-                accessibilityLabel={t('auth.continueOffline')}
-              >
-                <BannerAction variant="bodySmall" color="accent">
-                  {t('auth.continueOffline')}
-                </BannerAction>
-              </Pressable>
             </BannerText>
           </Banner>
         ) : null}

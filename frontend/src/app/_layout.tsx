@@ -5,12 +5,11 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as SecureStore from 'expo-secure-store';
 import * as SystemUI from 'expo-system-ui';
 
 import { ViewerOverlay } from '@/components/viewer/ViewerOverlay';
-import { deleteLabelsBySource } from '@/data/labels-repository';
 import { useAccountStore } from '@/stores/account';
-import { useClassificationStore } from '@/stores/classification';
 import { useEncryptedModeStore } from '@/stores/encrypted-mode';
 import { useLibraryStore } from '@/stores/library';
 import { ThemeProvider, useTheme } from '@/theme/context';
@@ -25,36 +24,39 @@ function AppShell() {
   const segments = useSegments();
   const refreshLibrary = useLibraryStore((s) => s.refresh);
   const onboardingCompleted = useOnboardingStore((s) => s.completed);
-  const classificationEnabled = useClassificationStore((s) => s.localEnabled && s.aiEnabled);
-  const runIndexation = useClassificationStore((s) => s.runIndexation);
+  const user = useAccountStore((s) => s.user);
+  const sessionResolved = useAccountStore((s) => s.sessionResolved);
 
   const inPublicGroup = segments[0] === '(public)';
-  const onWelcome = inPublicGroup && segments[1] === 'welcome';
+  const onAuthScreen = inPublicGroup &&
+    (segments[1] === 'welcome' || segments[1] === 'login' || segments[1] === 'register');
 
   useEffect(() => {
     refreshLibrary();
-    // Validate the persisted refresh token (docs/plans/09-backend-api.md §4) —
-    // flips the account to cloud mode when a session survives the restart.
+    // Hydrate the persisted session (docs/plans/09-backend-api.md §4) — token
+    // presence gates the app; a dead token is rejected lazily on first use.
     void useAccountStore.getState().resolveSession();
     void useEncryptedModeStore.getState().refresh();
-    // On-device ONNX labeling was removed (docs/plans/05 §4) — drop any rows
-    // it left behind so the labels index only holds live sources.
-    deleteLabelsBySource('ml');
-    void SplashScreen.hideAsync().catch(() => undefined);
+    // Labeling moved to the backend (docs/plans/05-classificacao.md §5) — drop
+    // the endpoint API key the removed on-device feature kept in the keychain.
+    SecureStore.deleteItemAsync('ai-labeling.apiKey.v1').catch(() => undefined);
   }, [refreshLibrary]);
 
-  // First-run gate: the welcome flow must be completed before anything else
-  // is reachable. Login/register stay reachable later (settings CTA), so only
-  // /welcome itself is fenced off after completion.
+  useEffect(() => {
+    if (sessionResolved) void SplashScreen.hideAsync().catch(() => undefined);
+  }, [sessionResolved]);
+
+  // Auth gate: the app requires a signed-in account. The welcome flow only
+  // runs on first launch; afterwards anything outside (public) redirects to
+  // /login until a session exists — covering manual sign-out, the forced
+  // sign-out on refresh rejection, and deep links into protected routes.
   useEffect(() => {
     if (!onboardingCompleted && !inPublicGroup) router.replace('/welcome');
-    else if (onboardingCompleted && onWelcome) router.replace('/');
-  }, [onboardingCompleted, inPublicGroup, onWelcome, router]);
-
-  // Keep on-device labels fresh whenever the app opens with the feature on.
-  useEffect(() => {
-    if (onboardingCompleted && classificationEnabled) void runIndexation();
-  }, [onboardingCompleted, classificationEnabled, runIndexation]);
+    else if (onboardingCompleted && !user && !inPublicGroup) router.replace('/login');
+    else if (user && onAuthScreen) router.replace('/');
+    // `segments` re-fires the gate on every navigation so a signed-out state
+    // can never rest on a protected screen.
+  }, [onboardingCompleted, inPublicGroup, onAuthScreen, user, segments, router]);
 
   // Keep the system root view color in sync with the theme.
   useEffect(() => {
@@ -73,9 +75,9 @@ function AppShell() {
     return () => listener.remove();
   }, []);
 
-  // Render nothing until the gate has redirected — avoids a tabs flash on
-  // first run while the welcome screen mounts.
-  if (!onboardingCompleted && !inPublicGroup) return null;
+  // Render nothing until the session check resolved and the gate has
+  // redirected — avoids a tabs flash before the auth gate lands.
+  if (!sessionResolved || (!onboardingCompleted && !inPublicGroup)) return null;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -90,7 +92,6 @@ function AppShell() {
         <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
         <Stack.Screen name="(public)" options={{ animation: 'fade' }} />
         <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="settings/ai-labeling" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/account" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/backup" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/encrypted-mode" options={{ animation: 'slide_from_right' }} />
@@ -98,8 +99,6 @@ function AppShell() {
         <Stack.Screen name="settings/subscription" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="cloud-photos" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="album/[id]" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="labels" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="label/[label]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="locked" options={{ animation: 'fade_from_bottom' }} />
       </Stack>
       <ViewerOverlay />

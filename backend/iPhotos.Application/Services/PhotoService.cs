@@ -568,6 +568,10 @@ public sealed class PhotoService(
             page.TotalCount);
     }
 
+    public Task<IReadOnlyList<PhotoMonthBucket>> ListMonthBucketsAsync(
+        Guid ownerId, string? sortBy, MediaType? mediaType, CancellationToken cancellationToken = default) =>
+        photos.ListMonthBucketsAsync(ownerId, sortBy, mediaType, cancellationToken);
+
     public async Task DeleteAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
     {
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)

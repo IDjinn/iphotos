@@ -12,7 +12,6 @@ import {
   AckRow,
   AckText,
   Banner,
-  BannerAction,
   BannerText,
   Form,
   Header,
@@ -69,18 +68,13 @@ export default function RegisterScreen() {
     try {
       const user = await register(email.trim(), password, name.trim() || undefined);
       useAccountStore.getState().signIn(user);
-      complete('cloud');
+      complete();
       router.replace('/');
     } catch (error) {
       setUnavailable(authErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const continueOffline = () => {
-    complete('offline');
-    router.replace('/');
   };
 
   return (
@@ -183,16 +177,6 @@ export default function RegisterScreen() {
               <ThemedText variant="bodySmall" color="secondary">
                 {unavailable}
               </ThemedText>
-              <Pressable
-                hitSlop={8}
-                onPress={continueOffline}
-                accessibilityRole="button"
-                accessibilityLabel={t('auth.continueOffline')}
-              >
-                <BannerAction variant="bodySmall" color="accent">
-                  {t('auth.continueOffline')}
-                </BannerAction>
-              </Pressable>
             </BannerText>
           </Banner>
         ) : null}

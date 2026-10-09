@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue } from "react";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowDownWideNarrowIcon,
@@ -16,7 +16,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { deletePhoto, listPhotos, type CloudMediaType } from "@/data/cloud-photos-repository";
+import { deletePhoto, listPhotoMonths, listPhotos, type CloudMediaType } from "@/data/cloud-photos-repository";
 import { useViewerStore, useUploadDialogStore } from "@/stores/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,9 +38,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { PhotoCell } from "./photo-cell";
+import { MonthRail, monthBucketLabel, type MonthRailMonth } from "./month-rail";
 import {
   CellBadge,
   CountLabel,
+  GalleryBody,
   GalleryHeader,
   GridInner,
   GridRow,
@@ -112,7 +114,7 @@ export function GalleryScreen() {
   const totalCount = photosQuery.data?.pages[0]?.totalCount ?? 0;
 
   const [layout, setLayout] = useState<GridLayout>(DEFAULT_LAYOUT);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const innerRef = useRef<HTMLDivElement>(null);
 
   // Measure the grid box: responsive columns follow the container and the
@@ -140,10 +142,55 @@ export function GalleryScreen() {
   const rowCount = Math.ceil(photos.length / layout.columns);
   const virtualizer = useVirtualizer({
     count: rowCount,
-    getScrollElement: () => scrollRef.current,
+    getScrollElement: () => scrollEl,
     estimateSize: () => layout.cell + layout.gap,
     overscan: 4,
   });
+
+  // Timeline months for the fast-scroll rail — the whole library, not just
+  // the loaded pages (media type matches the current filter).
+  const monthsQuery = useQuery({
+    queryKey: ["photo-months", mediaType, order],
+    queryFn: () =>
+      listPhotoMonths({
+        mediaType:
+          mediaType === "photo" ? "Photo" : mediaType === "video" ? "Video" : undefined,
+      }),
+  });
+
+  const railMonths = useMemo<MonthRailMonth[]>(() => {
+    const buckets = monthsQuery.data;
+    if (!buckets || buckets.length === 0) return [];
+    const ordered = order === "desc" ? buckets : [...buckets].reverse();
+    const total = ordered.reduce((sum, bucket) => sum + bucket.count, 0);
+    let cum = 0;
+    return ordered.map((bucket) => {
+      const entry: MonthRailMonth = {
+        month: bucket.month,
+        label: monthBucketLabel(bucket.month),
+        row: Math.floor(cum / layout.columns),
+        fraction: total > 0 ? cum / total : 0,
+      };
+      cum += bucket.count;
+      return entry;
+    });
+  }, [monthsQuery.data, order, layout.columns]);
+
+  // A month that isn't loaded yet filters the gallery to exactly that month
+  // (URL-driven, so back button and sharing keep working).
+  const jumpToMonth = (month: string) => {
+    if (!month) {
+      // Undated photos sit at the timeline end — no date filter reaches them.
+      scrollEl?.scrollTo({ top: scrollEl.scrollHeight });
+      return;
+    }
+    const [year, m] = month.split("-").map(Number);
+    const lastDay = new Date(Date.UTC(year, m, 0)).getUTCDate();
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("from", `${month}-01`);
+    params.set("to", `${month}-${String(lastDay).padStart(2, "0")}`);
+    router.push(`/photos?${params.toString()}`);
+  };
 
   // Infinite scroll: load the next page as the end of the list nears.
   const virtualItems = virtualizer.getVirtualItems();
@@ -363,32 +410,43 @@ export function GalleryScreen() {
           </StatusBox>
         </StatusArea>
       ) : (
-        <GridScroll ref={scrollRef}>
-          <GridInner
-            ref={innerRef}
-            style={{ height: virtualizer.getTotalSize() + layout.gap }}
-          >
-            {virtualItems.map((row) => (
-              <GridRow key={row.key} style={{ transform: `translateY(${row.start}px)` }}>
-                {photos
-                  .slice(row.index * layout.columns, (row.index + 1) * layout.columns)
-                  .map((photo, cellIndex) => {
-                    const index = row.index * layout.columns + cellIndex;
-                    return (
-                      <PhotoCell
-                        key={photo.id}
-                        photo={photo}
-                        size={layout.cell}
-                        selected={selection.has(photo.id)}
-                        onOpen={() => openViewer(photos.map((p) => p.id), index)}
-                        onToggleSelect={() => toggleSelect(photo.id)}
-                      />
-                    );
-                  })}
-              </GridRow>
-            ))}
-          </GridInner>
-        </GridScroll>
+        <GalleryBody>
+          <GridScroll ref={setScrollEl}>
+            <GridInner
+              ref={innerRef}
+              style={{ height: virtualizer.getTotalSize() + layout.gap }}
+            >
+              {virtualItems.map((row) => (
+                <GridRow key={row.key} style={{ transform: `translateY(${row.start}px)` }}>
+                  {photos
+                    .slice(row.index * layout.columns, (row.index + 1) * layout.columns)
+                    .map((photo, cellIndex) => {
+                      const index = row.index * layout.columns + cellIndex;
+                      return (
+                        <PhotoCell
+                          key={photo.id}
+                          photo={photo}
+                          size={layout.cell}
+                          selected={selection.has(photo.id)}
+                          onOpen={() => openViewer(photos.map((p) => p.id), index)}
+                          onToggleSelect={() => toggleSelect(photo.id)}
+                        />
+                      );
+                    })}
+                </GridRow>
+              ))}
+            </GridInner>
+          </GridScroll>
+          {railMonths.length > 1 ? (
+            <MonthRail
+              months={railMonths}
+              rowCount={rowCount}
+              scrollElement={scrollEl}
+              scrollToRow={(row) => virtualizer.scrollToIndex(row)}
+              onJumpToMonth={jumpToMonth}
+            />
+          ) : null}
+        </GalleryBody>
       )}
 
       {photos.length > 0 && photos.length < totalCount && photosQuery.isFetchingNextPage ? (

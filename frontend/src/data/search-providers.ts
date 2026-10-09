@@ -10,7 +10,7 @@ export interface ParsedQuery {
   mediaType?: 'photo' | 'video';
   /** Title substring for album matching. */
   albumMatch?: string;
-  /** True when nothing structured matched — free text (AI in phase 2). */
+  /** True when nothing structured matched — free text. */
   freeText?: boolean;
 }
 
@@ -28,7 +28,7 @@ function startOfDay(d: Date): number {
  *  - "today" / "yesterday"
  *  - "august 2026", "august", "2026"
  *  - anything else → free text (matched against album titles; semantic
- *    search arrives with the phase-2 AI pipeline).
+ *    search will come from the backend).
  */
 export function parseQuery(raw: string): ParsedQuery {
   const q = raw.trim().toLowerCase();
@@ -65,8 +65,8 @@ export function parseQuery(raw: string): ParsedQuery {
 }
 
 /**
- * Phase-2 seam: when the AI backend lands, semantic providers will
- * implement this interface and plug into the same results UI.
+ * Seam for backend-provided search: remote providers implement this interface
+ * and plug into the same results UI.
  */
 export interface SearchProvider {
   id: string;

@@ -39,7 +39,7 @@ interface AppTheme {
     };
     weight: typeof TYPE.weight;
     letterSpacing: typeof TYPE.letterSpacing;
-    line: { body: number; small: number };
+    line: { body: number; small: number; title: number };
   };
   hairline: number;
   border: { width: number; thick: number; wide: number };

@@ -1,8 +1,7 @@
 import { Pressable } from 'react-native';
 
 import { Icon } from '@/components/Icon';
-import { ThemedText } from '@/components/ThemedText';
-import { DayWrap, MonthLabel, MonthWrap, Row } from '@/components/grid/GridHeaders.styles';
+import { DayLabel, DayWrap, MonthLabel, MonthWrap, Row } from '@/components/grid/GridHeaders.styles';
 import type { PhotoAsset } from '@/data/types';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -38,9 +37,9 @@ export function MonthHeader({ label, onBackToTop }: { label: string; onBackToTop
 export function DayHeader({ label }: { label: string }) {
   return (
     <DayWrap>
-      <ThemedText variant="bodySmall" color="secondary">
+      <DayLabel variant="bodySmall" color="secondary">
         {label}
-      </ThemedText>
+      </DayLabel>
     </DayWrap>
   );
 }

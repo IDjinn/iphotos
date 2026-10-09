@@ -1,4 +1,3 @@
-import { Pressable } from 'react-native';
 import Animated from 'react-native-reanimated';
 import styled from 'styled-components/native';
 
@@ -72,12 +71,4 @@ export const SecondaryButton = styled(PressableScale)`
   border-width: ${({ theme }) => theme.border.thick}px;
   border-color: ${({ theme }) => theme.colors.outline};
   background-color: ${({ theme }) => theme.colors.surface};
-`;
-
-export const SkipRow = styled(Pressable)`
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: ${({ theme }) => theme.space[1]}px;
-  padding-vertical: ${({ theme }) => theme.space[2]}px;
 `;

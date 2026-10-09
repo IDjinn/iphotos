@@ -10,9 +10,6 @@ import { TabSwipe } from '@/components/TabSwipe';
 import { ThemedText } from '@/components/ThemedText';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import {
-  AiCard,
-  AiCardText,
-  AiTitle,
   AlbumMatches,
   Center,
   Chip,
@@ -27,14 +24,12 @@ import {
   Suggestions,
 } from '@/screens/(tabs)/search.styles';
 import { listAlbums } from '@/data/albums-repository';
-import { listTopLabels, searchAssetIdsByLabel } from '@/data/labels-repository';
 import { queryAssets } from '@/data/media-repository';
 import { parseQuery } from '@/data/search-providers';
 import { addRecentSearch, clearRecentSearches, listRecentSearches, removeRecentSearch } from '@/data/search-repository';
 import type { AlbumRecord, PhotoAsset } from '@/data/types';
 import type { TranslationKey } from '@/i18n';
 import { useTranslation } from '@/i18n/hook';
-import { useClassificationStore } from '@/stores/classification';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
@@ -58,19 +53,11 @@ export default function SearchScreen() {
   const [recents, setRecents] = useState<string[]>([]);
   const [results, setResults] = useState<PhotoAsset[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const localSearchEnabled = useClassificationStore((s) => s.localEnabled && s.aiEnabled);
-  const aiEnabled = useClassificationStore((s) => s.aiEnabled);
-  const indexationRunning = useClassificationStore((s) => s.running);
-  const [topLabels, setTopLabels] = useState<string[]>([]);
 
   useEffect(() => {
     setAlbums(listAlbums());
     setRecents(listRecentSearches());
   }, []);
-
-  useEffect(() => {
-    if (localSearchEnabled && !indexationRunning) setTopLabels(listTopLabels());
-  }, [localSearchEnabled, indexationRunning]);
 
   const parsed = useMemo(() => parseQuery(query), [query]);
 
@@ -92,16 +79,9 @@ export default function SearchScreen() {
           excludeIds: undefined,
         });
         if (!cancelled) setResults(page.assets);
-      } else if (localSearchEnabled) {
-        // Free text matches the on-device label index (folder-derived for now).
-        const labelIds = searchAssetIdsByLabel(query);
-        if (labelIds.length > 0) {
-          const page = await queryAssets({ ids: labelIds, limit: 200 });
-          if (!cancelled) setResults(page.assets);
-        } else if (!cancelled) {
-          setResults([]);
-        }
       } else {
+        // Free text has no on-device index to match — results come from the
+        // album-title matches above; the backend will own semantic search.
         if (!cancelled) setResults([]);
       }
       if (!cancelled) setSearching(false);
@@ -110,7 +90,7 @@ export default function SearchScreen() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, localSearchEnabled]);
+  }, [query]);
 
   const matchedAlbums = useMemo(() => {
     if (!parsed.albumMatch) return [];
@@ -214,54 +194,6 @@ export default function SearchScreen() {
               </Chip>
             ))}
           </ChipRow>
-
-          {localSearchEnabled && topLabels.length > 0 ? (
-            <Animated.View entering={FadeInDown.duration(180)}>
-              <ChipHeader>
-                <ThemedText variant="label">{t('search.yourLabels')}</ThemedText>
-                <Pressable
-                  hitSlop={8}
-                  onPress={() => {
-                    haptic('light');
-                    router.push('/labels');
-                  }}
-                  accessibilityLabel={t('search.seeAllLabels')}
-                >
-                  <ThemedText variant="bodySmall" color="accent">
-                    {t('search.seeAll')}
-                  </ThemedText>
-                </Pressable>
-              </ChipHeader>
-              <ChipRow>
-                {topLabels.map((label) => (
-                  <Chip
-                    key={label}
-                    onPress={() => {
-                      haptic('light');
-                      router.push({ pathname: '/label/[label]', params: { label } });
-                    }}
-                    accessibilityLabel={t('search.openLabel', { label })}
-                  >
-                    <ThemedText variant="bodySmall">{label}</ThemedText>
-                  </Chip>
-                ))}
-              </ChipRow>
-            </Animated.View>
-          ) : null}
-
-          {aiEnabled ? (
-            <AiCard>
-              <Icon name="sparkles-outline" size={22} color={colors.accent} />
-              <AiCardText>
-                <AiTitle variant="body">{t('search.aiTitle')}</AiTitle>
-                <ThemedText variant="bodySmall" color="secondary">
-                  {localSearchEnabled
-                    ? t('search.aiHintOn')
-                    : t('search.aiHintOff')}
-                </ThemedText>
-              </AiCardText>
-            </AiCard>
-          ) : null}
         </Suggestions>
       ) : searching ? (
         <Center>

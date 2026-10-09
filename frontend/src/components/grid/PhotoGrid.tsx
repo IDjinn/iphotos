@@ -1,9 +1,15 @@
 import { FlashList, type FlashListRef, type ListRenderItem } from '@shopify/flash-list';
-import { useCallback, useMemo, useRef } from 'react';
-import { RefreshControl, useWindowDimensions } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  RefreshControl,
+  useWindowDimensions,
+  type LayoutChangeEvent,
+} from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 
 import { measureHeroCell } from '@/animations/hero';
 import { buildGridData, type GridItem } from '@/data/grouping';
+import { computeGridLayout } from '@/data/grid-metrics';
 import type { PhotoAsset } from '@/data/types';
 import { useSelectionStore } from '@/stores/selection';
 import { useViewerStore, type ViewerContext } from '@/stores/viewer';
@@ -11,7 +17,9 @@ import { cellSizeFor, columnsFor } from '@/theme/scale';
 import { GRID_GAP } from '@/theme/tokens';
 import { useTheme } from '@/theme/context';
 
+import { FastScroll, type FastScrollHandle } from './FastScroll';
 import { DayHeader, GridRow, MonthHeader } from './GridHeaders';
+import { dayHeaderHeight, monthHeaderHeight } from './GridHeaders.styles';
 import { Grid } from './PhotoGrid.styles';
 
 interface PhotoGridProps {
@@ -22,13 +30,16 @@ interface PhotoGridProps {
   refreshing?: boolean;
   onEndReached?: () => void;
   stickyMonths?: boolean;
+  /** Google-Photos-style month fast-scroll rail on the right edge. */
+  fastScroll?: boolean;
   /** Overrides the default viewer open (e.g. decrypt-on-demand in encrypted mode). */
   onCellPress?: (asset: PhotoAsset) => void;
 }
 
 /**
- * The main photo grid: 3 columns, sticky month headers, day groups,
- * press → hero transition into the global viewer, long-press → selection.
+ * The main photo grid: 3 columns, sticky month headers, day groups
+ * (month-only past the one-month cutoff), press → hero transition into
+ * the global viewer, long-press → selection, fast-scroll rail.
  */
 export function PhotoGrid({
   assets,
@@ -38,16 +49,38 @@ export function PhotoGrid({
   refreshing = false,
   onEndReached,
   stickyMonths = true,
+  fastScroll = true,
   onCellPress,
 }: PhotoGridProps) {
-  const { colors } = useTheme();
+  const theme = useTheme();
   const listRef = useRef<FlashListRef<GridItem>>(null);
+  const fastScrollRef = useRef<FastScrollHandle>(null);
+  const scrollOffset = useSharedValue(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   const openViewer = useViewerStore((s) => s.open);
   const { width } = useWindowDimensions();
   const columns = columnsFor(width);
   const cellSize = cellSizeFor(width, columns, GRID_GAP);
 
   const gridData = useMemo(() => buildGridData(assets, columns), [assets, columns]);
+
+  const gridLayout = useMemo(
+    () =>
+      computeGridLayout(gridData.items, {
+        monthHeaderHeight: monthHeaderHeight(theme),
+        dayHeaderHeight: dayHeaderHeight(theme),
+        rowHeight: cellSize + GRID_GAP,
+      }),
+    [gridData, cellSize, theme]
+  );
+
+  const handleLayout = useCallback((e: LayoutChangeEvent) => {
+    setViewportHeight(e.nativeEvent.layout.height);
+  }, []);
+
+  const scrollToOffset = useCallback((offset: number, animated: boolean) => {
+    listRef.current?.scrollToOffset({ offset, animated });
+  }, []);
 
   const defaultCellPress = useCallback(
     (asset: PhotoAsset) => {
@@ -95,7 +128,7 @@ export function PhotoGrid({
   );
 
   return (
-    <Grid>
+    <Grid onLayout={handleLayout}>
       <FlashList
         ref={listRef}
         data={gridData.items}
@@ -104,6 +137,11 @@ export function PhotoGrid({
         keyExtractor={(item) => item.key}
         stickyHeaderIndices={stickyMonths ? gridData.stickyIndices : undefined}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          scrollOffset.value = e.nativeEvent.contentOffset.y;
+          fastScrollRef.current?.reveal();
+        }}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.6}
         refreshControl={
@@ -111,12 +149,21 @@ export function PhotoGrid({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={colors.textSecondary}
-              progressBackgroundColor={colors.surface}
+              tintColor={theme.colors.textSecondary}
+              progressBackgroundColor={theme.colors.surface}
             />
           ) : undefined
         }
       />
+      {fastScroll && viewportHeight > 0 ? (
+        <FastScroll
+          ref={fastScrollRef}
+          metrics={gridLayout}
+          viewportHeight={viewportHeight}
+          scrollOffset={scrollOffset}
+          scrollToOffset={scrollToOffset}
+        />
+      ) : null}
     </Grid>
   );
 }

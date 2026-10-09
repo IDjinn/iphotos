@@ -1,6 +1,3 @@
-/** How the app operates: offline (no account) or with the cloud service. */
-export type AppMode = 'offline' | 'cloud';
-
 /** Normalized asset model used across the app. */
 export interface PhotoAsset {
   id: string;

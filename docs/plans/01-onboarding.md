@@ -2,6 +2,12 @@
 
 > **Status: ✅ implementado (2026-08-16)** — ver 00-roadmap §5.1. D8 resolvido mantendo a permissão no PermissionGate. Ajuste em relação ao spec: o gate só cerca o `/welcome` após a conclusão — `/login` e `/register` permanecem acessíveis (CTA da seção Account das Settings).
 >
+> **Atualização 2026-10-09:** com o fim do modo Offline (doc 02), o welcome não
+> tem mais o link "Continuar sem conta" — só **Criar conta** e **Entrar**. O
+> onboarding só é concluído ao autenticar (`complete()` sem modo, chamado por
+> login/register), e o gate raiz passou a exigir sessão: deslogado, tudo fora de
+> `(public)` volta para `/login`.
+>
 > Fase 1 · Depende de: nada · Alimenta: 02 (modos), 07 (settings)
 > Objetivo: na primeira abertura do app, exibir uma introdução com logo, título e
 > descrição, e botões de **login**, **registro** ou **continuar sem conta** (modo offline).

@@ -21,8 +21,6 @@ import {
   HeaderTitle,
   HeldRow,
   Note,
-  NoteCard,
-  NoteCardText,
   Pill,
   Screen,
   Search,
@@ -36,7 +34,6 @@ import {
 } from '@/data/backup-folders';
 import { setSyncRule } from '@/data/sync-rules-repository';
 import { isExpoGo } from '@/data/native-crypto';
-import { useAccountStore } from '@/stores/account';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 import { formatBytes } from '@/utils/format';
@@ -73,7 +70,6 @@ export default function BackupFoldersScreen() {
   const { colors, space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const mode = useAccountStore((s) => s.mode);
   const [views, setViews] = useState<BackupFolderView[] | null>(null);
   const [held, setHeld] = useState<BackupFolderView[]>([]);
   const [query, setQuery] = useState('');
@@ -163,15 +159,6 @@ export default function BackupFoldersScreen() {
       </Header>
 
       <Body>
-        {mode !== 'cloud' ? (
-          <NoteCard>
-            <Icon name="information-circle-outline" size={20} color={colors.accent} />
-            <NoteCardText variant="bodySmall" color="secondary">
-              Folder rules are saved now and applied when Cloud mode is on.
-            </NoteCardText>
-          </NoteCard>
-        ) : null}
-
         {held.length > 0 ? (
           <Group>
             <GroupTitle variant="label">Needs a decision</GroupTitle>

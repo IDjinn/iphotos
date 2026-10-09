@@ -164,6 +164,43 @@ public sealed class InMemoryPhotoRepository : IPhotoRepository
             .ToList();
         return Task.FromResult<IReadOnlyList<Guid>>(mismatches);
     }
+
+    public Task<IReadOnlyList<PhotoMonthBucket>> ListMonthBucketsAsync(
+        Guid ownerId, string? sortBy, MediaType? mediaType, CancellationToken cancellationToken = default)
+    {
+        var query = Photos.Where(p => p.OwnerId == ownerId);
+        if (mediaType is not null)
+        {
+            query = query.Where(p => p.MediaType == mediaType);
+        }
+
+        var owned = query.ToList();
+        List<PhotoMonthBucket> buckets;
+        if (sortBy == "createdAt")
+        {
+            buckets = owned
+                .GroupBy(p => new DateTime(p.CreatedAt.Year, p.CreatedAt.Month, 1))
+                .OrderByDescending(g => g.Key)
+                .Select(g => new PhotoMonthBucket($"{g.Key.Year:D4}-{g.Key.Month:D2}", g.Count()))
+                .ToList();
+        }
+        else
+        {
+            buckets = owned
+                .Where(p => p.TakenAt is not null)
+                .GroupBy(p => new DateTime(p.TakenAt!.Value.Year, p.TakenAt!.Value.Month, 1))
+                .OrderByDescending(g => g.Key)
+                .Select(g => new PhotoMonthBucket($"{g.Key.Year:D4}-{g.Key.Month:D2}", g.Count()))
+                .ToList();
+            var undated = owned.Count(p => p.TakenAt is null);
+            if (undated > 0)
+            {
+                buckets.Add(new PhotoMonthBucket(string.Empty, undated));
+            }
+        }
+
+        return Task.FromResult<IReadOnlyList<PhotoMonthBucket>>(buckets);
+    }
 }
 
 public sealed class InMemoryVariantRepository : IVariantRepository

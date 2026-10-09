@@ -29,16 +29,13 @@ import {
 } from '@/screens/settings.styles';
 import type { CloudCacheMode } from '@/data/cloud-media-cache';
 import { cloudCacheModeChanged } from '@/data/cloud-media-cache';
-import { countLabeledAssets } from '@/data/labels-repository';
 import type { UploadQuality } from '@/data/user-preferences';
 import { getUserPreferences, updateUserPreferences } from '@/data/user-preferences';
 import { getPendingFolderDecisions } from '@/data/sync-rules-repository';
 import type { LanguageMode, LocaleTag, TranslationKey } from '@/i18n';
 import { useTranslation } from '@/i18n/hook';
-import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useAccountStore } from '@/stores/account';
 import { useBackupStore } from '@/stores/backup';
-import { useClassificationStore } from '@/stores/classification';
 import { useEncryptedModeStore } from '@/stores/encrypted-mode';
 import { useSettingsStore } from '@/stores/settings';
 import { useThumbnailsStore } from '@/stores/thumbnails';
@@ -118,15 +115,6 @@ const UPLOAD_QUALITY_OPTIONS: { mode: UploadQuality; labelKey: TranslationKey; i
 function renewDateLabel(epoch: number | undefined, localeTag: LocaleTag): string {
   if (!epoch) return '—';
   return new Date(epoch).toLocaleDateString(localeTag, { month: 'short', day: 'numeric' });
-}
-
-/** Just the host of the configured endpoint (never the key or full path). */
-function aiHost(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
 }
 
 export default function SettingsScreen() {
@@ -217,65 +205,29 @@ export default function SettingsScreen() {
 
   // The upload-quality choice lives on the account — sync the local cache.
   useEffect(() => {
-    if (account.mode !== 'cloud') return;
     getUserPreferences()
       .then((prefs) => {
         setUploadQuality(prefs.uploadQuality);
         setQualityCaps({ imageCapBytes: prefs.imageCapBytes, videoCapBytes: prefs.videoCapBytes });
       })
       .catch(() => {});
-    // account.mode/setUploadQuality are stable for the screen's lifetime.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account.mode]);
+  }, [setUploadQuality]);
 
   const backup = useBackupStore();
   const thumbnails = useThumbnailsStore();
   const encryptedMode = useEncryptedModeStore();
-  const aiEnabled = useClassificationStore((s) => s.aiEnabled);
-  const setAiEnabled = useClassificationStore((s) => s.setAiEnabled);
-  const localSearchEnabled = useClassificationStore((s) => s.localEnabled);
-  const setLocalSearchEnabled = useClassificationStore((s) => s.setLocalEnabled);
-  const indexationRunning = useClassificationStore((s) => s.running);
-  const indexationProgress = useClassificationStore((s) => s.progress);
-  const indexationError = useClassificationStore((s) => s.lastError);
-  const aiRunning = useClassificationStore((s) => s.aiRunning);
-  const aiProgress = useClassificationStore((s) => s.aiProgress);
-  const aiEndpoint = useAiLabelingStore((s) => s.endpoint);
-  const aiModel = useAiLabelingStore((s) => s.model);
-  const [labeledCount, setLabeledCount] = useState(() => countLabeledAssets());
 
   // SQLite writes land outside React's knowledge — refresh when a run finishes.
   useEffect(() => {
-    const unsubscribe = useClassificationStore.subscribe((state, prev) => {
-      if (!state.running && prev.running) setLabeledCount(countLabeledAssets());
-    });
     const unsubscribeBackup = useBackupStore.subscribe((state, prev) => {
       if ((!state.running && prev.running) || (!state.scanning && prev.scanning)) state.refreshStats();
     });
     useBackupStore.getState().refreshStats();
-    if (account.mode === 'cloud') void refreshPlan();
+    void refreshPlan();
     return () => {
-      unsubscribe();
       unsubscribeBackup();
     };
-  }, [account.mode, refreshPlan]);
-
-  const searchCaption = !localSearchEnabled
-    ? t('common.off')
-    : indexationRunning
-      ? indexationProgress && indexationProgress.total > 0
-        ? t('settings.ai.indexing', {
-            percent: Math.min(
-              100,
-              Math.floor((indexationProgress.scanned / indexationProgress.total) * 100)
-            ),
-            count: formatCount(indexationProgress.scanned),
-            total: formatCount(indexationProgress.total),
-          })
-        : t('settings.ai.indexingLibrary')
-      : labeledCount > 0
-        ? tCount('settings.ai.labeledCount', labeledCount, { count: formatCount(labeledCount) })
-        : t('settings.ai.labelsSubtitle');
+  }, [refreshPlan]);
 
   const backupProgress = backup.progress;
   const backupStats = backup.stats;
@@ -337,16 +289,15 @@ export default function SettingsScreen() {
           >
             <Icon name="person-circle-outline" size={22} color={colors.icon} />
             <RowText>
-              <ThemedText variant="body">{account.user ? account.user.email : t('settings.account.localMode')}</ThemedText>
+              <ThemedText variant="body">{account.user ? account.user.email : t('settings.account.noAccount')}</ThemedText>
               <ThemedText variant="bodySmall" color="secondary">
-                {account.user ? t('settings.account.cloudManage') : t('settings.account.noAccount')}
+                {account.user ? t('settings.account.cloudManage') : t('settings.account.signInPrompt')}
               </ThemedText>
             </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
           </NavRow>
           <NavRow
             spaced
-            dimmed={account.mode !== 'cloud'}
             onPress={() => {
               haptic('light');
               router.push('/settings/subscription');
@@ -364,9 +315,7 @@ export default function SettingsScreen() {
               <ThemedText variant="bodySmall" color="secondary">
                 {plan
                   ? `${plan.label} · ${t('settings.account.renews', { date: renewDateLabel(plan.renewsAt, localeTag) })}`
-                  : account.mode === 'cloud'
-                    ? t('settings.account.addStorage')
-                    : t('settings.account.requiresCloud')}
+                  : t('settings.account.addStorage')}
               </ThemedText>
             </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
@@ -381,11 +330,7 @@ export default function SettingsScreen() {
             }}
             accessibilityLabel={t('settings.backup.a11y')}
           >
-            <Icon
-              name={account.mode === 'cloud' ? 'cloud-upload-outline' : 'cloud-offline-outline'}
-              size={22}
-              color={account.mode === 'cloud' ? colors.accent : colors.icon}
-            />
+            <Icon name="cloud-upload-outline" size={22} color={colors.accent} />
             <RowText>
               <RowLabel variant="body">{t('settings.backup.title')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
@@ -430,7 +375,6 @@ export default function SettingsScreen() {
           </NavRow>
           <NavRow
             spaced
-            dimmed={account.mode !== 'cloud'}
             onPress={() => {
               haptic('light');
               router.push('/settings/import-zip');
@@ -438,48 +382,42 @@ export default function SettingsScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('settings.importZip.title')}
           >
-            <Icon
-              name="archive-outline"
-              size={22}
-              color={account.mode === 'cloud' ? colors.accent : colors.iconInactive}
-            />
+            <Icon name="archive-outline" size={22} color={colors.accent} />
             <RowText>
               <RowLabel variant="body">{t('settings.importZip.title')}</RowLabel>
               <ThemedText variant="bodySmall" color="secondary">
-                {account.mode === 'cloud' ? t('settings.importZip.subtitle') : t('settings.account.requiresCloud')}
+                {t('settings.importZip.subtitle')}
               </ThemedText>
             </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
           </NavRow>
         </SectionBlock>
 
-        {account.mode === 'cloud' ? (
-          <SectionBlock title={t('settings.sections.uploadQuality')}>
-            <ThemeRow>
-              {UPLOAD_QUALITY_OPTIONS.map((option) => {
-                const active = uploadQuality === option.mode;
-                const label = t(option.labelKey);
-                return (
-                  <ThemeOption
-                    key={option.mode}
-                    $active={active}
-                    onPress={() => changeUploadQuality(option.mode)}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('settings.uploadQuality.a11y', { label })}
-                  >
-                    <Icon name={option.icon} size={20} color={active ? colors.accent : colors.textSecondary} />
-                    <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
-                      {label}
-                    </ThemedText>
-                  </ThemeOption>
-                );
-              })}
-            </ThemeRow>
-            <SectionHint variant="bodySmall" color="secondary">
-              {uploadQualityHint}
-            </SectionHint>
-          </SectionBlock>
-        ) : null}
+        <SectionBlock title={t('settings.sections.uploadQuality')}>
+          <ThemeRow>
+            {UPLOAD_QUALITY_OPTIONS.map((option) => {
+              const active = uploadQuality === option.mode;
+              const label = t(option.labelKey);
+              return (
+                <ThemeOption
+                  key={option.mode}
+                  $active={active}
+                  onPress={() => changeUploadQuality(option.mode)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('settings.uploadQuality.a11y', { label })}
+                >
+                  <Icon name={option.icon} size={20} color={active ? colors.accent : colors.textSecondary} />
+                  <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
+                    {label}
+                  </ThemedText>
+                </ThemeOption>
+              );
+            })}
+          </ThemeRow>
+          <SectionHint variant="bodySmall" color="secondary">
+            {uploadQualityHint}
+          </SectionHint>
+        </SectionBlock>
 
         <SectionBlock title={t('settings.sections.cloudCache')}>
           <ThemeRow>
@@ -656,82 +594,6 @@ export default function SettingsScreen() {
             </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
           </NavRow>
-          <StaticRow $spaced>
-            <Icon name="sparkles-outline" size={22} color={colors.icon} />
-            <RowText>
-              <RowLabel variant="body">{t('settings.privacy.ai')}</RowLabel>
-              <ThemedText variant="bodySmall" color="secondary">
-                {aiEnabled
-                  ? t('settings.privacy.aiOn')
-                  : t('settings.privacy.aiOff')}
-              </ThemedText>
-            </RowText>
-            <Switch
-              value={aiEnabled}
-              onValueChange={(v) => {
-                haptic('medium');
-                setAiEnabled(v);
-              }}
-              trackColor={{ true: colors.accent, false: colors.outline }}
-              accessibilityLabel={t('settings.privacy.ai')}
-            />
-          </StaticRow>
-          {aiEnabled ? (
-          <>
-          <StaticRow $spaced>
-            <Icon name="sparkles-outline" size={22} color={colors.icon} />
-            <RowText>
-              <RowLabel variant="body">{t('settings.privacy.smartSearch')}</RowLabel>
-              <ThemedText variant="bodySmall" color="secondary">
-                {searchCaption}
-              </ThemedText>
-              {localSearchEnabled && indexationError ? (
-                <ThemedText variant="bodySmall" color="danger">
-                  {indexationError}
-                </ThemedText>
-              ) : null}
-            </RowText>
-            <Switch
-              value={localSearchEnabled}
-              onValueChange={(v) => {
-                haptic('medium');
-                setLocalSearchEnabled(v);
-              }}
-              trackColor={{ true: colors.accent, false: colors.outline }}
-              accessibilityLabel={t('settings.privacy.smartSearchA11y')}
-            />
-          </StaticRow>
-          <NavRow
-            spaced
-            onPress={() => {
-              haptic('light');
-              router.push('/settings/ai-labeling');
-            }}
-            accessibilityLabel={t('settings.ai.labelingTitle')}
-          >
-            <Icon name="color-wand-outline" size={22} color={colors.icon} />
-            <RowText>
-              <RowLabel variant="body">{t('settings.ai.labelingTitle')}</RowLabel>
-              <ThemedText variant="bodySmall" color="secondary">
-                {aiEndpoint && aiModel ? `${aiHost(aiEndpoint)} · ${aiModel}` : t('settings.ai.notConfigured')}
-              </ThemedText>
-              {aiRunning && aiProgress && aiProgress.total > 0 ? (
-                <ThemedText variant="bodySmall" color="secondary">
-                  {t('settings.ai.labeling', {
-                    percent: Math.min(
-                      100,
-                      Math.floor((aiProgress.scanned / aiProgress.total) * 100)
-                    ),
-                    count: formatCount(aiProgress.scanned),
-                    total: formatCount(aiProgress.total),
-                  })}
-                </ThemedText>
-              ) : null}
-            </RowText>
-            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </NavRow>
-          </>
-          ) : null}
         </SectionBlock>
 
         <SectionBlock title={t('settings.sections.about')}>

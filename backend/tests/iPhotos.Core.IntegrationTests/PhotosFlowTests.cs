@@ -189,6 +189,31 @@ public sealed class PhotosFlowTests : IClassFixture<iPhotosApiFactory>
     }
 
     [Fact]
+    public async Task ListMonths_ReturnsBucketsForOwner()
+    {
+        // Unauthenticated calls are rejected.
+        (await _factory.CreateClient().GetAsync("/api/photos/months"))
+            .StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+
+        using var client = await NewAuthorizedClientAsync();
+        using var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(JpegWithExif(50, 40)); // EXIF → TakenAt 2025-12-25
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+        form.Add(fileContent, "file", "xmas.jpg");
+        (await client.PostAsync("/api/photos", form)).StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        var buckets = await client.GetFromJsonAsync<List<PhotoMonthBucket>>(
+            "/api/photos/months", JsonOptions.Web);
+        buckets.ShouldNotBeNull();
+        buckets.ShouldHaveSingleItem();
+        buckets[0].Month.ShouldBe("2025-12");
+        buckets[0].Count.ShouldBe(1);
+
+        (await client.GetAsync("/api/photos/months?mediaType=gif")).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await client.GetAsync("/api/photos/months?sortBy=size")).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task GetPhoto_FromAnotherUser_Returns404()
     {
         using var owner = await NewAuthorizedClientAsync();

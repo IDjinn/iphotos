@@ -48,6 +48,7 @@ function buildTheme(dark: boolean, mode: ThemeMode, width: number) {
       line: {
         body: ms(width, TYPE.line.body),
         small: ms(width, TYPE.line.small),
+        title: ms(width, TYPE.line.title),
       },
     },
     // Hairline is physical (1/PixelRatio) and borders stay crisp — unscaled.

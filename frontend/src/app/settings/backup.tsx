@@ -28,7 +28,6 @@ import { getUsage, type CloudUsage } from '@/data/cloud-photos-repository';
 import { isExpoGo } from '@/data/native-crypto';
 import type { BackupProgress } from '@/data/backup-engine';
 import { getHeldFolderViews, type BackupFolderView } from '@/data/backup-folders';
-import { useAccountStore } from '@/stores/account';
 import { useBackupStore } from '@/stores/backup';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -98,7 +97,6 @@ export default function BackupSettingsScreen() {
   const { colors, space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const mode = useAccountStore((s) => s.mode);
   const backup = useBackupStore();
   const refreshStats = useBackupStore((s) => s.refreshStats);
   const startBackup = useBackupStore((s) => s.start);
@@ -376,8 +374,8 @@ export default function BackupSettingsScreen() {
             </ActionCard>
 
             <ActionCard
-              dimmed={mode !== 'cloud' || busy}
-              disabled={busy || mode !== 'cloud'}
+              dimmed={busy}
+              disabled={busy}
               hapticKind="medium"
               onPress={() => {
                 if (!busy) void startBackup();
@@ -385,11 +383,7 @@ export default function BackupSettingsScreen() {
               accessibilityLabel="Back up photos"
             >
               <CardRow>
-                <Icon
-                  name="cloud-upload-outline"
-                  size={22}
-                  color={mode === 'cloud' ? colors.accent : colors.iconInactive}
-                />
+                <Icon name="cloud-upload-outline" size={22} color={colors.accent} />
                 <CardText>
                   <ThemedText variant="body">Back up now</ThemedText>
                   <ThemedText variant="bodySmall" color="secondary" numberOfLines={1}>
@@ -397,9 +391,7 @@ export default function BackupSettingsScreen() {
                       ? eta
                         ? `${backupCaption} · ${eta}`
                         : backupCaption
-                      : mode === 'cloud'
-                        ? 'Upload everything new to the cloud'
-                        : 'Requires Cloud mode — log in to back up your photos'}
+                      : 'Upload everything new to the cloud'}
                   </ThemedText>
                 </CardText>
                 {backup.running ? (

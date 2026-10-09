@@ -86,6 +86,23 @@ export interface ListPhotosQuery {
   sortBy?: 'takenAt' | 'createdAt';
   /** Sort direction — 'desc' (default) or 'asc'. */
   order?: 'asc' | 'desc';
+  /** ISO 8601 — only photos taken at/after this instant. */
+  from?: string;
+  /** ISO 8601 — only photos taken at/before this instant. */
+  to?: string;
+}
+
+export interface PhotoMonthBucket {
+  /** "yyyy-MM", or "" for photos without a taken date (they come last in desc order). */
+  month: string;
+  count: number;
+}
+
+/** Timeline month buckets for fast-scroll rails — mirrors the listing order. */
+export async function listPhotoMonths(
+  query: { mediaType?: CloudMediaType; sortBy?: 'takenAt' | 'createdAt' } = {}
+): Promise<PhotoMonthBucket[]> {
+  return apiJson<PhotoMonthBucket[]>('/api/photos/months', { params: query });
 }
 
 export async function listPhotos(query: ListPhotosQuery | number = 1, pageSize = 50): Promise<PagedResult<CloudPhoto>> {

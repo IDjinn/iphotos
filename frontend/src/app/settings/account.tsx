@@ -75,7 +75,10 @@ export default function AccountSettingsScreen() {
         style: 'destructive',
         onPress: () => {
           signOut();
-          router.back();
+          // Collapse the protected stack and land on the login screen —
+          // login is mandatory, so nothing signed-out stays reachable.
+          router.dismissAll();
+          router.replace('/login');
         },
       },
     ]);

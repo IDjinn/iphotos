@@ -191,6 +191,23 @@ export function purgeThumbnails(assetIds: string[]): void {
   }
 }
 
+/** Drops every thumbnail (files, rows, in-memory state) — used on sign-out. */
+export function purgeAllThumbnails(): void {
+  try {
+    const dir = thumbnailDirectory();
+    if (dir.exists) dir.delete();
+  } catch {
+    // Best-effort file removal.
+  }
+  try {
+    db.runSync('DELETE FROM thumbnails');
+  } catch {
+    // Table not migrated yet — nothing to clear.
+  }
+  knownThumbnails.clear();
+  knownLoaded = false;
+}
+
 /**
  * Removes thumbnail files whose row is gone (e.g. purged with asset metadata)
  * and rows whose file was evicted. Called at the start of a batch run.

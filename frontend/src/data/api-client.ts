@@ -10,8 +10,9 @@ import * as SecureStore from 'expo-secure-store';
  * - Access token lives in memory only; the refresh token is persisted in
  *   SecureStore and survives app restarts.
  * - A 401 triggers a single-flight refresh (`POST /api/auth/refresh`) and one
- *   retry of the original request. If the refresh fails, the session is
- *   discarded and the account store falls back to offline mode.
+ *   retry of the original request. If the refresh is rejected by the server,
+ *   the session is discarded and the app falls back to the login screen; a
+ *   network-level failure keeps the session for an on-demand retry.
  * - Errors are always surfaced as `ApiError` (backend shape `{ error }`).
  */
 
@@ -105,14 +106,10 @@ export async function restoreSession(): Promise<boolean> {
   if (accessToken) return true;
   const stored = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
   if (!stored) return false;
+  // Token presence is enough to enter the app — validation happens lazily on
+  // the first request, so an offline launch is not punished with a login gate.
   refreshToken = stored;
-  try {
-    await refreshAccessToken();
-    return true;
-  } catch {
-    await clearSession();
-    return false;
-  }
+  return true;
 }
 
 export async function clearSession(): Promise<void> {
@@ -120,6 +117,12 @@ export async function clearSession(): Promise<void> {
   refreshToken = null;
   refreshInFlight = null;
   await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY).catch(() => undefined);
+}
+
+/** True when the server itself refused the request (4xx, not a network
+ * failure or a transient 5xx) — the only case that invalidates a session. */
+function isServerRejection(error: unknown): boolean {
+  return error instanceof ApiError && error.status >= 400 && error.status < 500;
 }
 
 async function forceSignOut(): Promise<void> {
@@ -186,8 +189,10 @@ http.interceptors.response.use(
         const token = await refreshAccessToken(true);
         config.headers = AxiosHeaders.from(config.headers).set('Authorization', `Bearer ${token}`);
         return http.request(config);
-      } catch {
-        await forceSignOut();
+      } catch (refreshError) {
+        // Only a server rejection ends the session; a network failure keeps
+        // the refresh token so the request can be retried once back online.
+        if (isServerRejection(refreshError)) await forceSignOut();
       }
     }
     throw toApiError(error);

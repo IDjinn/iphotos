@@ -6,19 +6,17 @@ export interface LabelEntry {
 }
 
 /**
- * Where a label came from: 'local' is the on-device folder heuristic, 'ml' is
- * the on-device CLIP runtime, 'ai' is the user-configured vision endpoint,
- * and 'cloud' is reserved for the first-party service (docs/plans/05 §5).
+ * Where a label came from. On-device labeling is gone — labels will be
+ * produced by the backend service (docs/plans/05-classificacao.md §5), which
+ * syncs into this table as 'cloud'.
  */
-export type LabelSource = 'local' | 'ml' | 'ai' | 'cloud';
+export type LabelSource = 'cloud';
 
 /**
- * On-device labels attached to assets. The first source is folder-derived
- * ("camera", "screenshots", "whatsapp images"); ML-generated labels plug into
- * the same table with a different `source` when the local model lands
- * (docs/plans/05-classificacao.md).
+ * Labels attached to assets. Nothing in the app produces labels today — the
+ * repository stays as the storage contract the backend sync plugs into.
  */
-export function addLabels(entries: LabelEntry[], source: LabelSource = 'local'): void {
+export function addLabels(entries: LabelEntry[], source: LabelSource): void {
   if (entries.length === 0) return;
   db.withTransactionSync(() => {
     for (const { assetId, label } of entries) {
@@ -61,7 +59,7 @@ export interface LabelSummary {
 
 /** Every label with its asset count, most used first — the full label browser. */
 export function listAllLabels(limit?: number): LabelSummary[] {
-  // DISTINCT so a future ML `source` adding the same label doesn't double-count.
+  // DISTINCT so a future source adding the same label doesn't double-count.
   const base =
     'SELECT label, COUNT(DISTINCT asset_id) AS n FROM asset_labels GROUP BY label ORDER BY n DESC, label ASC';
   const rows = limit

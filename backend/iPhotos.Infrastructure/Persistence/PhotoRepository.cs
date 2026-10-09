@@ -89,6 +89,48 @@ public sealed class PhotoRepository(PhotosDbContext db) : IPhotoRepository
         return new PagedResult<Photo>(items, filter.Page, filter.PageSize, total);
     }
 
+    public async Task<IReadOnlyList<PhotoMonthBucket>> ListMonthBucketsAsync(
+        Guid ownerId, string? sortBy, MediaType? mediaType, CancellationToken cancellationToken = default)
+    {
+        var query = db.Photos.AsNoTracking().Where(p => p.OwnerId == ownerId);
+        if (mediaType is not null)
+        {
+            query = query.Where(p => p.MediaType == mediaType);
+        }
+
+        if (sortBy == "createdAt")
+        {
+            var created = await query
+                .GroupBy(p => new { p.CreatedAt.Year, p.CreatedAt.Month })
+                .OrderByDescending(g => g.Key.Year)
+                .ThenByDescending(g => g.Key.Month)
+                .Select(g => new { g.Key.Year, g.Key.Month, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+            return created
+                .Select(g => new PhotoMonthBucket($"{g.Year:D4}-{g.Month:D2}", g.Count))
+                .ToList();
+        }
+
+        var dated = await query
+            .Where(p => p.TakenAt != null)
+            .GroupBy(p => new { p.TakenAt!.Value.Year, p.TakenAt!.Value.Month })
+            .OrderByDescending(g => g.Key.Year)
+            .ThenByDescending(g => g.Key.Month)
+            .Select(g => new { g.Key.Year, g.Key.Month, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        var undated = await query.Where(p => p.TakenAt == null).CountAsync(cancellationToken);
+
+        var buckets = dated
+            .Select(g => new PhotoMonthBucket($"{g.Year:D4}-{g.Month:D2}", g.Count))
+            .ToList();
+        if (undated > 0)
+        {
+            buckets.Add(new PhotoMonthBucket(string.Empty, undated));
+        }
+
+        return buckets;
+    }
+
     public async Task DeleteAsync(Photo photo, CancellationToken cancellationToken = default)
     {
         db.Photos.Remove(photo);

@@ -69,25 +69,6 @@ export const RecentChip = styled.View`
   background-color: ${({ theme }) => theme.colors.surface};
 `;
 
-export const AiCard = styled.View`
-  flex-direction: row;
-  gap: ${({ theme }) => theme.space[3]}px;
-  align-items: center;
-  border-radius: ${({ theme }) => theme.radius.lg}px;
-  padding: ${({ theme }) => theme.space[4]}px;
-  margin-top: ${({ theme }) => theme.space[2]}px;
-  background-color: ${({ theme }) => theme.colors.surface};
-`;
-
-export const AiCardText = styled.View`
-  flex: 1;
-  gap: ${({ theme }) => theme.space[1]}px;
-`;
-
-export const AiTitle = styled(ThemedText)`
-  font-weight: ${({ theme }) => theme.type.weight.medium};
-`;
-
 export const AlbumMatches = styled.View`
   padding-horizontal: ${({ theme }) => theme.space[4]}px;
   padding-bottom: ${({ theme }) => theme.space[2]}px;

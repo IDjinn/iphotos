@@ -31,6 +31,17 @@ public interface IPhotoRepository
 
     Task<PagedResult<Photo>> ListAsync(PhotoFilter filter, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Month buckets of the owner's photos in listing order: dated photos
+    /// grouped by TakenAt month ("yyyy-MM", newest first) and any undated
+    /// photos last under month "" — mirroring the listing's nulls-last
+    /// TakenAt sort. <paramref name="sortBy"/> = "createdAt" buckets by
+    /// CreatedAt instead (no undated bucket). Pairs with the listing filters
+    /// so clients can map timeline positions to months.
+    /// </summary>
+    Task<IReadOnlyList<PhotoMonthBucket>> ListMonthBucketsAsync(
+        Guid ownerId, string? sortBy, MediaType? mediaType, CancellationToken cancellationToken = default);
+
     Task DeleteAsync(Photo photo, CancellationToken cancellationToken = default);
 
     /// <summary>Photos with an upload ticket older than <paramref name="cutoff"/> that never completed.</summary>
