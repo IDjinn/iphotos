@@ -30,6 +30,7 @@ rsync -a --delete \
   --exclude android/build \
   --exclude android/app/build \
   --exclude android/.gradle \
+  --exclude android/app/.cxx \
   --exclude android/local.properties \
   "$PROJECT_SRC/" "$BUILD_DIR/"
 
@@ -52,21 +53,28 @@ echo "==> [2/4] Installing dependencies (bun)"
 (cd "$BUILD_DIR" && bun install)
 
 echo "==> [3/4] Building assemble$VARIANT"
-# WSL2 on a 16GB host gets ~7.7GB RAM. The stock Gradle (4GB) + Kotlin daemon (4GB)
-# combo gets OOM-killed mid-build, so run Kotlin inside the Gradle daemon and cap
-# parallel workers. Idempotent: appended once, survives rsync (excluded file would not,
-# but gradle.properties is synced — hence re-append guarded by the marker).
+# Sized for the 9GB WSL2 VM (.wslconfig): Gradle heap up, Kotlin compiled
+# in-process (no separate daemon to OOM), moderate worker cap. Appended after
+# rsync on every run (marker-guarded) — last value wins over the -Xmx4096m in
+# the tracked gradle.properties. Note: the Gradle configuration cache is NOT
+# enabled here — Expo's react {} block shells out to node at configuration
+# time (resolveAppEntry, hermes, codegen), which config-cache rejects.
 GP="$BUILD_DIR/android/gradle.properties"
 if ! grep -q "# wsl-build-tuning" "$GP"; then
   cat >> "$GP" <<'EOF'
 
-# wsl-build-tuning: fit inside WSL2's ~7.7GB RAM cap (see scripts/build-wsl.sh)
-org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=768m
+# wsl-build-tuning: see scripts/build-wsl.sh
+org.gradle.jvmargs=-Xmx3584m -XX:MaxMetaspaceSize=768m
 kotlin.compiler.execution.strategy=in-process
-org.gradle.workers.max=3
+org.gradle.workers.max=4
 EOF
 fi
-(cd "$BUILD_DIR/android" && ./gradlew "assemble$VARIANT" "-PreactNativeArchitectures=$ABI")
+# lintVital is the Play-Store-oriented crash-prevention lint; it runs on every
+# release build for little value on a locally installed test APK. Skip it via
+# task exclusion (release-only tasks — passing -x on a debug build fails).
+LINT_SKIP=""
+[ "$VARIANT" = "release" ] && LINT_SKIP="-x lintVitalAnalyzeRelease -x lintVitalReportRelease"
+(cd "$BUILD_DIR/android" && ./gradlew "assemble$VARIANT" $LINT_SKIP "-PreactNativeArchitectures=$ABI")
 
 echo "==> [4/4] Copying APK to Windows"
 cp "$OUT_APK" "$OUT_WIN/iphotos-$VARIANT-$ABI.apk"

@@ -14,6 +14,7 @@ import {
 import { useReducedMotion } from '@/animations/useReducedMotion';
 import { beginTabEnter, takeTabEnter } from '@/navigation/tab-transition';
 import { useSelectionStore } from '@/stores/selection';
+import { useViewerStore } from '@/stores/viewer';
 import { Fill } from '@/components/TabSwipe.styles';
 
 /** Bottom-tab routes in bar order — a committed horizontal swipe moves between them. */
@@ -28,7 +29,8 @@ const ENTER_DURATION = 220;
  * tab (Photos ↔ Search ↔ Library) with a slide transition: this screen
  * nudges out in the swipe direction, then the target slides in from the
  * opposite side. Vertical scrolling is untouched (the pan only activates
- * on clearly horizontal drags) and swiping is disabled during selection.
+ * on clearly horizontal drags) and swiping is disabled during selection and
+ * while the photo viewer overlay is open.
  */
 export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode }) {
   const router = useRouter();
@@ -36,6 +38,9 @@ export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode 
   const isActive = pathname === tab;
   const reducedMotion = useReducedMotion();
   const selectionActive = useSelectionStore((s) => s.active);
+  // The photo viewer's pager owns horizontal swipes while it is open — a tab
+  // pan activating alongside it would flip tabs underneath the overlay.
+  const viewerVisible = useViewerStore((s) => s.visible);
   const { width } = useWindowDimensions();
   const exitDistance = Math.round(width * 0.25);
   const enterDistance = Math.round(width * 0.3);
@@ -87,7 +92,7 @@ export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode 
       }, EXIT_DURATION);
     };
     return Gesture.Pan()
-      .enabled(!selectionActive && isActive)
+      .enabled(!selectionActive && isActive && !viewerVisible)
       .activeOffsetX([-20, 20])
       .failOffsetY([-14, 14])
       .onEnd((event, success) => {
@@ -99,7 +104,7 @@ export function TabSwipe({ tab, children }: { tab: TabPath; children: ReactNode 
         const dir: 1 | -1 = event.translationX < 0 ? 1 : -1;
         runOnJS(commit)(TABS[next], dir);
       });
-  }, [tab, router, isActive, selectionActive, reducedMotion, x, opacity, exitSeq, exitDistance]);
+  }, [tab, router, isActive, selectionActive, viewerVisible, reducedMotion, x, opacity, exitSeq, exitDistance]);
 
   const style = useAnimatedStyle(() => ({
     transform: [{ translateX: x.value }],

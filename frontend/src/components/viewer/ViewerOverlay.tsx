@@ -399,7 +399,8 @@ export function ViewerOverlay() {
       </PagerLayer>
 
       <Animated.View style={heroStyle} pointerEvents="none">
-        <HeroImage source={{ uri: current.uri, headers: current.sourceHeaders }} contentFit="cover" transition={0} />
+        {/* "contain" — the flight must show the whole photo, never a screen-fill crop. */}
+        <HeroImage source={{ uri: current.uri, headers: current.sourceHeaders }} contentFit="contain" transition={0} />
       </Animated.View>
 
       <ViewerChrome

@@ -81,10 +81,17 @@ curl -fsSL https://bun.sh/install | bash
 
 ## Build
 
-Um comando só (sincroniza, instala deps, builda, copia o APK pro Windows):
+Dois caminhos pro mesmo fluxo:
 
+**Windows (`.bat`, duplo clique ou terminal):**
+```bat
+frontend\scripts\build-apk.bat              → release arm64-v8a (padrão)
+frontend\scripts\build-apk.bat release x86_64
+```
+
+**WSL/bash direto** (sincroniza, instala deps, builda, copia o APK pro Windows):
 ```bash
-bash /mnt/c/dev/react-native/iphotos/scripts/build-wsl.sh [debug|release] [abi]
+bash /mnt/c/dev/react-native/iphotos/frontend/scripts/build-wsl.sh [debug|release] [abi]
 ```
 
 - Variante padrão: `release` (APK standalone). `debug` pra usar com Metro.
@@ -94,14 +101,14 @@ Saída: `C:\Users\<usuario>\Downloads\iphotos-<variante>-<abi>.apk` (ex.: `iphot
 
 O que o script faz por baixo:
 
-1. **rsync** do projeto pra `~/build/iphotos` (ext4 nativo do WSL). Compilar C++ atravessando o mount `/mnt/c` é ordens de magnitude mais lento — mesmo papel que o volume do Docker faz no fluxo com compose. Os excludes de `build/`/`.gradle` preservam os artefatos entre builds (Gradle reusa o que já compilou).
+1. **rsync** do projeto pra `~/build/iphotos` (ext4 nativo do WSL). Compilar C++ atravessando o mount `/mnt/c` é ordens de magnitude mais lento — mesmo papel que o volume do Docker faz no fluxo com compose. Os excludes de `build/`/`.gradle`/`.cxx` preservam os artefatos entre builds (Gradle reusa o que já compilou).
 2. **`bun install`** no copy Linux-native (node_modules do Windows não serve pro build no Linux).
-3. **Tuning de memória** anexado ao `gradle.properties` do copy (`-Xmx3072m`, Kotlin in-process, `workers.max=3`) — necessário pra caber no limite do WSL, ver pré-requisito 1.
-4. **`./gradlew assemble<Variant> -PreactNativeArchitectures=<abi>`** com JDK 17 + Node 20 no env.
+3. **Tuning** anexado ao `gradle.properties` do copy: heap Gradle `-Xmx3584m` (VM de 9 GB), Kotlin in-process e `workers.max=4`. Último valor vence o `-Xmx4096m` do arquivo tracked. **Configuration cache ficou de fora**: o bloco `react {}` do Expo executa `node` na fase de configuração (resolveAppEntry, hermes, codegen) e o config cache rejeita processo externo em configuração — violação estrutural, não transitória.
+4. **`./gradlew assemble<Variant> -PreactNativeArchitectures=<abi>`** com JDK 17 + Node 20 no env. No `release`, `lintVitalAnalyzeRelease`/`lintVitalReportRelease` são excluídos com `-x` (lint voltado a Play Store; em APK de teste local só custa ~1 min por build).
 
-Do Windows (PowerShell/Git Bash), a chamada precisa desligar a conversão de path do MSYS:
+Do Windows (PowerShell/Git Bash), a chamada direta precisa desligar a conversão de path do MSYS:
 ```bash
-MSYS_NO_PATHCONV=1 wsl -d Ubuntu -e bash /mnt/c/dev/react-native/iphotos/scripts/build-wsl.sh
+MSYS_NO_PATHCONV=1 wsl -d Ubuntu -e bash /mnt/c/dev/react-native/iphotos/frontend/scripts/build-wsl.sh
 ```
 
 ### Instalar no celular físico
@@ -149,10 +156,13 @@ AVD recém-criado tem a galeria **vazia** — "No photos yet" com permissão con
 
 ## Notas
 
-- Projeto é CNG: `android/` é gerado pelo prebuild e está no `.gitignore`. Se mudar permissões/plugins no `app.json`, regenerar antes do build: `cd ~/build/iphotos && bunx expo prebuild -p android --clean --no-install` (o `--clean` descarta o `android/` atual e regenera do zero).
-- Primeiro build ~8–20 min (baixa dependências, compila tudo). Seguintes reusam Gradle daemon + caches (`~/.gradle` e `android/*/build` preservados pelo rsync) — uma mudança de ABI/kotlin vira build de poucos minutos.
+- Projeto é CNG: `android/` é gerado pelo prebuild e está commitado como fonte mantida à mão. Se mudar permissões/plugins no `app.config.ts`, regenerar antes do build: `cd ~/build/iphotos && bunx expo prebuild -p android --clean --no-install` (o `--clean` descarta o `android/` atual e regenera do zero — edits manuais no gradle se perdem, reaplicá-los).
+- **Tamanho do APK (2026-10-08)**: 93 MB → **56 MB** com a remoção do runtime ONNX on-device (doc 05: `libonnxruntime.so` era 32 MB sozinho), filtro de locale `en/pt` (`androidResources.localeFilters` no `app/build.gradle`; `resources.arsc` 2.2 → 0.8 MB) e `android.enableBundleCompression=true` (comprime o bundle Hermes no APK). O grosso restante é lib nativa (~32 MB: QuickCrypto, reactnative, hermes…) + dex sem R8 (~48 MB raw).
+- **R8 é a próxima alavanca de tamanho** (dex ~50 MB → ~15-25 MB + shrink de res): as flags já são suportadas pelo `app/build.gradle` — basta setar `android.enableMinifyInReleaseBuilds=true` + `android.enableShrinkResourcesInReleaseBuilds=true` no `gradle.properties`. Rejeitado por ora (risco de quebrar módulos nativos com reflexão; exige validar no device). Libs nativas só encolhem com build custom (ex.: ONNX Runtime Mobile com subset de ops).
+- **Configuration cache**: incompatível com o template Expo/RN — o bloco `react {}` do `app/build.gradle` executa `node` durante a configuração e o Gradle 9 falha o build com "Configuration cache problems found" (5 violações). Não ligar; o ganho dele seria só a fase de configuração (~30 s/build).
+- Primeiro build ~8–20 min (baixa dependências, compila tudo). Seguintes reusam Gradle daemon + build cache + configuration cache + caches (`~/.gradle` e `android/*/build` preservados pelo rsync) — rebuild incremental típico: **3–5 min** (dominado pelo re-bundle do JS quando há mudança de código).
 - **`EXPO_PUBLIC_*` do `.env` é assado no bundle release** — mas o Gradle não enxerga `.env` como input e reusa o bundle `UP-TO-DATE` com o valor antigo. O script guarda um hash dos `.env*` (`~/build/.iphotos-env-hash`) e força re-bundle quando mudam; sem isso, mudar a URL do backend e rebuildar sai APK velho com URL velha (silenciosamente).
 - Edite o código no Windows (`C:\dev\react-native\iphotos`); o script leva a mudança pro build com o rsync. O `~/build/iphotos` é descartável — pode apagar e recriar.
 - Se o build morrer no meio **sem mensagem de erro** (log termina abrupto, exit 1), é OOM: conferir o `.wslconfig` (pré-requisito 1) e `dmesg | grep -i oom` dentro do WSL.
 - Sem EAS no caminho: não precisa de login, `eas.json` nem projectId. Se um dia precisar de build na nuvem, o caminho é o mesmo do `BUILD_WSL.md` do milenio-quiz (`eas build --local` exige login mesmo rodando local).
-- Permissões de galeria (`READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_VISUAL_USER_SELECTED` etc.) são assadas no `AndroidManifest.xml` pelo prebuild a partir do `app.json` + plugin do `expo-media-library` — o APK já nasce pedindo as permissões certas na primeira execução.
+- Permissões de galeria (`READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_VISUAL_USER_SELECTED` etc.) são assadas no `AndroidManifest.xml` pelo prebuild a partir do `app.config.ts` + plugin do `expo-media-library` — o APK já nasce pedindo as permissões certas na primeira execução.

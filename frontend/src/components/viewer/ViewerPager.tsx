@@ -107,6 +107,8 @@ export function ViewerPager({
   const { width: pageWidth } = useWindowDimensions();
   const offset = useSharedValue(-index * pageWidth);
   const axis = useSharedValue(AXIS_NONE);
+  /** True once onEnd ran — lets onFinalize tell a cancel apart from a normal finish. */
+  const ended = useSharedValue(false);
   const baseOffset = useSharedValue(0);
   const baseZoomTx = useSharedValue(0);
   const baseZoomTy = useSharedValue(0);
@@ -139,6 +141,7 @@ export function ViewerPager({
       .onStart((event) => {
         startTx.value = event.translationX;
         startTy.value = event.translationY;
+        ended.value = false;
         baseOffset.value = offset.value;
         const current = controllers.current.get(index);
         if (current) {
@@ -197,12 +200,25 @@ export function ViewerPager({
 
         if (axis.value === AXIS_HORIZONTAL) {
           const projected = -(baseOffset.value + dx + event.velocityX * 0.2) / pageWidth;
-          const target = clamp(Math.round(projected), 0, assets.length - 1);
+          // Google-Photos style: one page per swipe, regardless of flick speed.
+          // The mounted window (±1) always covers the target, so the flight
+          // never crosses unmounted pages.
+          const startPage = Math.round(-baseOffset.value / pageWidth);
+          const target = clamp(
+            Math.min(Math.max(Math.round(projected), startPage - 1), startPage + 1),
+            0,
+            assets.length - 1
+          );
           offset.value = withSpring(-target * pageWidth, { velocity: event.velocityX, ...Springs.gentle }, (finished) => {
             if (finished) runOnJS(onIndexChange)(target);
           });
         } else if (axis.value === AXIS_VERTICAL) {
-          if (dy > 130 || event.velocityY > 900) {
+          // Only dismiss when the gesture ended predominantly vertical — a
+          // horizontal swipe with slight downward drift must never close.
+          const mostlyVertical =
+            Math.abs(dy) > Math.abs(dx) ||
+            Math.abs(event.velocityY) > Math.abs(event.velocityX);
+          if ((dy > 130 || event.velocityY > 900) && mostlyVertical) {
             runOnJS(onDismiss)();
           } else {
             dismissTy.value = withSpring(0, Springs.gentle);
@@ -210,9 +226,23 @@ export function ViewerPager({
             backdropOpacity.value = withTiming(1, { duration: 180 });
           }
         }
+        ended.value = true;
         axis.value = AXIS_NONE;
       })
       .onFinalize(() => {
+        // Cancelled drag (e.g. a second finger landed): onEnd never ran, so
+        // settle whichever axis was mid-gesture instead of leaving it stuck.
+        if (!ended.value && axis.value === AXIS_HORIZONTAL) {
+          const target = clamp(Math.round(-offset.value / pageWidth), 0, assets.length - 1);
+          offset.value = withSpring(-target * pageWidth, Springs.gentle, (finished) => {
+            if (finished) runOnJS(onIndexChange)(target);
+          });
+        } else if (!ended.value && axis.value === AXIS_VERTICAL) {
+          dismissTy.value = withSpring(0, Springs.gentle);
+          dismissScale.value = withSpring(1, Springs.gentle);
+          backdropOpacity.value = withTiming(1, { duration: 180 });
+        }
+        ended.value = false;
         axis.value = AXIS_NONE;
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps

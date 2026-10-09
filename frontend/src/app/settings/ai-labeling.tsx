@@ -88,7 +88,7 @@ export default function AiLabelingScreen() {
     haptic('light');
     Alert.alert(t('aiLabeling.redoTitle'), t('aiLabeling.redoBody'), [
       { text: t('common.cancel'), style: 'cancel' },
-      { text: t('aiModel.redo'), style: 'destructive', onPress: () => void runAiIndexation(true) },
+      { text: t('aiLabeling.redo'), style: 'destructive', onPress: () => void runAiIndexation(true) },
     ]);
   };
 
@@ -187,7 +187,7 @@ export default function AiLabelingScreen() {
           </Card>
 
           {configured ? (
-            <RunButton disabled={aiRunning} onPress={start} label={aiRunning ? t('aiModel.labeling') : t('aiModel.labelNow')} />
+            <RunButton disabled={aiRunning} onPress={start} label={aiRunning ? t('aiLabeling.labeling') : t('aiLabeling.labelNow')} />
           ) : null}
           {configured && !aiRunning ? (
             <TextButton onPress={confirmRedo}>

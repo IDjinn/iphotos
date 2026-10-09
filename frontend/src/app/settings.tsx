@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { CONTENT_MAX_WIDTH } from '@/theme/scale';
 import { ActivityIndicator, Alert, Pressable, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,7 +35,6 @@ import { getUserPreferences, updateUserPreferences } from '@/data/user-preferenc
 import { getPendingFolderDecisions } from '@/data/sync-rules-repository';
 import type { LanguageMode, LocaleTag, TranslationKey } from '@/i18n';
 import { useTranslation } from '@/i18n/hook';
-import { resolveActiveModel } from '@/stores/ai-model';
 import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useAccountStore } from '@/stores/account';
 import { useBackupStore } from '@/stores/backup';
@@ -244,10 +243,6 @@ export default function SettingsScreen() {
   const aiEndpoint = useAiLabelingStore((s) => s.endpoint);
   const aiModel = useAiLabelingStore((s) => s.model);
   const [labeledCount, setLabeledCount] = useState(() => countLabeledAssets());
-  const modelName = useMemo(
-    () => resolveActiveModel()?.name ?? t('settings.ai.cloudOnly'),
-    [t]
-  );
 
   // SQLite writes land outside React's knowledge — refresh when a run finishes.
   useEffect(() => {
@@ -732,23 +727,6 @@ export default function SettingsScreen() {
                   })}
                 </ThemedText>
               ) : null}
-            </RowText>
-            <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
-          </NavRow>
-          <NavRow
-            spaced
-            onPress={() => {
-              haptic('light');
-              router.push('/settings/ai-model');
-            }}
-            accessibilityLabel={t('settings.ai.modelTitle')}
-          >
-            <Icon name="cube-outline" size={22} color={colors.icon} />
-            <RowText>
-              <RowLabel variant="body">{t('settings.ai.modelTitle')}</RowLabel>
-              <ThemedText variant="bodySmall" color="secondary">
-                {modelName}
-              </ThemedText>
             </RowText>
             <Icon name="chevron-forward" size={18} color={colors.textDisabled} />
           </NavRow>

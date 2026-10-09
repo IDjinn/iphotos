@@ -1,12 +1,11 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 
 /**
- * Runtime gate for native-only packages (react-native-quick-crypto,
- * onnxruntime-react-native): neither ships inside Expo Go, so a plain
- * `expo start` session must never evaluate them. Metro reports module-scope
- * failures from missing native bindings as fatal crashes that no try/catch
- * can catch (see ml/vision-session.ts) — the require() here therefore only
- * runs in dev/production builds, never in Expo Go.
+ * Runtime gate for native-only packages (react-native-quick-crypto): it does
+ * not ship inside Expo Go, so a plain `expo start` session must never evaluate
+ * it. Metro reports module-scope failures from missing native bindings as
+ * fatal crashes that no try/catch can catch — the require() here therefore
+ * only runs in dev/production builds, never in Expo Go.
  */
 
 type QuickCrypto = typeof import('react-native-quick-crypto');

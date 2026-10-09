@@ -129,6 +129,9 @@ android {
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+        // Ship only the app's UI locales (i18n lives at the JS layer). Every
+        // other AndroidX translation is dead weight in res/ + resources.arsc.
+        localeFilters.addAll("en", "pt", "pt-rBR")
     }
 }
 

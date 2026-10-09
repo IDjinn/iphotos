@@ -26,7 +26,6 @@ import { listAllLabels, type LabelSummary } from '@/data/labels-repository';
 import { useTranslation } from '@/i18n/hook';
 import { useAiLabelingStore } from '@/stores/ai-labeling';
 import { useClassificationStore } from '@/stores/classification';
-import { useLocalMlStore } from '@/stores/local-ml';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
@@ -61,10 +60,6 @@ export default function LabelsScreen() {
   const aiProgress = useClassificationStore((s) => s.aiProgress);
   const aiError = useClassificationStore((s) => s.aiLastError);
   const aiConfigured = useAiLabelingStore((s) => s.endpoint.length > 0 && s.model.length > 0);
-  const mlRunning = useLocalMlStore((s) => s.running);
-  const mlProgress = useLocalMlStore((s) => s.progress);
-  const mlError = useLocalMlStore((s) => s.lastError);
-  const mlAvailable = useLocalMlStore((s) => s.downloading || s.modelReady);
 
   // SQLite rows land outside React's knowledge — reload the list whenever a
   // run starts/finishes, and poll while runs write so counts grow live.
@@ -74,43 +69,34 @@ export default function LabelsScreen() {
         setLabels(listAllLabels());
       }
     });
-    const unsubscribeMl = useLocalMlStore.subscribe((state, prev) => {
-      if (state.running !== prev.running) setLabels(listAllLabels());
-    });
     return () => {
       unsubscribe();
-      unsubscribeMl();
     };
   }, []);
 
   useEffect(() => {
-    if (!aiRunning && !mlRunning) return;
+    if (!aiRunning) return;
     const t = setInterval(() => setLabels(listAllLabels()), 2000);
     return () => clearInterval(t);
-  }, [aiRunning, mlRunning]);
+  }, [aiRunning]);
 
   const reload = () => {
     haptic('light');
     void useClassificationStore.getState().runIndexation();
     if (aiConfigured) void useClassificationStore.getState().runAiIndexation();
-    if (useLocalMlStore.getState().modelReady) void useLocalMlStore.getState().runLabeling();
   };
 
-  const running = folderRunning || aiRunning || mlRunning;
+  const running = folderRunning || aiRunning;
   const aiPct =
     aiProgress && aiProgress.total > 0
       ? Math.min(100, Math.floor((aiProgress.scanned / aiProgress.total) * 100))
-      : 0;
-  const mlPct =
-    mlProgress && mlProgress.total > 0
-      ? Math.min(100, Math.floor((mlProgress.scanned / mlProgress.total) * 100))
       : 0;
   const folderPct =
     folderProgress && folderProgress.total > 0
       ? Math.min(100, Math.floor((folderProgress.scanned / folderProgress.total) * 100))
       : 0;
-  const lastError = aiError ?? mlError ?? folderError;
-  const barPct = aiRunning ? aiPct : mlRunning ? mlPct : folderPct;
+  const lastError = aiError ?? folderError;
+  const barPct = aiRunning ? aiPct : folderPct;
 
   const statusText = aiRunning
     ? t('labelsScreen.statusAi', {
@@ -118,17 +104,11 @@ export default function LabelsScreen() {
         count: (aiProgress?.scanned ?? 0).toLocaleString(localeTag),
         total: (aiProgress?.total ?? 0).toLocaleString(localeTag),
       })
-    : mlRunning
-      ? t('labelsScreen.statusOnDevice', {
-          percent: mlPct,
-          count: (mlProgress?.scanned ?? 0).toLocaleString(localeTag),
-          total: (mlProgress?.total ?? 0).toLocaleString(localeTag),
-        })
-      : folderRunning
-        ? folderProgress && folderProgress.total > 0
-          ? t('labelsScreen.statusFoldersPct', { percent: folderPct })
-          : t('labelsScreen.statusFolders')
-        : null;
+    : folderRunning
+      ? folderProgress && folderProgress.total > 0
+        ? t('labelsScreen.statusFoldersPct', { percent: folderPct })
+        : t('labelsScreen.statusFolders')
+      : null;
 
   return (
     <Screen>
@@ -180,7 +160,7 @@ export default function LabelsScreen() {
           icon="pricetag-outline"
           title={t('labelsScreen.emptyTitle')}
           subtitle={
-            aiConfigured || mlAvailable
+            aiConfigured
               ? t('labelsScreen.emptyHintReload')
               : t('labelsScreen.emptyHintSetup')
           }

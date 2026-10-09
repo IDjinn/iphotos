@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SystemUI from 'expo-system-ui';
 
 import { ViewerOverlay } from '@/components/viewer/ViewerOverlay';
+import { deleteLabelsBySource } from '@/data/labels-repository';
 import { useAccountStore } from '@/stores/account';
 import { useClassificationStore } from '@/stores/classification';
 import { useEncryptedModeStore } from '@/stores/encrypted-mode';
@@ -36,6 +37,9 @@ function AppShell() {
     // flips the account to cloud mode when a session survives the restart.
     void useAccountStore.getState().resolveSession();
     void useEncryptedModeStore.getState().refresh();
+    // On-device ONNX labeling was removed (docs/plans/05 §4) — drop any rows
+    // it left behind so the labels index only holds live sources.
+    deleteLabelsBySource('ml');
     void SplashScreen.hideAsync().catch(() => undefined);
   }, [refreshLibrary]);
 
@@ -86,7 +90,6 @@ function AppShell() {
         <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
         <Stack.Screen name="(public)" options={{ animation: 'fade' }} />
         <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="settings/ai-model" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/ai-labeling" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/account" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/backup" options={{ animation: 'slide_from_right' }} />
