@@ -26,6 +26,8 @@ export const Springs = {
   gentle: { damping: 24, stiffness: 200, mass: 1 },
   /** Favorite heart, selection pop — playful overshoot. */
   bouncy: { damping: 14, stiffness: 240, mass: 0.8 },
+  /** Photo pager page flight — constant-duration glide, fluid at any flick speed. */
+  slide: { dampingRatio: 0.9, duration: 400 },
 } as const;
 
 /** Corner radii. */

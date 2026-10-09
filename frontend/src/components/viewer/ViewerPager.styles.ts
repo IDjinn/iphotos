@@ -5,8 +5,9 @@ export const PagerContainer = styled(Animated.View)`
   flex: 1;
 `;
 
-/** One page of the pager — left offset and width arrive as transient props. */
-export const Page = styled.View<{ $left: number; $width: number }>`
+/** One page of the pager — left offset and width arrive as transient props.
+ *  Animated so the pager can fade neighbours out during an iOS-style pull-down. */
+export const Page = styled(Animated.View)<{ $left: number; $width: number }>`
   position: absolute;
   top: 0;
   bottom: 0;
