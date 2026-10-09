@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CONTENT_MAX_WIDTH } from '@/theme/scale';
-import { ActivityIndicator, Alert, Pressable, Switch } from 'react-native';
+import { ActivityIndicator, Pressable, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import Constants from 'expo-constants';
@@ -35,6 +35,7 @@ import { getPendingFolderDecisions } from '@/data/sync-rules-repository';
 import type { LanguageMode, LocaleTag, TranslationKey } from '@/i18n';
 import { useTranslation } from '@/i18n/hook';
 import { useAccountStore } from '@/stores/account';
+import { confirmDialog } from '@/stores/confirm';
 import { useBackupStore } from '@/stores/backup';
 import { useEncryptedModeStore } from '@/stores/encrypted-mode';
 import { useSettingsStore } from '@/stores/settings';
@@ -167,19 +168,14 @@ export default function SettingsScreen() {
         setQualityCaps({ imageCapBytes: saved.imageCapBytes, videoCapBytes: saved.videoCapBytes });
         if (saved.mismatchedPhotoCount > 0) {
           const count = formatCount(saved.mismatchedPhotoCount);
-          Alert.alert(
-            t('settings.uploadQuality.updateExistingTitle'),
-            tCount('settings.uploadQuality.updateExistingBody', saved.mismatchedPhotoCount, { count }),
-            [
-              { text: t('settings.uploadQuality.keepExisting'), style: 'cancel' },
-              {
-                text: t('settings.uploadQuality.updateAction', { count }),
-                onPress: () => {
-                  void updateUserPreferences(mode, true).catch(() => {});
-                },
-              },
-            ]
-          );
+          void confirmDialog({
+            title: t('settings.uploadQuality.updateExistingTitle'),
+            message: tCount('settings.uploadQuality.updateExistingBody', saved.mismatchedPhotoCount, { count }),
+            confirmLabel: t('settings.uploadQuality.updateAction', { count }),
+            cancelLabel: t('settings.uploadQuality.keepExisting'),
+          }).then((update) => {
+            if (update) void updateUserPreferences(mode, true).catch(() => {});
+          });
         }
       } catch {
         setUploadQuality(previous);

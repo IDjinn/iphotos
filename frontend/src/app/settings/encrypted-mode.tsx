@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CONTENT_MAX_WIDTH } from '@/theme/scale';
-import { ActivityIndicator, Alert, Pressable, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FadeInDown } from 'react-native-reanimated';
 
 import { Icon } from '@/components/Icon';
+import { MiniToast } from '@/components/MiniToast';
 import { ThemedText } from '@/components/ThemedText';
 import {
   Body,
@@ -30,6 +31,7 @@ import { PhotoGrid } from '@/components/grid/PhotoGrid';
 import { loadEncryptedGridAssets, resolveEncryptedOriginal } from '@/data/encrypted-mode-repository';
 import { isEncryptedModeSupported } from '@/data/encrypted-crypto';
 import type { PhotoAsset } from '@/data/types';
+import { confirmDialog } from '@/stores/confirm';
 import { useEncryptedModeStore } from '@/stores/encrypted-mode';
 import { useViewerStore } from '@/stores/viewer';
 import { useTheme } from '@/theme/context';
@@ -72,6 +74,7 @@ export default function EncryptedModeScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [assets, setAssets] = useState<PhotoAsset[]>([]);
 
   useEffect(() => {
@@ -101,7 +104,7 @@ export default function EncryptedModeScreen() {
           openViewer(viewerAssets, index, 'gallery');
         })
         .catch(() => {
-          Alert.alert('Encrypted mode', 'Could not decrypt this photo.');
+          setToast('Could not decrypt this photo.');
         });
     },
     [assets, openViewer]
@@ -109,11 +112,11 @@ export default function EncryptedModeScreen() {
 
   const enable = async () => {
     if (password.length < 4) {
-      Alert.alert('Encrypted mode', 'Choose a password with at least 4 characters.');
+      setToast('Choose a password with at least 4 characters.');
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Encrypted mode', 'The passwords do not match.');
+      setToast('The passwords do not match.');
       return;
     }
     setBusy(true);
@@ -133,28 +136,24 @@ export default function EncryptedModeScreen() {
 
   const disable = () => {
     if (password.length < 4) {
-      Alert.alert('Encrypted mode', 'Enter your password to restore your photos.');
+      setToast('Enter your password to restore your photos.');
       return;
     }
-    Alert.alert(
-      'Disable encrypted mode?',
-      'Every photo will be decrypted back into the system gallery. This can take a while.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disable',
-          style: 'destructive',
-          onPress: () => {
-            setBusy(true);
-            void mode.disable(password).then((ok) => {
-              setBusy(false);
-              setPassword('');
-              if (ok) router.back();
-            });
-          },
-        },
-      ]
-    );
+    void confirmDialog({
+      title: 'Disable encrypted mode?',
+      message: 'Every photo will be decrypted back into the system gallery. This can take a while.',
+      confirmLabel: 'Disable',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      setBusy(true);
+      void mode.disable(password).then((done) => {
+        setBusy(false);
+        setPassword('');
+        if (done) router.back();
+      });
+    });
   };
 
   const progressPercent =
@@ -290,6 +289,7 @@ export default function EncryptedModeScreen() {
           <PhotoGrid assets={unlocked ? assets : []} context="gallery" onCellPress={onCellPress} stickyMonths={false} />
         </GridWrap>
       )}
+      <MiniToast message={toast} onDismissed={() => setToast(null)} />
     </Screen>
   );
 }

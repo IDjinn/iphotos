@@ -9,6 +9,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as SystemUI from 'expo-system-ui';
 
 import { ViewerOverlay } from '@/components/viewer/ViewerOverlay';
+import { ConfirmDialogHost } from '@/components/ConfirmDialogHost';
 import { useAccountStore } from '@/stores/account';
 import { useEncryptedModeStore } from '@/stores/encrypted-mode';
 import { useLibraryStore } from '@/stores/library';
@@ -102,6 +103,7 @@ function AppShell() {
         <Stack.Screen name="locked" options={{ animation: 'fade_from_bottom' }} />
       </Stack>
       <ViewerOverlay />
+      <ConfirmDialogHost />
     </View>
   );
 }

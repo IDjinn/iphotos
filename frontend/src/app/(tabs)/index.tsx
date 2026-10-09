@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable } from 'react-native';
+import { ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 
 import { EmptyState } from '@/components/EmptyState';
 import { CloudGallery } from '@/components/CloudGallery';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Icon } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
 import { PermissionGate } from '@/components/PermissionGate';
@@ -23,6 +24,7 @@ import {
   Screen,
 } from '@/screens/(tabs)/index.styles';
 import { useBulkActions, BULK_TOAST, type BulkToast } from '@/hooks/use-bulk-actions';
+import { deviceDeleteHasSystemConfirm } from '@/utils/share';
 import { useGalleryFeed } from '@/hooks/use-gallery-feed';
 import { useTranslation } from '@/i18n/hook';
 import { useSelectionStore } from '@/stores/selection';
@@ -43,6 +45,7 @@ export default function PhotosScreen() {
   const selectedCount = useSelectionStore((s) => s.ids.length);
 
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [toast, setToast] = useState<BulkToast | null>(null);
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
 
@@ -61,23 +64,17 @@ export default function PhotosScreen() {
   };
 
   const handleDelete = () => {
-    Alert.alert(
-      tCount('photos.deleteCountTitle', selectedCount, { count: selectedCount.toLocaleString() }),
-      t('photos.deleteWarning'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: () => {
-            void bulk.remove().then((ok) => {
-              if (!ok) setToast({ key: 'photos.deleteFailed' });
-              else setRemovedIds(new Set());
-            });
-          },
-        },
-      ]
-    );
+    // Android 11+ already confirms via the system delete dialog.
+    if (deviceDeleteHasSystemConfirm()) confirmDelete();
+    else setDeleteConfirm(true);
+  };
+
+  const confirmDelete = () => {
+    setDeleteConfirm(false);
+    void bulk.remove().then((ok) => {
+      if (!ok) setToast({ key: 'photos.deleteFailed' });
+      else setRemovedIds(new Set());
+    });
   };
 
   if (permission === 'unknown' || (loading && assets.length === 0 && removedIds.size === 0)) {
@@ -200,6 +197,17 @@ export default function PhotosScreen() {
                 : { key: 'photos.alreadyInAlbum' }
             );
           }}
+        />
+
+        <ConfirmDialog
+          visible={deleteConfirm}
+          title={tCount('photos.deleteCountTitle', selectedCount, { count: selectedCount.toLocaleString() })}
+          message={t('photos.deleteWarning')}
+          confirmLabel={t('common.delete')}
+          cancelLabel={t('common.cancel')}
+          destructive
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteConfirm(false)}
         />
 
         <MiniToast message={toast ? t(toast.key, toast.params) : null} onDismissed={() => setToast(null)} />

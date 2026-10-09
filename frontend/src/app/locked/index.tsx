@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable } from 'react-native';
+import { ActivityIndicator, Pressable } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,6 +8,7 @@ import { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { EmptyState } from '@/components/EmptyState';
 import { Icon } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
+import { confirmDialog } from '@/stores/confirm';
 import { PinDots, PinPad } from '@/components/PinPad';
 import { SelectionBar } from '@/components/SelectionBar';
 import { ThemedText } from '@/components/ThemedText';
@@ -113,28 +114,24 @@ export default function LockedScreen() {
 
   const runMigration = () => {
     haptic('medium');
-    Alert.alert(
-      'Encrypt locked items?',
-      `${legacyCount} item${legacyCount === 1 ? '' : 's'} will be encrypted and removed from your device gallery. If you uninstall iPhotos, locked items are deleted permanently.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Encrypt',
-          onPress: () => {
-            setMigrating(true);
-            setMigrateProgress({ done: 0, total: legacyCount });
-            void migrateLegacyLocked((done, total) => setMigrateProgress({ done, total }))
-              .then(async () => {
-                useLibraryStore.getState().refresh();
-                await loadAssets();
-                setToast('All items are now encrypted');
-              })
-              .catch(() => setToast('Could not encrypt some items'))
-              .finally(() => setMigrating(false));
-          },
-        },
-      ]
-    );
+    void confirmDialog({
+      title: 'Encrypt locked items?',
+      message: `${legacyCount} item${legacyCount === 1 ? '' : 's'} will be encrypted and removed from your device gallery. If you uninstall iPhotos, locked items are deleted permanently.`,
+      confirmLabel: 'Encrypt',
+      cancelLabel: 'Cancel',
+    }).then((ok) => {
+      if (!ok) return;
+      setMigrating(true);
+      setMigrateProgress({ done: 0, total: legacyCount });
+      void migrateLegacyLocked((done, total) => setMigrateProgress({ done, total }))
+        .then(async () => {
+          useLibraryStore.getState().refresh();
+          await loadAssets();
+          setToast('All items are now encrypted');
+        })
+        .catch(() => setToast('Could not encrypt some items'))
+        .finally(() => setMigrating(false));
+    });
   };
 
   useEffect(() => {
@@ -433,17 +430,14 @@ export default function LockedScreen() {
               label: 'Delete',
               destructive: true,
               onPress: () =>
-                Alert.alert(
-                  `Delete ${selectedCount} item${selectedCount === 1 ? '' : 's'}?`,
-                  'They will be permanently deleted.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: () => void bulk.remove().then((ok) => !ok && setToast('Could not delete')),
-                    },
-                  ]
+                void confirmDialog({
+                  title: `Delete ${selectedCount} item${selectedCount === 1 ? '' : 's'}?`,
+                  message: 'They will be permanently deleted.',
+                  confirmLabel: 'Delete',
+                  cancelLabel: 'Cancel',
+                  destructive: true,
+                }).then(
+                  (ok) => ok && void bulk.remove().then((done) => !done && setToast('Could not delete'))
                 ),
             },
           ]}

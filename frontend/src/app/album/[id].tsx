@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable } from 'react-native';
+import { ActivityIndicator, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { EmptyState } from '@/components/EmptyState';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Icon } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
 import { SelectionBar } from '@/components/SelectionBar';
@@ -28,6 +29,7 @@ import { fetchAssetsByIds } from '@/data/media-repository';
 import { listFavoriteIds } from '@/data/favorites-repository';
 import type { PhotoAsset } from '@/data/types';
 import { useBulkActions } from '@/hooks/use-bulk-actions';
+import { deviceDeleteHasSystemConfirm } from '@/utils/share';
 import { useTranslation } from '@/i18n/hook';
 import { useLibraryStore } from '@/stores/library';
 import { useSelectionStore } from '@/stores/selection';
@@ -58,6 +60,7 @@ export default function AlbumScreen() {
   const [renaming, setRenaming] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const selectionActive = useSelectionStore((s) => s.active);
@@ -279,25 +282,31 @@ export default function AlbumScreen() {
         }}
       />
 
+      <ConfirmDialog
+        visible={deleteConfirm}
+        title={tCount('photos.deleteCountTitle', selectedCount, { count: selectedCount.toLocaleString(localeTag) })}
+        message={t('photos.deleteWarning')}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteConfirm(false)}
+      />
+
       <MiniToast message={toast} onDismissed={() => setToast(null)} />
     </Screen>
   );
 
   function confirmDelete() {
-    Alert.alert(
-      tCount('photos.deleteCountTitle', selectedCount, { count: selectedCount.toLocaleString(localeTag) }),
-      t('photos.deleteWarning'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: () =>
-            void bulk.remove().then((ok) => {
-              if (!ok) setToast(t('photos.deleteFailed'));
-            }),
-        },
-      ]
-    );
+    // Android 11+ already confirms via the system delete dialog.
+    if (deviceDeleteHasSystemConfirm()) handleDelete();
+    else setDeleteConfirm(true);
+  }
+
+  function handleDelete() {
+    setDeleteConfirm(false);
+    void bulk.remove().then((ok) => {
+      if (!ok) setToast(t('photos.deleteFailed'));
+    });
   }
 }

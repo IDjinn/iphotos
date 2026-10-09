@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import { CONTENT_MAX_WIDTH } from '@/theme/scale';
-import { Alert } from 'react-native';
-import { Image } from 'expo-image';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Icon, type IconName } from '@/components/Icon';
+import { MiniToast } from '@/components/MiniToast';
 import { PressableScale } from '@/components/PressableScale';
 import { TabSwipe } from '@/components/TabSwipe';
 import { ThemedText } from '@/components/ThemedText';
+import { AlbumActionSheet } from '@/components/AlbumActionSheet';
 import {
   AlbumCardWrap,
   AlbumCover,
@@ -30,6 +30,7 @@ import { deleteAlbum } from '@/data/albums-repository';
 import { fetchAssetsByIds } from '@/data/media-repository';
 import { readLockedConfig } from '@/data/locked-repository';
 import { useTranslation } from '@/i18n/hook';
+import { confirmDialog } from '@/stores/confirm';
 import { useLibraryStore } from '@/stores/library';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -74,6 +75,8 @@ export default function LibraryScreen() {
   const refreshLibrary = useLibraryStore((s) => s.refresh);
   const [covers, setCovers] = useState<Record<string, string>>({});
   const [lockedEnabled, setLockedEnabled] = useState(false);
+  const [menuAlbum, setMenuAlbum] = useState<{ id: string; title: string } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     readLockedConfig().then((config) => setLockedEnabled(config.enabled));
@@ -99,33 +102,30 @@ export default function LibraryScreen() {
 
   const showAlbumMenu = (albumId: string, title: string) => {
     haptic('medium');
-    Alert.alert(title, undefined, [
-      {
-        text: t('albums.rename'),
-        onPress: () => {
-          // RN has no built-in prompt on Android; rename inline via alert input workaround:
-          Alert.alert(t('albums.renameTitle'), t('albums.renameHint'), [{ text: t('common.ok') }]);
-        },
-      },
-      {
-        text: t('albums.delete'),
-        style: 'destructive',
-        onPress: () => {
-          Alert.alert(t('albums.deleteConfirmTitle', { title }), t('albums.deleteConfirmBody'), [
-            { text: t('common.cancel'), style: 'cancel' },
-            {
-              text: t('common.delete'),
-              style: 'destructive',
-              onPress: () => {
-                deleteAlbum(albumId);
-                refreshLibrary();
-              },
-            },
-          ]);
-        },
-      },
-      { text: t('common.cancel'), style: 'cancel' },
-    ]);
+    setMenuAlbum({ id: albumId, title });
+  };
+
+  const handleAlbumRename = () => {
+    setMenuAlbum(null);
+    // RN has no built-in text prompt; renaming stays on the album screen header.
+    setToast(t('albums.renameHint'));
+  };
+
+  const handleAlbumDelete = () => {
+    const target = menuAlbum;
+    setMenuAlbum(null);
+    if (!target) return;
+    void confirmDialog({
+      title: t('albums.deleteConfirmTitle', { title: target.title }),
+      message: t('albums.deleteConfirmBody'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      deleteAlbum(target.id);
+      refreshLibrary();
+    });
   };
 
   const createNewAlbum = () => {
@@ -205,6 +205,18 @@ export default function LibraryScreen() {
             })}
           </AlbumGrid>
         )}
+
+        <AlbumActionSheet
+          visible={menuAlbum !== null}
+          albumTitle={menuAlbum?.title ?? ''}
+          renameLabel={t('albums.rename')}
+          deleteLabel={t('albums.delete')}
+          onClose={() => setMenuAlbum(null)}
+          onRename={handleAlbumRename}
+          onDelete={handleAlbumDelete}
+        />
+
+        <MiniToast message={toast} onDismissed={() => setToast(null)} />
       </Screen>
     </TabSwipe>
   );

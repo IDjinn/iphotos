@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, useWindowDimensions, View } from 'react-native';
+import { BackHandler, useWindowDimensions, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Animated, {
   Easing,
@@ -33,13 +33,14 @@ import { readLockedConfig } from '@/data/locked-repository';
 import { deleteFromVault, exportFromVault, importToVault } from '@/data/vault-repository';
 import { deletePhoto } from '@/data/cloud-photos-repository';
 import { useLibraryStore } from '@/stores/library';
+import { confirmDialog } from '@/stores/confirm';
 import { useViewerStore } from '@/stores/viewer';
 import { useTheme } from '@/theme/context';
 import { downloadCloudOriginal } from '@/utils/cloud-download';
 import { fullDateLabel, timeLabel } from '@/utils/dates';
 import { formatDuration } from '@/utils/format';
 import { haptic } from '@/utils/haptics';
-import { deleteAssetsFromDevice, shareAssets } from '@/utils/share';
+import { deleteAssetsFromDevice, deviceDeleteHasSystemConfirm, shareAssets } from '@/utils/share';
 
 import { ViewerChrome } from './ViewerChrome';
 import { ViewerPager } from './ViewerPager';
@@ -284,59 +285,65 @@ export function ViewerOverlay() {
   const handleDelete = () => {
     if (!current) return;
     if (context === 'cloud') {
-      Alert.alert('Delete from cloud?', 'This photo will be removed from your backup on all devices.', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            haptic('warning');
-            void deletePhoto(current.id)
-              .then(() => removeCurrentFromList('Deleted from cloud'))
-              .catch(() => setToast('Delete failed — try again later'));
-          },
-        },
-      ]);
+      void confirmDialog({
+        title: 'Delete from cloud?',
+        message: 'This photo will be removed from your backup on all devices.',
+        confirmLabel: 'Delete',
+        cancelLabel: 'Cancel',
+        destructive: true,
+      }).then((ok) => {
+        if (!ok) return;
+        haptic('warning');
+        void deletePhoto(current.id)
+          .then(() => removeCurrentFromList('Deleted from cloud'))
+          .catch(() => setToast('Delete failed — try again later'));
+      });
       return;
     }
     if (context === 'locked' && current.vaultId) {
-      Alert.alert(
-        'Delete from Locked Folder?',
-        'The encrypted copy will be permanently deleted.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () => {
-              haptic('warning');
-              deleteFromVault([current.vaultId!]);
-              removeCurrentFromList('Deleted');
-            },
-          },
-        ]
-      );
+      void confirmDialog({
+        title: 'Delete from Locked Folder?',
+        message: 'The encrypted copy will be permanently deleted.',
+        confirmLabel: 'Delete',
+        cancelLabel: 'Cancel',
+        destructive: true,
+      }).then((ok) => {
+        if (!ok) return;
+        haptic('warning');
+        deleteFromVault([current.vaultId!]);
+        removeCurrentFromList('Deleted');
+      });
       return;
     }
-    Alert.alert(
-      'Delete from device?',
-      isVideo ? 'This video will be permanently deleted.' : 'This photo will be permanently deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            haptic('warning');
-            const ok = await deleteAssetsFromDevice([current.id]);
-            if (ok) {
-              useLibraryStore.getState().purge([current.id]);
-              removeCurrentFromList('Deleted');
-            }
-          },
-        },
-      ]
-    );
+    // Android 11+ already confirms via the system delete dialog.
+    if (deviceDeleteHasSystemConfirm()) {
+      haptic('warning');
+      void (async () => {
+        const deleted = await deleteAssetsFromDevice([current.id]);
+        if (deleted) {
+          useLibraryStore.getState().purge([current.id]);
+          removeCurrentFromList('Deleted');
+        }
+      })();
+      return;
+    }
+    void confirmDialog({
+      title: 'Delete from device?',
+      message: isVideo
+        ? 'This video will be permanently deleted.'
+        : 'This photo will be permanently deleted.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    }).then(async (ok) => {
+      if (!ok) return;
+      haptic('warning');
+      const deleted = await deleteAssetsFromDevice([current.id]);
+      if (deleted) {
+        useLibraryStore.getState().purge([current.id]);
+        removeCurrentFromList('Deleted');
+      }
+    });
   };
 
   const handleLockToggle = async () => {
@@ -359,22 +366,18 @@ export function ViewerOverlay() {
       router.push('/locked');
       return;
     }
-    Alert.alert(
-      'Move to Locked Folder?',
-      'This item will be removed from your device gallery and stored encrypted inside iPhotos.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Move',
-          onPress: () => {
-            void importToVault([current]).then(({ imported }) => {
-              if (imported > 0) removeCurrentFromList('Moved to Locked Folder');
-              else setToast('Could not move — try again');
-            });
-          },
-        },
-      ]
-    );
+    void confirmDialog({
+      title: 'Move to Locked Folder?',
+      message: 'This item will be removed from your device gallery and stored encrypted inside iPhotos.',
+      confirmLabel: 'Move',
+      cancelLabel: 'Cancel',
+    }).then((ok) => {
+      if (!ok) return;
+      void importToVault([current]).then(({ imported }) => {
+        if (imported > 0) removeCurrentFromList('Moved to Locked Folder');
+        else setToast('Could not move — try again');
+      });
+    });
   };
 
   const handleRemoveFromAlbum = () => {

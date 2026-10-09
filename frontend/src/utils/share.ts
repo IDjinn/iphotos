@@ -55,6 +55,16 @@ export async function shareAssets(assets: PhotoAsset[]): Promise<void> {
 }
 
 /**
+ * Whether the OS shows its own confirmation when deleting media from the
+ * device gallery: Android 11+ launches the MediaStore delete dialog and
+ * refusing it cancels the deletion. On iOS deletion is immediate, so the
+ * app must confirm first.
+ */
+export function deviceDeleteHasSystemConfirm(): boolean {
+  return Platform.OS === 'android' && Number(Platform.Version) >= 30;
+}
+
+/**
  * Deletes assets from the device library (system confirmation applies)
  * and cleans up app metadata referencing them.
  */

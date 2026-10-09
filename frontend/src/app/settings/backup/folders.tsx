@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { CONTENT_MAX_WIDTH } from '@/theme/scale';
-import { Alert, Pressable, Switch } from 'react-native';
+import { Pressable, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 
@@ -27,6 +27,7 @@ import {
   Summary,
 } from '@/screens/settings/backup/folders.styles';
 import { runFolderScan } from '@/data/backup-inventory';
+import { confirmDialog } from '@/stores/confirm';
 import {
   getBackupFolderViews,
   getHeldFolderViews,
@@ -110,15 +111,16 @@ export default function BackupFoldersScreen() {
       }
       if (view.uploaded > 0) {
         const estimate = `${view.items.toLocaleString('en-US')} items · ${formatBytes(view.bytes)}`;
-        Alert.alert(
-          `Exclude ${view.title}?`,
-          `${estimate} will leave the backup cycle. Photos already backed up stay in your cloud storage.`
+        void confirmDialog({
+          title: `Exclude ${view.title}?`,
+          message:
+            `${estimate} will leave the backup cycle. Photos already backed up stay in your cloud storage.`
             + ` Removing them from the cloud is not available yet.`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Keep in cloud', style: 'default', onPress: () => applyRule(view, 'exclude') },
-          ]
-        );
+          confirmLabel: 'Keep in cloud',
+          cancelLabel: 'Cancel',
+        }).then((keep) => {
+          if (keep) applyRule(view, 'exclude');
+        });
         return;
       }
       applyRule(view, 'exclude');

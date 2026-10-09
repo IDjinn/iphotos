@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { CONTENT_MAX_WIDTH } from '@/theme/scale';
-import { ActivityIndicator, Alert, Pressable } from 'react-native';
+import { ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import { API_URL } from '@/data/api-client';
 import { getUsage, type CloudUsage } from '@/data/cloud-photos-repository';
 import { useAccountStore } from '@/stores/account';
+import { confirmDialog } from '@/stores/confirm';
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
 import {
@@ -68,20 +69,20 @@ export default function AccountSettingsScreen() {
 
   const confirmSignOut = () => {
     haptic('medium');
-    Alert.alert(t('account.signOut'), t('account.signOutBody'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('account.signOut'),
-        style: 'destructive',
-        onPress: () => {
-          signOut();
-          // Collapse the protected stack and land on the login screen —
-          // login is mandatory, so nothing signed-out stays reachable.
-          router.dismissAll();
-          router.replace('/login');
-        },
-      },
-    ]);
+    void confirmDialog({
+      title: t('account.signOut'),
+      message: t('account.signOutBody'),
+      confirmLabel: t('account.signOut'),
+      cancelLabel: t('common.cancel'),
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      signOut();
+      // Collapse the protected stack and land on the login screen —
+      // login is mandatory, so nothing signed-out stays reachable.
+      router.dismissAll();
+      router.replace('/login');
+    });
   };
 
   const usedFraction = usage ? Math.min(1, usage.usedBytes / Math.max(1, usage.quotaBytes)) : 0;

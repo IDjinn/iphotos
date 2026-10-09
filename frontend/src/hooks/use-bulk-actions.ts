@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Alert } from 'react-native';
 
 import { addAssetsToAlbum, removeAssetsFromAlbum } from '@/data/albums-repository';
 import { readLockedConfig } from '@/data/locked-repository';
@@ -7,6 +6,7 @@ import { deleteFromVault, exportFromVault, importToVault } from '@/data/vault-re
 import type { PhotoAsset } from '@/data/types';
 import type { TranslationKey } from '@/i18n';
 import { useTranslation } from '@/i18n/hook';
+import { confirmDialog } from '@/stores/confirm';
 import { useLibraryStore } from '@/stores/library';
 import { useSelectionStore } from '@/stores/selection';
 import { deleteAssetsFromDevice, shareAssets } from '@/utils/share';
@@ -48,15 +48,6 @@ export const BULK_TOAST = {
     params: { moved, failed },
   }),
 } as const;
-
-function confirmAlert(title: string, message: string, confirmLabel: string, cancelLabel: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    Alert.alert(title, message, [
-      { text: cancelLabel, style: 'cancel', onPress: () => resolve(false) },
-      { text: confirmLabel, onPress: () => resolve(true) },
-    ]);
-  });
-}
 
 /**
  * Bulk operations for selection mode, shared by every grid screen.
@@ -128,12 +119,12 @@ export function useBulkActions({ assets, applyRemovals, lockedContext, albumId }
     }
 
     const count = selected.length;
-    const ok = await confirmAlert(
-      t(count === 1 ? 'locked.moveConfirmTitle_one' : 'locked.moveConfirmTitle_other', { count }),
-      t('locked.moveConfirmBody'),
-      t('common.move'),
-      t('common.cancel')
-    );
+    const ok = await confirmDialog({
+      title: t(count === 1 ? 'locked.moveConfirmTitle_one' : 'locked.moveConfirmTitle_other', { count }),
+      message: t('locked.moveConfirmBody'),
+      confirmLabel: t('common.move'),
+      cancelLabel: t('common.cancel'),
+    });
     if (!ok) return null;
 
     setBusy(true);

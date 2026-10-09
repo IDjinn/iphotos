@@ -31,6 +31,14 @@ export interface ThemeColors {
   /** Fallback while thumbnails decode. */
   placeholder: string;
   backdrop: string;
+  /** Liquid-glass dialog fill (translucent). */
+  glassFill: string;
+  /** Liquid-glass dialog border. */
+  glassBorder: string;
+  /** Top-edge highlight for the glass card. */
+  glassHighlight: string;
+  /** Translucent fill for glass secondary buttons. */
+  glassButton: string;
 }
 
 export const lightColors: ThemeColors = {
@@ -56,6 +64,10 @@ export const lightColors: ThemeColors = {
   header: '#FFFFFF',
   placeholder: '#E8EAED',
   backdrop: 'rgba(0, 0, 0, 0.35)',
+  glassFill: 'rgba(255, 255, 255, 0.95)',
+  glassBorder: 'rgba(255, 255, 255, 0.85)',
+  glassHighlight: 'rgba(255, 255, 255, 0.95)',
+  glassButton: 'rgba(0, 0, 0, 0.05)',
 };
 
 export const darkColors: ThemeColors = {
@@ -80,5 +92,9 @@ export const darkColors: ThemeColors = {
   tabBar: '#0B0B0D',
   header: '#0B0B0D',
   placeholder: '#202124',
-  backdrop: 'rgba(0, 0, 0, 0.5)',
+  backdrop: 'rgba(0, 0, 0, 0.55)',
+  glassFill: 'rgba(30, 30, 34, 0.95)',
+  glassBorder: 'rgba(255, 255, 255, 0.18)',
+  glassHighlight: 'rgba(255, 255, 255, 0.32)',
+  glassButton: 'rgba(255, 255, 255, 0.08)',
 };
