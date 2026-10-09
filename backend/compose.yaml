@@ -79,8 +79,10 @@ services:
       StorageService__StagingProvider: ${IPHOTOS_STORAGE_STAGING_PROVIDER:-filesystem}
       Auth__Jwt__SigningKey: ${IPHOTOS_JWT_SIGNING_KEY:-change-me-in-production-32-bytes-minimum!!}
       # Browser origins allowed to call the API (web app dev server, desktop shell).
+      # Next dev serves on both loopback hosts; the Origin header must match exactly.
       Cors__AllowedOrigins__0: ${IPHOTOS_CORS_ORIGIN_WEB:-http://localhost:3000}
-      Cors__AllowedOrigins__1: ${IPHOTOS_CORS_ORIGIN_DESKTOP:-http://127.0.0.1:3210}
+      Cors__AllowedOrigins__1: ${IPHOTOS_CORS_ORIGIN_WEB_127:-http://127.0.0.1:3000}
+      Cors__AllowedOrigins__2: ${IPHOTOS_CORS_ORIGIN_DESKTOP:-http://127.0.0.1:3210}
       # Per-file upload caps in bytes per (plan × upload quality): "original" modes
       # reject oversize files; "saver" modes compress/transcode them to fit in the worker.
       Upload__FreeSaverMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_SAVER_MAX_IMAGE_BYTES:-16777216}
