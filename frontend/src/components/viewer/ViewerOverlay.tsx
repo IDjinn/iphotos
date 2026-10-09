@@ -80,16 +80,27 @@ export function ViewerOverlay() {
   const [videoMuted, setVideoMuted] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Hero flight frame.
-  const heroX = useSharedValue(0);
-  const heroY = useSharedValue(0);
-  const heroW = useSharedValue(viewW);
-  const heroH = useSharedValue(viewH);
+  // Hero flight: a static base rect plus a transform-only flight
+  // (translate/scale/rotate) — animating left/top/width/height relayouts
+  // every frame on Android and makes the flight stutter.
+  const heroBaseX = useSharedValue(0);
+  const heroBaseY = useSharedValue(0);
+  const heroBaseW = useSharedValue(viewW);
+  const heroBaseH = useSharedValue(viewH);
+  const heroTx = useSharedValue(0);
+  const heroTy = useSharedValue(0);
+  const heroSx = useSharedValue(1);
+  const heroSy = useSharedValue(1);
+  const heroRot = useSharedValue(0);
   const heroOpacity = useSharedValue(0);
   const pagerOpacity = useSharedValue(0);
   const backdropOpacity = useSharedValue(0);
   const dismissTy = useSharedValue(0);
   const dismissScale = useSharedValue(1);
+  /** The pager's own x-offset and tilt, so the close flight starts exactly
+   *  where the drag released the photo. */
+  const pagerOffset = useSharedValue(0);
+  const pagerRotation = useSharedValue(0);
 
   const prevVisible = useRef(false);
   const closingRef = useRef(false);
@@ -108,6 +119,8 @@ export function ViewerOverlay() {
       setVideoPlaying(true);
       dismissTy.value = 0;
       dismissScale.value = 1;
+      pagerRotation.value = 0;
+      pagerOffset.value = -index * viewW;
 
       if (origin && !reducedMotion) {
         // Fly to the image's final "contain" frame — the exact rect the
@@ -116,24 +129,36 @@ export function ViewerOverlay() {
         const targetX = (viewW - fit.w) / 2;
         const targetY = (viewH - fit.h) / 2;
 
-        heroX.value = origin.x;
-        heroY.value = origin.y;
-        heroW.value = origin.width;
-        heroH.value = origin.height;
+        // Base = the resting rect; the flight itself is a transform from the
+        // grid cell onto that rect.
+        heroBaseX.value = targetX;
+        heroBaseY.value = targetY;
+        heroBaseW.value = fit.w;
+        heroBaseH.value = fit.h;
+        heroTx.value = origin.x + origin.width / 2 - (targetX + fit.w / 2);
+        heroTy.value = origin.y + origin.height / 2 - (targetY + fit.h / 2);
+        heroSx.value = origin.width / fit.w;
+        heroSy.value = origin.height / fit.h;
+        heroRot.value = 0;
         heroOpacity.value = 1;
         pagerOpacity.value = 0;
         backdropOpacity.value = 0;
 
         const easing = Easing.out(Easing.cubic);
-        heroX.value = withTiming(targetX, { duration: dur(HERO_IN_DURATION), easing });
-        heroY.value = withTiming(targetY, { duration: dur(HERO_IN_DURATION), easing });
-        heroW.value = withTiming(fit.w, { duration: dur(HERO_IN_DURATION), easing });
-        heroH.value = withTiming(fit.h, { duration: dur(HERO_IN_DURATION), easing });
+        heroTx.value = withTiming(0, { duration: dur(HERO_IN_DURATION), easing });
+        heroTy.value = withTiming(0, { duration: dur(HERO_IN_DURATION), easing });
+        heroSx.value = withTiming(1, { duration: dur(HERO_IN_DURATION), easing });
+        heroSy.value = withTiming(1, { duration: dur(HERO_IN_DURATION), easing });
         // Crossfade only once the hero has (almost) landed on the pager's frame.
         pagerOpacity.value = withDelay(dur(HERO_IN_DURATION - 80), withTiming(1, { duration: dur(180) }));
         backdropOpacity.value = withTiming(1, { duration: dur(240) });
         heroOpacity.value = withDelay(dur(HERO_IN_DURATION), withTiming(0, { duration: dur(60) }));
       } else {
+        heroTx.value = 0;
+        heroTy.value = 0;
+        heroSx.value = 1;
+        heroSy.value = 1;
+        heroRot.value = 0;
         heroOpacity.value = 0;
         pagerOpacity.value = 1;
         backdropOpacity.value = 1;
@@ -162,29 +187,49 @@ export function ViewerOverlay() {
     (async () => {
       const target = !reducedMotion && current ? await measureHeroCell(current.id) : null;
       if (target) {
-        // Start the flight from wherever the drag left the page: the
-        // contain-fit rect with the dismiss drag's scale/translate applied.
+        // Start from EXACTLY where the drag released the photo — the
+        // contain-fit rect with the dismiss drift, scale and tilt applied —
+        // so the pager→hero handoff is pixel-invisible.
         const fit = containFit(current?.width ?? 0, current?.height ?? 0, viewW, viewH);
         const startW = fit.w * dismissScale.value;
         const startH = fit.h * dismissScale.value;
-        heroX.value = (viewW - startW) / 2;
-        heroY.value = (viewH - startH) / 2 + dismissTy.value;
-        heroW.value = startW;
-        heroH.value = startH;
+        const centerX = viewW / 2 + (pagerOffset.value + index * viewW);
+        const centerY = viewH / 2 + dismissTy.value;
+        heroBaseX.value = centerX - startW / 2;
+        heroBaseY.value = centerY - startH / 2;
+        heroBaseW.value = startW;
+        heroBaseH.value = startH;
+        heroTx.value = 0;
+        heroTy.value = 0;
+        heroSx.value = 1;
+        heroSy.value = 1;
+        heroRot.value = pagerRotation.value;
         heroOpacity.value = 1;
 
         pagerOpacity.value = withTiming(0, { duration: dur(140) });
         backdropOpacity.value = withTiming(0, { duration: dur(220) });
 
         const easing = Easing.in(Easing.cubic);
-        heroX.value = withTiming(target.x, { duration: dur(HERO_OUT_DURATION), easing });
-        heroY.value = withTiming(target.y, { duration: dur(HERO_OUT_DURATION), easing });
-        heroW.value = withTiming(target.width, { duration: dur(HERO_OUT_DURATION), easing });
-        heroH.value = withTiming(target.height, { duration: dur(HERO_OUT_DURATION), easing });
+        heroTx.value = withTiming(target.x + target.width / 2 - centerX, {
+          duration: dur(HERO_OUT_DURATION),
+          easing,
+        });
+        heroTy.value = withTiming(target.y + target.height / 2 - centerY, {
+          duration: dur(HERO_OUT_DURATION),
+          easing,
+        });
+        heroSx.value = withTiming(target.width / startW, { duration: dur(HERO_OUT_DURATION), easing });
+        heroSy.value = withTiming(target.height / startH, { duration: dur(HERO_OUT_DURATION), easing });
+        heroRot.value = withTiming(0, { duration: dur(HERO_OUT_DURATION), easing });
         heroOpacity.value = withDelay(dur(HERO_OUT_DURATION), withTiming(0, { duration: dur(40) }));
 
         setTimeout(finish, dur(HERO_OUT_DURATION) + 60);
       } else {
+        heroTx.value = 0;
+        heroTy.value = 0;
+        heroSx.value = 1;
+        heroSy.value = 1;
+        heroRot.value = 0;
         pagerOpacity.value = withTiming(0, { duration: dur(180) });
         backdropOpacity.value = withTiming(0, { duration: dur(180) });
         heroOpacity.value = 0;
@@ -353,12 +398,19 @@ export function ViewerOverlay() {
   const pagerStyle = useAnimatedStyle(() => ({ opacity: pagerOpacity.value }));
   const heroStyle = useAnimatedStyle(() => ({
     position: 'absolute',
-    left: heroX.value,
-    top: heroY.value,
-    width: heroW.value,
-    height: heroH.value,
+    left: heroBaseX.value,
+    top: heroBaseY.value,
+    width: heroBaseW.value,
+    height: heroBaseH.value,
     opacity: heroOpacity.value,
     overflow: 'hidden',
+    transform: [
+      { translateX: heroTx.value },
+      { translateY: heroTy.value },
+      { rotate: `${heroRot.value}deg` },
+      { scaleX: heroSx.value },
+      { scaleY: heroSy.value },
+    ],
   }));
 
   if (!visible || assets.length === 0 || !current) {
@@ -393,6 +445,8 @@ export function ViewerOverlay() {
           dismissTy={dismissTy}
           dismissScale={dismissScale}
           backdropOpacity={backdropOpacity}
+          offset={pagerOffset}
+          rotation={pagerRotation}
           videoPlaying={videoPlaying}
           videoMuted={videoMuted}
         />

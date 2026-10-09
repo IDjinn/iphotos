@@ -37,6 +37,10 @@ interface ViewerPagerProps {
   dismissTy: SharedValue<number>;
   dismissScale: SharedValue<number>;
   backdropOpacity: SharedValue<number>;
+  /** Pager x-offset and tilt, owned by the overlay so the close flight can
+   *  start from the exact rect the photo was released at. */
+  offset: SharedValue<number>;
+  rotation: SharedValue<number>;
   videoPlaying: boolean;
   videoMuted: boolean;
 }
@@ -51,6 +55,9 @@ function PagerPage({
   videoMuted,
   pagerPan,
   hideNeighbors,
+  dismissTy,
+  dismissScale,
+  rotation,
   onTap,
   onRegister,
 }: {
@@ -62,6 +69,9 @@ function PagerPage({
   videoMuted: boolean;
   pagerPan: GestureType;
   hideNeighbors: SharedValue<number>;
+  dismissTy: SharedValue<number>;
+  dismissScale: SharedValue<number>;
+  rotation: SharedValue<number>;
   onTap: () => void;
   onRegister: (index: number, controller: ZoomController | null) => void;
 }) {
@@ -72,12 +82,22 @@ function PagerPage({
     return () => onRegister(pageIndex, null);
   }, [pageIndex, controller, onRegister]);
 
-  // Neighbours vanish while the current photo is being pulled down, so the
-  // diagonal finger-follow can never slide one into view.
-  const neighborFade = useAnimatedStyle(() => ({ opacity: 1 - hideNeighbors.value }));
+  // The dismiss transform lives on each PAGE, not on the pager container:
+  // RN scales around the element's layout centre, and the container's centre
+  // sits a full page away from photo N — scaling there dragged the photo
+  // sideways (left) in proportion to its index during the pull-down. Each
+  // page scales around its own centre, where the photo actually is.
+  const pageMotion = useAnimatedStyle(() => ({
+    opacity: active ? 1 : 1 - hideNeighbors.value,
+    transform: [
+      { translateY: dismissTy.value },
+      { scale: dismissScale.value },
+      { rotate: `${rotation.value}deg` },
+    ],
+  }));
 
   return (
-    <Page $left={pageIndex * pageWidth} $width={pageWidth} style={active ? undefined : neighborFade}>
+    <Page $left={pageIndex * pageWidth} $width={pageWidth} style={pageMotion}>
       {asset.mediaType === 'video' ? (
         <VideoPage
           asset={asset}
@@ -110,11 +130,12 @@ export function ViewerPager({
   dismissTy,
   dismissScale,
   backdropOpacity,
+  offset,
+  rotation,
   videoPlaying,
   videoMuted,
 }: ViewerPagerProps) {
   const { width: pageWidth } = useWindowDimensions();
-  const offset = useSharedValue(-index * pageWidth);
   const mode = useSharedValue(MODE_NONE);
   /** Page the active gesture is anchored on, captured at mode entry — worklets
    *  must never do math on the `index` prop: a fast flick leaves the closure
@@ -129,8 +150,6 @@ export function ViewerPager({
   const startTy = useSharedValue(0);
   /** 1 while a pull-down is in flight — fades non-current pages out. */
   const hideNeighbors = useSharedValue(0);
-  /** iOS-style card tilt proportional to the horizontal drift of a pull-down. */
-  const rotation = useSharedValue(0);
   const controllers = useRef<Map<number, ZoomController>>(new Map());
 
   // Reconcile the container with external index changes (delete, setIndex) or
@@ -338,13 +357,10 @@ export function ViewerPager({
     onDismiss,
   ]);
 
+  // Only horizontal paging lives on the container — the dismiss transform
+  // is per-page (see PagerPage).
   const containerStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: offset.value },
-      { translateY: dismissTy.value },
-      { scale: dismissScale.value },
-      { rotate: `${rotation.value}deg` },
-    ],
+    transform: [{ translateX: offset.value }],
   }));
 
   const window: number[] = [];
@@ -366,6 +382,9 @@ export function ViewerPager({
             videoMuted={videoMuted}
             pagerPan={pan}
             hideNeighbors={hideNeighbors}
+            dismissTy={dismissTy}
+            dismissScale={dismissScale}
+            rotation={rotation}
             onTap={onTap}
             onRegister={registerController}
           />
