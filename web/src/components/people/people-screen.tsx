@@ -55,16 +55,23 @@ export function PeopleScreen() {
     queryFn: listPersonSuggestions,
   });
   const [dismissed, setDismissed] = useState<string[]>(loadDismissed);
+  /** The suggestion whose "Create person" is in flight — only its button disables. */
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
   const accept = useMutation({
     mutationFn: (suggestion: PersonSuggestion) => acceptPersonSuggestion(suggestion.faceIds),
+    onMutate: (suggestion) => setAcceptingId(suggestion.id),
     onSuccess: async (person) => {
+      setAcceptingId(null);
       await queryClient.invalidateQueries({ queryKey: ["people"] });
       await queryClient.invalidateQueries({ queryKey: ["people-suggestions"] });
       toast.success("Person created");
       router.push(`/people/${person.id}`);
     },
-    onError: () => toast.error("Couldn't create the person. Try again."),
+    onError: () => {
+      setAcceptingId(null);
+      toast.error("Couldn't create the person. Try again.");
+    },
   });
 
   const dismiss = (suggestion: PersonSuggestion) => {
@@ -155,11 +162,11 @@ export function PeopleScreen() {
                   <SuggestionActions>
                     <Button
                       size="sm"
-                      disabled={accept.isPending}
+                      disabled={acceptingId === suggestion.id}
                       onClick={() => accept.mutate(suggestion)}
                     >
                       <UserRoundPlusIcon aria-hidden />
-                      Create person
+                      {acceptingId === suggestion.id ? "Creating…" : "Create person"}
                     </Button>
                     <Button
                       size="sm"
