@@ -22,11 +22,28 @@ rules live in the .NET backend.
 | `ML_DET_SIZE` | `640` | Detector input size (square) |
 | `ML_CONCURRENCY` | `2` | Parallel inference slots |
 | `ML_MODEL` | `buffalo_l` | Model pack baked under `/models/models/<name>` |
+| `ML_LOG_LEVEL` | `INFO` | Log verbosity (`WARNING` = startup/errors only, `DEBUG` = more) |
 
 `ML_DET_SIZE` is the lever for small faces: the detector resizes the whole
 image to this size, so it — not the original resolution — decides the smallest
 detectable face. Raising it (800–1024) helps group shots and costs compute
 ~quadratically.
+
+### Logs
+
+One format for everything (app, uvicorn startup, per-request lines):
+
+```
+2026-10-10 13:45:12,345 INFO iphotos-ml POST /v1/faces/detect 200 in 812ms (wait=38ms infer=774ms) bytes=245760 image=1080x1920 faces=3 provider=dml
+```
+
+Each detect request logs latency (total, plus semaphore wait vs inference),
+body size, decoded dimensions, face count and the serving provider — `cpu`
+there means the request was served by the CPU fallback after a DirectML
+failure. Rejected requests (bad/missing API key, empty or undecodable body)
+log a `rejected status=…` warning; the compose healthcheck's `/health` polls
+stay silent. uvicorn's generic access log and insightface's `find model:`
+startup lines are suppressed.
 
 ## Recognition tuning knobs (backend side)
 

@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import threading
+import time
 from contextlib import asynccontextmanager
 
 import cv2
@@ -22,9 +23,31 @@ MODEL_NAME = os.environ.get("ML_MODEL", "buffalo_l")
 API_KEY = os.environ.get("ML_API_KEY", "")
 DET_SIZE = int(os.environ.get("ML_DET_SIZE", "640"))
 CONCURRENCY = int(os.environ.get("ML_CONCURRENCY", "2"))
+LOG_LEVEL = os.environ.get("ML_LOG_LEVEL", "INFO").strip().upper()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT)
 logger = logging.getLogger("iphotos-ml")
+
+# One format for everything uvicorn prints: the CLI pre-configures these
+# loggers with its own timestamp-less handlers, so re-home them onto the root
+# config above (covers both the Dockerfile CMD and the host DirectML script).
+for _name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    _uv_logger = logging.getLogger(_name)
+    _uv_logger.handlers.clear()
+    _uv_logger.propagate = True
+    _uv_logger.setLevel(LOG_LEVEL)
+del _name, _uv_logger
+# Requests are logged by the endpoints themselves (with timing, image size and
+# face count); the generic access line would only duplicate them. /health is
+# polled by the compose healthcheck every 30s and must stay silent.
+logging.getLogger("uvicorn.access").disabled = True
+# insightface logs a "find model: ..." INFO line per baked model at load.
+logging.getLogger("insightface").setLevel(logging.WARNING)
+
+
+def short_provider(provider: str) -> str:
+    return provider.removesuffix("ExecutionProvider").lower()
 
 
 def pick_providers() -> list[str]:
@@ -53,6 +76,14 @@ def pick_providers() -> list[str]:
 
 
 PROVIDERS = pick_providers()
+logger.info(
+    "iPhotos ML starting (model=%s det_size=%d concurrency=%d api_key=%s log_level=%s)",
+    MODEL_NAME,
+    DET_SIZE,
+    CONCURRENCY,
+    "on" if API_KEY else "off",
+    LOG_LEVEL,
+)
 
 
 def warm_up() -> None:
@@ -160,7 +191,9 @@ def _on_cpu() -> bool:
     return PROVIDERS[0] == "CPUExecutionProvider"
 
 
-def run_detection(body: bytes) -> list[dict]:
+def run_detection(body: bytes) -> tuple[list[dict], tuple[int, int]]:
+    """Returns the detected faces plus the decoded image's (width, height) for
+    the request log line."""
     image = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise HTTPException(status_code=400, detail="Body is not a decodable image.")
@@ -191,7 +224,7 @@ def run_detection(body: bytes) -> list[dict]:
                 "embedding": [round(float(v), 6) for v in embedding],
             }
         )
-    return results
+    return results, (int(image.shape[1]), int(image.shape[0]))
 
 
 def authorize(request: Request) -> None:
@@ -222,19 +255,45 @@ def health() -> dict:
 
 @app.post("/v1/faces/detect")
 async def detect_faces(request: Request):
-    authorize(request)
-    body = await request.body()
-    if not body:
-        raise HTTPException(status_code=400, detail="Empty body.")
+    started = time.perf_counter()
+    try:
+        authorize(request)
+        body = await request.body()
+        if not body:
+            raise HTTPException(status_code=400, detail="Empty body.")
+    except HTTPException as exc:
+        logger.warning("POST /v1/faces/detect rejected status=%d detail=%s", exc.status_code, exc.detail)
+        raise
 
     loop = asyncio.get_running_loop()
     async with _InferenceSlot(_inference_slots):
+        wait_ms = (time.perf_counter() - started) * 1000
         try:
-            faces = await loop.run_in_executor(None, lambda: run_detection(body))
-        except HTTPException:
+            faces, (width, height) = await loop.run_in_executor(None, lambda: run_detection(body))
+        except HTTPException as exc:
+            logger.warning("POST /v1/faces/detect rejected status=%d detail=%s", exc.status_code, exc.detail)
             raise
         except Exception as exc:  # pragma: no cover - model/runtime failures
-            logger.exception("Inference failed")
+            logger.exception(
+                "POST /v1/faces/detect 500 after %.0fms (wait=%.0fms) bytes=%d provider=%s",
+                (time.perf_counter() - started) * 1000,
+                wait_ms,
+                len(body),
+                short_provider(PROVIDERS[0]),
+            )
             raise HTTPException(status_code=500, detail=f"Inference failed: {exc}") from exc
 
+    # provider reflects the serving path — cpu here means a GPU request was
+    # retried (and the process demoted) after a DirectML failure.
+    logger.info(
+        "POST /v1/faces/detect 200 in %.0fms (wait=%.0fms infer=%.0fms) bytes=%d image=%dx%d faces=%d provider=%s",
+        (time.perf_counter() - started) * 1000,
+        wait_ms,
+        (time.perf_counter() - started) * 1000 - wait_ms,
+        len(body),
+        width,
+        height,
+        len(faces),
+        short_provider(PROVIDERS[0]),
+    )
     return JSONResponse({"model": MODEL_NAME, "provider": PROVIDERS[0], "faces": faces})

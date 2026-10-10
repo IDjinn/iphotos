@@ -217,6 +217,10 @@ services:
       # this, so it — not the original image — decides how small a face can be
       # found. Higher finds smaller faces but costs compute ~quadratically.
       ML_DET_SIZE: ${IPHOTOS_ML_DET_SIZE:-640}
+      # Log verbosity (INFO by default): one enriched line per detect request
+      # (latency, image size, face count, provider) instead of uvicorn's bare
+      # access log. Set to WARNING for startup/errors only, DEBUG for more.
+      ML_LOG_LEVEL: ${IPHOTOS_ML_LOG_LEVEL:-INFO}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 30s
