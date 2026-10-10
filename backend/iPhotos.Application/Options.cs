@@ -251,13 +251,18 @@ public sealed class MlOptions
     /// <summary>Minimum faces for a new auto-created person; singletons stay unassigned.</summary>
     public int MinClusterFaces { get; set; } = 2;
 
-    /// <summary>
-    /// Cosine similarity for "same person?" review groups (doc 18 §7.4): unassigned
+    /// <summary>Cosine similarity for "same person?" review groups (doc 18 §7.4): unassigned
     /// faces clustered at this threshold surface as suggestions in the clients.
     /// Sits below MatchThreshold — the band [SuggestThreshold, MatchThreshold) is
-    /// what the review UI asks the user to confirm.
-    /// </summary>
+    /// what the review UI asks the user to confirm.</summary>
     public float SuggestThreshold { get; set; } = 0.65f;
+
+    /// <summary>
+    /// When true, the periodic cluster job re-runs the FULL Chinese Whispers pass
+    /// over every face and may move faces the user assigned manually (repair tool
+    /// for threshold changes, doc 18 §7.2). Default false: the job only assigns
+    /// still-unassigned faces, so merges and review decisions are never undone.</summary>
+    public bool FullRecluster { get; set; }
 
     /// <summary>
     /// Local directory where the pipeline stages freshly generated preview/thumbnail

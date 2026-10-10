@@ -68,23 +68,49 @@ public sealed class PersonService(
         await unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task MergeAsync(Guid ownerId, Guid sourceId, Guid targetId, CancellationToken cancellationToken = default)
+    public Task MergeAsync(Guid ownerId, Guid sourceId, Guid targetId, CancellationToken cancellationToken = default) =>
+        MergeManyAsync(ownerId, targetId, [sourceId], cancellationToken);
+
+    /// <summary>Folds every source person into the target inside ONE transaction
+    /// (doc 18 §7.4) — the review cards merge whole groups, and a refresh or
+    /// cancelled request mid-way must never leave a half-merged person behind.</summary>
+    public async Task MergeManyAsync(
+        Guid ownerId, Guid targetId, IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default)
     {
-        if (sourceId == targetId)
+        var sources = sourceIds.Distinct().ToList();
+        if (sources.Contains(targetId))
         {
             throw new ValidationException("Cannot merge a person into itself.", ErrorCodes.Validation);
         }
 
-        var source = await GetPersonOrThrowAsync(ownerId, sourceId, cancellationToken);
+        if (sources.Count == 0)
+        {
+            throw new ValidationException("No source people to merge.", ErrorCodes.Validation);
+        }
+
         var target = await GetPersonOrThrowAsync(ownerId, targetId, cancellationToken);
+        var sourcePeople = new List<Person>();
+        foreach (var sourceId in sources)
+        {
+            sourcePeople.Add(await GetPersonOrThrowAsync(ownerId, sourceId, cancellationToken));
+        }
 
-        await faces.ReassignAsync(source.Id, target.Id, cancellationToken);
-        await reviews.ReassignPersonAsync(source.Id, target.Id, cancellationToken);
-        await persons.DeleteAsync(source, cancellationToken);
-        await RecomputeAsync(ownerId, target, cancellationToken);
+        // One atomic commit: the ExecuteUpdate reassignments run inside the ambient
+        // transaction, and the source deletions + target aggregates flush together.
+        await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
+        await faces.ReassignManyAsync(sources, target.Id, cancellationToken);
+        foreach (var source in sourcePeople)
+        {
+            await reviews.ReassignPersonAsync(source.Id, target.Id, cancellationToken);
+        }
+
+        await persons.DeleteRangeAsync(sourcePeople, cancellationToken);
+        await RecomputeCommittedAsync(ownerId, target, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
-        logger.LogInformation("Person {Source} merged into {Target} (owner {Owner})", sourceId, targetId, ownerId);
+        logger.LogInformation(
+            "{Count} person(s) merged into {Target} (owner {Owner})", sourcePeople.Count, targetId, ownerId);
     }
 
     /// <summary>Moves one face to another person, or starts a new person when <paramref
@@ -403,30 +429,22 @@ public sealed class PersonService(
                 $"A suggestion accepts between 1 and {MaxSuggestionFaces} faces.", ErrorCodes.Validation);
         }
 
-        var targets = new List<PhotoFace>(faceIds.Count);
-        foreach (var faceId in faceIds.Distinct())
+        // One batched existence/ownership check, then ONE UPDATE for the whole
+        // batch — per-face tracked loads would emit an UPDATE per row.
+        var requested = faceIds.Distinct().ToList();
+        var owned = await faces.ListOwnedIdsAsync(ownerId, requested, cancellationToken);
+        if (owned.Count != requested.Count)
         {
-            var face = await faces.GetByIdAsync(faceId, cancellationToken);
-            if (face is null || face.OwnerId != ownerId)
-            {
-                // Owner check first — someone else's face is 404, never leaked.
-                throw new NotFoundException($"Face '{faceId}' was not found.", ErrorCodes.FacesNotFound);
-            }
-
-            if (face.PersonId is null)
-            {
-                targets.Add(face);
-            }
+            // Owner check first — someone else's face is 404, never leaked.
+            throw new NotFoundException(
+                $"Face '{requested.First(id => !owned.Contains(id))}' was not found.", ErrorCodes.FacesNotFound);
         }
 
         var person = Person.Create(ownerId, dateTime.UtcNow);
         await persons.AddAsync(person, cancellationToken);
-        foreach (var face in targets)
-        {
-            face.PersonId = person.Id;
-        }
+        var assigned = await faces.AssignUnassignedManyAsync(owned, person.Id, cancellationToken);
 
-        if (targets.Count > 0)
+        if (assigned > 0)
         {
             await RecomputeAsync(ownerId, person, cancellationToken);
         }
@@ -435,7 +453,7 @@ public sealed class PersonService(
 
         logger.LogInformation(
             "Suggestion accepted: person {Person} created with {Count} face(s) (owner {Owner})",
-            person.Id, targets.Count, ownerId);
+            person.Id, assigned, ownerId);
         return new PersonDto(person.Id, person.Name, person.FaceCount, person.CoverFaceId);
     }
 
@@ -452,22 +470,18 @@ public sealed class PersonService(
         }
 
         var person = await GetPersonOrThrowAsync(ownerId, personId, cancellationToken);
-        var assigned = 0;
-        foreach (var faceId in faceIds.Distinct())
-        {
-            var face = await faces.GetByIdAsync(faceId, cancellationToken);
-            if (face is null || face.OwnerId != ownerId)
-            {
-                // Owner check first — someone else's face is 404, never leaked.
-                throw new NotFoundException($"Face '{faceId}' was not found.", ErrorCodes.FacesNotFound);
-            }
 
-            if (face.PersonId is null)
-            {
-                face.PersonId = person.Id;
-                assigned++;
-            }
+        // Batched validation + ONE UPDATE for the whole accept (doc 18 §7.4).
+        var requested = faceIds.Distinct().ToList();
+        var owned = await faces.ListOwnedIdsAsync(ownerId, requested, cancellationToken);
+        if (owned.Count != requested.Count)
+        {
+            // Owner check first — someone else's face is 404, never leaked.
+            throw new NotFoundException(
+                $"Face '{requested.First(id => !owned.Contains(id))}' was not found.", ErrorCodes.FacesNotFound);
         }
+
+        var assigned = await faces.AssignUnassignedManyAsync(owned, person.Id, cancellationToken);
 
         if (assigned > 0)
         {
@@ -497,22 +511,23 @@ public sealed class PersonService(
     {
         var person = await GetPersonOrThrowAsync(ownerId, personId, cancellationToken);
 
-        var assigned = 0;
-        foreach (var faceId in acceptedFaceIds.Distinct())
+        // One batched existence/ownership check for every face in the verdict,
+        // then ONE UPDATE for the accepted set — no per-face tracked loads.
+        var accepted = acceptedFaceIds.Distinct().ToList();
+        var toValidate = accepted
+            .Concat(rejectedFaceIds)
+            .Concat(unsureFaceIds)
+            .Distinct()
+            .ToList();
+        var owned = await faces.ListOwnedIdsAsync(ownerId, toValidate, cancellationToken);
+        if (owned.Count != toValidate.Count)
         {
-            var face = await faces.GetByIdAsync(faceId, cancellationToken);
-            if (face is null || face.OwnerId != ownerId)
-            {
-                // Owner check first — someone else's face is 404, never leaked.
-                throw new NotFoundException($"Face '{faceId}' was not found.", ErrorCodes.FacesNotFound);
-            }
-
-            if (face.PersonId is null)
-            {
-                face.PersonId = person.Id;
-                assigned++;
-            }
+            // Owner check first — someone else's face is 404, never leaked.
+            throw new NotFoundException(
+                $"Face '{toValidate.First(id => !owned.Contains(id))}' was not found.", ErrorCodes.FacesNotFound);
         }
+
+        var assigned = await faces.AssignUnassignedManyAsync(accepted, person.Id, cancellationToken);
 
         if (assigned > 0)
         {
@@ -524,12 +539,6 @@ public sealed class PersonService(
         {
             foreach (var faceId in ids.Distinct())
             {
-                var face = await faces.GetByIdAsync(faceId, cancellationToken);
-                if (face is null || face.OwnerId != ownerId)
-                {
-                    throw new NotFoundException($"Face '{faceId}' was not found.", ErrorCodes.FacesNotFound);
-                }
-
                 decisions.Add(FaceReviewDecision.Create(
                     ownerId, faceId, person.Id, kind, person.FaceCount, dateTime.UtcNow));
             }
@@ -611,10 +620,23 @@ public sealed class PersonService(
     private async Task RecomputeAsync(Guid ownerId, Person person, CancellationToken cancellationToken)
     {
         // ListForOwner returns tracked entities; filtering client-side keeps this
-        // correct for personal-scale libraries without an extra query shape.
+        // correct for personal-scale libraries without an extra query shape — and
+        // makes pending (unsaved) reassignments visible to the aggregation.
         var allFaces = await faces.ListForOwnerAsync(ownerId, cancellationToken);
-        var members = allFaces.Where(f => f.PersonId == person.Id).ToList();
+        ApplyAggregates(person, allFaces.Where(f => f.PersonId == person.Id).ToList());
+    }
 
+    /// <summary>Same aggregation reading committed rows for one person — used by the
+    /// merge paths, whose ExecuteUpdate reassignments are already persisted inside
+    /// the transaction (the change tracker holds no pending face changes there).</summary>
+    private async Task RecomputeCommittedAsync(Guid ownerId, Person person, CancellationToken cancellationToken)
+    {
+        var members = await faces.ListForPersonAsync(ownerId, person.Id, cancellationToken);
+        ApplyAggregates(person, members);
+    }
+
+    private void ApplyAggregates(Person person, IReadOnlyList<PhotoFace> members)
+    {
         person.FaceCount = members.Count;
         person.Centroid = clusterer.Centroid(members.Select(f => f.Embedding).ToList());
         person.CoverFaceId = members.Count == 0 ? null : members.MaxBy(f => f.CoverScore)!.Id;

@@ -495,11 +495,30 @@ public sealed class FakeBlobStorage : IBlobStorage
 public sealed class FakeUnitOfWork : IUnitOfWork
 {
     public int SaveCount { get; private set; }
+    public int TransactionsBegun { get; private set; }
+    public int TransactionsCommitted { get; private set; }
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         SaveCount++;
         return Task.FromResult(0);
+    }
+
+    public Task<IUnitOfWorkTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        TransactionsBegun++;
+        return Task.FromResult<IUnitOfWorkTransaction>(new FakeTransaction(this));
+    }
+
+    private sealed class FakeTransaction(FakeUnitOfWork owner) : IUnitOfWorkTransaction
+    {
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            owner.TransactionsCommitted++;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }
 

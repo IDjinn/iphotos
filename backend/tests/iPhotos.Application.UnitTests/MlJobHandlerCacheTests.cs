@@ -166,6 +166,28 @@ public class MlJobHandlerCacheTests
         public Task ReassignAsync(Guid fromPersonId, Guid? toPersonId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
+        public Task ReassignManyAsync(
+            IReadOnlyList<Guid> fromPersonIds, Guid? toPersonId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<Guid>> ListOwnedIdsAsync(
+            Guid ownerId, IReadOnlyList<Guid> faceIds, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Guid>>(
+                Faces.Where(f => f.OwnerId == ownerId && faceIds.Contains(f.Id)).Select(f => f.Id).ToList());
+
+        public Task<int> AssignUnassignedManyAsync(
+            IReadOnlyList<Guid> faceIds, Guid personId, CancellationToken cancellationToken = default)
+        {
+            var assigned = 0;
+            foreach (var face in Faces.Where(f => f.PersonId is null && faceIds.Contains(f.Id)))
+            {
+                face.PersonId = personId;
+                assigned++;
+            }
+
+            return Task.FromResult(assigned);
+        }
+
         public Task<PagedResult<Photo>> ListPhotosForPersonAsync(
             Guid ownerId, Guid personId, int page, int pageSize, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PagedResult<Photo>([], 0, page, pageSize));
@@ -190,6 +212,16 @@ public class MlJobHandlerCacheTests
         public Task DeleteAsync(Person person, CancellationToken cancellationToken = default)
         {
             Persons.Remove(person);
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteRangeAsync(IReadOnlyList<Person> persons, CancellationToken cancellationToken = default)
+        {
+            foreach (var person in persons)
+            {
+                Persons.Remove(person);
+            }
+
             return Task.CompletedTask;
         }
     }

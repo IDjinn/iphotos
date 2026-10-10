@@ -28,6 +28,17 @@ public sealed class PersonRepository(PhotosDbContext db) : IPersonRepository
         db.Persons.Remove(person);
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task DeleteRangeAsync(IReadOnlyList<Person> persons, CancellationToken cancellationToken = default)
+    {
+        if (persons.Count == 0)
+        {
+            return;
+        }
+
+        db.Persons.RemoveRange(persons);
+        await db.SaveChangesAsync(cancellationToken);
+    }
 }
 
 public sealed class FaceRepository(PhotosDbContext db) : IFaceRepository
@@ -63,6 +74,47 @@ public sealed class FaceRepository(PhotosDbContext db) : IFaceRepository
         await db.PhotoFaces
             .Where(f => f.PersonId == fromPersonId)
             .ExecuteUpdateAsync(set => set.SetProperty(f => f.PersonId, toPersonId), cancellationToken);
+    }
+
+    public async Task ReassignManyAsync(
+        IReadOnlyList<Guid> fromPersonIds, Guid? toPersonId, CancellationToken cancellationToken = default)
+    {
+        if (fromPersonIds.Count == 0)
+        {
+            return;
+        }
+
+        await db.PhotoFaces
+            .Where(f => f.PersonId != null && fromPersonIds.Contains(f.PersonId.Value))
+            .ExecuteUpdateAsync(set => set.SetProperty(f => f.PersonId, toPersonId), cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListOwnedIdsAsync(
+        Guid ownerId, IReadOnlyList<Guid> faceIds, CancellationToken cancellationToken = default)
+    {
+        if (faceIds.Count == 0)
+        {
+            return [];
+        }
+
+        IReadOnlyList<Guid> owned = await db.PhotoFaces
+            .Where(f => f.OwnerId == ownerId && faceIds.Contains(f.Id))
+            .Select(f => f.Id)
+            .ToListAsync(cancellationToken);
+        return owned;
+    }
+
+    public async Task<int> AssignUnassignedManyAsync(
+        IReadOnlyList<Guid> faceIds, Guid personId, CancellationToken cancellationToken = default)
+    {
+        if (faceIds.Count == 0)
+        {
+            return 0;
+        }
+
+        return await db.PhotoFaces
+            .Where(f => f.PersonId == null && faceIds.Contains(f.Id))
+            .ExecuteUpdateAsync(set => set.SetProperty(f => f.PersonId, personId), cancellationToken);
     }
 
     public async Task<PagedResult<Photo>> ListPhotosForPersonAsync(

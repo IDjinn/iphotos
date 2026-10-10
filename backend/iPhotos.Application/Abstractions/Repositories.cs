@@ -167,6 +167,9 @@ public interface IPersonRepository
     Task<IReadOnlyList<Person>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default);
 
     Task DeleteAsync(Person person, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes several persons at once (batch merge, doc 18 §7.4).</summary>
+    Task DeleteRangeAsync(IReadOnlyList<Person> persons, CancellationToken cancellationToken = default);
 }
 
 public interface IFaceRepository
@@ -191,6 +194,21 @@ public interface IFaceRepository
 
     /// <summary>Reassigns every face of one person to another (merge); null unassigns.</summary>
     Task ReassignAsync(Guid fromPersonId, Guid? toPersonId, CancellationToken cancellationToken = default);
+
+    /// <summary>Reassigns every face of several people to one target in a single
+    /// statement (batch merge, doc 18 §7.4).</summary>
+    Task ReassignManyAsync(IReadOnlyList<Guid> fromPersonIds, Guid? toPersonId, CancellationToken cancellationToken = default);
+
+    /// <summary>The subset of the given face ids owned by the owner — one query
+    /// validates existence and ownership for whole suggestion batches.</summary>
+    Task<IReadOnlyList<Guid>> ListOwnedIdsAsync(
+        Guid ownerId, IReadOnlyList<Guid> faceIds, CancellationToken cancellationToken = default);
+
+    /// <summary>Assigns still-unassigned faces to a person in ONE UPDATE statement
+    /// (suggestion accept, doc 18 §7.4); returns how many it actually assigned —
+    /// already-assigned ids are skipped, never stolen.</summary>
+    Task<int> AssignUnassignedManyAsync(
+        IReadOnlyList<Guid> faceIds, Guid personId, CancellationToken cancellationToken = default);
 
     /// <summary>Paged photos containing the person's faces, newest TakenAt first (listing order).</summary>
     Task<PagedResult<Photo>> ListPhotosForPersonAsync(

@@ -89,6 +89,22 @@
 > candidato (`PersonMergeMemberDto.Similarity`); hub colapsa membros pendentes no
 > tile do alvo ("+N groups · review"). Testes: `PersonServiceTests` (17).
 >
+> **Round 7 (2026-10-10)** — robustez do merge (bug real: merge "não pegava"
+> após refresh) + web viewer (§14F): (1) **merge atômico** — `MergeAsync`/
+> `MergeManyAsync` rodam em uma transação (`IUnitOfWork.BeginTransactionAsync`)
+> em vez de 4 commits independentes; refresh/cancelamento no meio não deixa
+> pessoa "zumbi" ressuscitando a mesma sugestão; (2) **merge em lote** —
+> `POST /api/people/merge-batch` (`{ targetId, sourceIds[] }`): a web faz 1
+> request por card em vez de 1 POST por membro, e o recompute do alvo lê só os
+> rostos da pessoa (`ListForPersonAsync`) em vez de toda a biblioteca com
+> embeddings; (3) **job `cluster` incremental por default** (§7.2) — só atribui
+> rostos sem pessoa, nunca desfaz merge/review/move-face; o passe completo
+> (que reatribui tudo) vira reparo opt-in `IPHOTOS_ML__FULL_RECLUSTER`;
+> (4) web: `Stage` do viewer com grid area definida (`minmax(0,1fr)`) — foto/
+> vídeo agora cabem na tela (o `max-height:100%` não resolvia contra a linha
+> implícita do grid e a imagem abria no tamanho natural). Testes:
+> `PersonServiceTests` (21), `PersonClusterJobServiceTests` (6, novo).
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e
@@ -334,6 +350,7 @@ Knobs de reconhecimento — consumidos só pelo worker; no compose ficam exposto
 | `ClusterThreshold` | `IPHOTOS_ML__CLUSTER_THRESHOLD` | 0.55 | Aresta mín. do Chinese Whispers (§7.2) | Separa pessoas com mais facilidade; pode dividir a mesma pessoa em duas |
 | `SuggestThreshold` | `IPHOTOS_ML__SUGGEST_THRESHOLD` | 0.65 | Limite inferior da faixa de revisão "é a mesma pessoa?" (§7.4): rostos sem pessoa agrupados como sugestões | Revisão mais rigorosa; mais rostos ficam sem sugestão |
 | `MinClusterFaces` | `IPHOTOS_ML__MIN_CLUSTER_FACES` | 2 | Mín. de rostos p/ criar pessoa nova | Menos pessoas "de uma foto só"; singletons ficam soltos por mais tempo |
+| `FullRecluster` | `IPHOTOS_ML__FULL_RECLUSTER` | `false` | `true` faz o job `cluster` rodar o passe **completo** (§7.2), que reatribui todos os rostos — reparo para troca de limiares | Pode desfazer merges/reviews manuais; volte para `false` após a passada |
 
 Do lado do serviço `ml`, o `ML_DET_SIZE` (default 640, env `IPHOTOS_ML_DET_SIZE` no
 compose) decide o menor rosto detectável: o detector redimensiona a imagem inteira para
@@ -351,7 +368,23 @@ pequenos. Subir para 800–1024 ajuda em fotos de grupo e custa compute ~quadrá
 3. `sim ≥ MatchThreshold` (default 0.55) → atribui à melhor pessoa (recalcula
    centróide/capa/contagem); senão o rosto fica `person_id = null` até o recluster.
 
-### 7.2 Recluster completo (job `cluster` por owner)
+### 7.2 Job `cluster` por owner — incremental (default) e completo (opt-in)
+
+**Incremental** (`PersonClusterJobService.ReclusterIncrementalAsync`, default) —
+roda após cada job de faces e **só toca em rostos sem pessoa**; atribuições
+existentes são estrutura do usuário (merge, review, move-face) e nunca são
+movidas nem apagadas:
+
+1. Carrega todos os rostos do owner; rostos com `person_id` ficam intocados.
+2. Rosto solto com centróide `≥ MatchThreshold` entra na pessoa (mesmo sinal do
+   §7.1 — recupera rostos que ficaram `null` em passadas antigas).
+3. O restante agrupa entre si com **Chinese Whispers** a `ClusterThreshold`;
+   componentes com `≥ MinClusterFaces` criam **pessoas novas**; menores ficam
+   soltas. Recompute exato só das pessoas que ganharam rostos.
+
+**Completo** (`ReclusterAsync`, opt-in via `Ml:FullRecluster`, env
+`IPHOTOS_ML__FULL_RECLUSTER`, default `false`) — ferramenta de reparo para troca
+de limiares: reatribui **todos** os rostos e pode desfazer edições manuais.
 
 1. Carrega todos os embeddings do owner (`photo_faces`).
 2. k-NN bruta-force (cosseno, top-8 por rosto) — escala pessoal (≲50k rostos ≈
@@ -364,11 +397,21 @@ pequenos. Subir para 800–1024 ajuda em fotos de grupo e custa compute ~quadrá
    singletons ficam soltos até ganhar vizinhos); pessoas que zeram são apagadas;
    capa = rosto de maior `detScore × sqrt(bbox_w·bbox_h)`.
 
+> Histórico: até o Round 6 o job periódico era sempre o passe completo — cada
+> novo processamento de faces podia reatribuir `person_id` em massa e desfazer
+> merges/reviews manuais (os duplicados "voltavam"). O incremental é o default
+> desde o Round 7.
+
 ### 7.3 Operações de pessoa (manual)
 
 - **Renomear** (`PATCH`): `name` (ou null → "Unnamed").
-- **Mesclar** (`POST /people/merge`): move os rostos da origem para o alvo, apaga a
-  origem, recalcula centróide/capa/contagem do alvo.
+- **Mesclar** (`POST /people/merge` singular, `POST /people/merge-batch` em
+  lote): move os rostos da(s) origem(ns) para o alvo, apaga as origens e
+  recalcula centróide/capa/contagem do alvo — tudo em **uma transação**
+  (`IUnitOfWork.BeginTransactionAsync`): refresh/cancelamento no meio da
+  requisição nunca deixa merge parcial (pessoa "zumbi" com centróide velho
+  ressuscitando a sugestão). O lote (`{ targetId, sourceIds[] }`) é o caminho
+  dos cards de revisão: 1 request em vez de 1 por membro.
 - **Mover rosto** (`POST /people/{id}/faces`): para outro `personId` ou `new` — é o
   mecanismo de correção/split (mover vários rostos de uma pessoa vira uma pessoa nova).
 - **Excluir** (`DELETE`): rostos voltam a `person_id = null` (podem ser re-agrupados
@@ -407,7 +450,9 @@ por faceCount; `MinSimilarity` = elo mais fraco do grupo, exibido como % match
 conservador). A fila ordena por **total de faces** (os duplicados óbvios da
 biblioteca vêm primeiro), cap de 20. Id = SHA-256 truncado com tag `"pmg"` +
 ids dos membros ordenados. Nada é mesclado automaticamente: o aceite (um clique)
-reusa `POST /api/people/merge` uma vez por membro. **UI (web)**: a revisão mora
+vira **um** `POST /api/people/merge-batch` atômico com todos os membros (Round 7;
+antes eram N chamadas de `POST /api/people/merge`, uma por membro, cada uma
+recarregando todos os embeddings do owner — lento e não-atômico). **UI (web)**: a revisão mora
 **dentro da página da pessoa** (banner sobre o grid de fotos — "Merge all" no
 alvo, "Merge into X" nos membros, "Not now" persistido no mesmo localStorage);
 o hub `/people` volta a ser grade uniforme de círculos com um **ponto** nos tiles
@@ -469,7 +514,8 @@ diferentes. O uso correto é como **peso de grafo**, não regra dura:
 | `GET /api/people/{id}` | detalhe: `PersonDetailDto` com `Confidence` (similaridade média membro→centroide, 0..1; null sem centróide) |
 | `GET /api/people/{id}/photos` | fotos da pessoa (paged, mesmo formato de `GET /api/photos`) |
 | `PATCH /api/people/{id}` | `{ name: string \| null }` |
-| `POST /api/people/merge` | `{ sourceId, targetId }` |
+| `POST /api/people/merge` | `{ sourceId, targetId }` — atômico (uma transação) |
+| `POST /api/people/merge-batch` | `{ targetId, sourceIds[] }` — funde todas as origens no alvo numa transação só (Round 7) |
 | `POST /api/people/{id}/faces` | `{ faceId, targetPersonId: uuid \| "new" }` |
 | `DELETE /api/people/{id}` | pessoa some; rostos ficam não atribuídos |
 | `GET /api/people/suggestions` | `{ newPeople: [...], merges: [...], personMergeGroups: [...] }` (§7.4) |

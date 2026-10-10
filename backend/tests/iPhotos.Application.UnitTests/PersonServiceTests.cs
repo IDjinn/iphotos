@@ -21,6 +21,7 @@ public sealed class PersonServiceTests
     private readonly InMemoryPersonRepository persons = new();
     private readonly InMemoryFaceRepository faces = new();
     private readonly InMemoryFaceReviewRepository reviews = new();
+    private readonly FakeUnitOfWork unitOfWork = new();
     private readonly PersonService service;
 
     public PersonServiceTests()
@@ -30,7 +31,7 @@ public sealed class PersonServiceTests
             faces,
             reviews,
             new ChineseWhispersClusterer(),
-            new FakeUnitOfWork(),
+            unitOfWork,
             new StubDateTimeProvider(Now),
             Options.Create(new MlOptions { SuggestThreshold = 0.75f, MatchThreshold = 0.9f }),
             NullLogger<PersonService>.Instance);
@@ -340,6 +341,69 @@ public sealed class PersonServiceTests
         Assert.Equal(bob.Id, merge.PersonId);
     }
 
+    [Fact]
+    public async Task MergeManyAsync_moves_faces_reviews_and_deletes_sources()
+    {
+        var target = NewPerson("Target", UnitVector(1, 0, 0));
+        target.FaceCount = 1;
+        NewFace(UnitVector(1, 0, 0), target.Id);
+        var sourceA = NewPerson("A", UnitVector(0.97f, 0.24f, 0));
+        sourceA.FaceCount = 1;
+        NewFace(UnitVector(0.97f, 0.24f, 0), sourceA.Id);
+        var sourceB = NewPerson("B", UnitVector(0.94f, 0.34f, 0));
+        sourceB.FaceCount = 1;
+        NewFace(UnitVector(0.94f, 0.34f, 0), sourceB.Id);
+        var rejected = NewFace(UnitVector(0.9f, 0.3f, 0.1f));
+        reviews.Decisions.Add(FaceReviewDecision.Create(
+            Owner, rejected.Id, sourceA.Id, FaceReviewKind.Rejected, personFaceCount: 1, Now));
+
+        await service.MergeManyAsync(Owner, target.Id, [sourceA.Id, sourceB.Id]);
+
+        Assert.DoesNotContain(persons.Persons, p => p.Id == sourceA.Id);
+        Assert.DoesNotContain(persons.Persons, p => p.Id == sourceB.Id);
+        Assert.Equal(3, target.FaceCount);
+        Assert.All(faces.Faces.Where(f => f.Id != rejected.Id), f => Assert.Equal(target.Id, f.PersonId));
+        Assert.Null(rejected.PersonId);
+        Assert.Equal(target.Id, reviews.Decisions.Single(d => d.FaceId == rejected.Id).PersonId);
+        Assert.Equal(1, unitOfWork.TransactionsBegun);
+        Assert.Equal(1, unitOfWork.TransactionsCommitted);
+    }
+
+    [Fact]
+    public async Task MergeAsync_moves_faces_and_deletes_the_source()
+    {
+        var target = NewPerson("Target", UnitVector(1, 0, 0));
+        target.FaceCount = 1;
+        NewFace(UnitVector(1, 0, 0), target.Id);
+        var source = NewPerson("A", UnitVector(0.97f, 0.24f, 0));
+        source.FaceCount = 1;
+        NewFace(UnitVector(0.97f, 0.24f, 0), source.Id);
+
+        await service.MergeAsync(Owner, source.Id, target.Id);
+
+        Assert.DoesNotContain(persons.Persons, p => p.Id == source.Id);
+        Assert.Equal(2, target.FaceCount);
+        Assert.All(faces.Faces, f => Assert.Equal(target.Id, f.PersonId));
+    }
+
+    [Fact]
+    public async Task MergeManyAsync_rejects_merging_a_person_into_itself()
+    {
+        var target = NewPerson("Target", UnitVector(1, 0, 0));
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => service.MergeManyAsync(Owner, target.Id, [target.Id]));
+    }
+
+    [Fact]
+    public async Task MergeManyAsync_rejects_an_empty_source_list()
+    {
+        var target = NewPerson("Target", UnitVector(1, 0, 0));
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => service.MergeManyAsync(Owner, target.Id, []));
+    }
+
     private sealed class InMemoryFaceReviewRepository : IFaceReviewRepository
     {
         public List<FaceReviewDecision> Decisions { get; } = [];
@@ -395,6 +459,16 @@ public sealed class PersonServiceTests
             Persons.Remove(person);
             return Task.CompletedTask;
         }
+
+        public Task DeleteRangeAsync(IReadOnlyList<Person> persons, CancellationToken cancellationToken = default)
+        {
+            foreach (var person in persons)
+            {
+                Persons.Remove(person);
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class InMemoryFaceRepository : IFaceRepository
@@ -429,6 +503,35 @@ public sealed class PersonServiceTests
             }
 
             return Task.CompletedTask;
+        }
+
+        public Task ReassignManyAsync(
+            IReadOnlyList<Guid> fromPersonIds, Guid? toPersonId, CancellationToken cancellationToken = default)
+        {
+            foreach (var face in Faces.Where(f => f.PersonId is { } id && fromPersonIds.Contains(id)))
+            {
+                face.PersonId = toPersonId;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<Guid>> ListOwnedIdsAsync(
+            Guid ownerId, IReadOnlyList<Guid> faceIds, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Guid>>(
+                Faces.Where(f => f.OwnerId == ownerId && faceIds.Contains(f.Id)).Select(f => f.Id).ToList());
+
+        public Task<int> AssignUnassignedManyAsync(
+            IReadOnlyList<Guid> faceIds, Guid personId, CancellationToken cancellationToken = default)
+        {
+            var assigned = 0;
+            foreach (var face in Faces.Where(f => f.PersonId is null && faceIds.Contains(f.Id)))
+            {
+                face.PersonId = personId;
+                assigned++;
+            }
+
+            return Task.FromResult(assigned);
         }
 
         public Task<PagedResult<Photo>> ListPhotosForPersonAsync(

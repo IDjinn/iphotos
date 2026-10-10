@@ -61,6 +61,19 @@ public static class PeopleEndpoints
         })
         .WithName("MergePeople");
 
+        // Whole-group merge (doc 18 §7.4): the "same person?" review card folds
+        // every member into the target in ONE atomic request — nothing half-merges.
+        group.MapPost("/merge-batch", async (
+            ClaimsPrincipal principal,
+            MergeBatchRequest request,
+            PersonService people,
+            CancellationToken cancellationToken) =>
+        {
+            await people.MergeManyAsync(principal.GetUserId(), request.TargetId, request.SourceIds, cancellationToken);
+            return Results.NoContent();
+        })
+        .WithName("MergePeopleBatch");
+
         // "Same person?" review (doc 18 §7.4), split by destination: merges into
         // existing people and candidates for a new person. Dismissal is
         // client-side, keyed by the stable suggestion id.
@@ -162,6 +175,8 @@ public static class PeopleEndpoints
     public sealed record RenamePersonRequest(string? Name);
 
     public sealed record MergePeopleRequest(Guid SourceId, Guid TargetId);
+
+    public sealed record MergeBatchRequest(Guid TargetId, IReadOnlyList<Guid> SourceIds);
 
     public sealed record MoveFaceRequest(Guid FaceId, Guid? TargetPersonId);
 

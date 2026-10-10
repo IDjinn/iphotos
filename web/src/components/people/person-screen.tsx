@@ -25,6 +25,7 @@ import {
   listPersonPhotos,
   listPersonSuggestions,
   mergePeople,
+  mergePeopleBatch,
   renamePerson,
   submitFaceReview,
   type MergeSuggestion,
@@ -170,12 +171,10 @@ export function PersonScreen({ personId }: { personId: string }) {
   });
 
   /** Merges exactly the reviewed subset into the target — the stepper's verdict
-   * and the banner's "Merge all" both land here. */
+   * and the banner's "Merge all" both land here, as one atomic batch request. */
   const mergeReviewed = useMutation({
     mutationFn: async (vars: { personIds: string[]; targetId: string; suggestionId: string }) => {
-      for (const id of vars.personIds) {
-        await mergePeople(id, vars.targetId);
-      }
+      await mergePeopleBatch(vars.targetId, vars.personIds);
       return vars;
     },
     onMutate: (vars) => setBusyReviewId(vars.suggestionId),

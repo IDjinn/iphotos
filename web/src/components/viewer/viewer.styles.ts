@@ -71,6 +71,10 @@ export const Stage = styled.div`
   flex: 1;
   min-height: 0;
   display: grid;
+  /* A definite area: percentage max-sizes on the photo resolve against the
+   * stage (not the image's natural size), so it always fits the screen. */
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 1rem;
 `;

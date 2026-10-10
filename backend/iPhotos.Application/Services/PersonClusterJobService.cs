@@ -8,10 +8,14 @@ using Microsoft.Extensions.Options;
 namespace iPhotos.Application.Services;
 
 /// <summary>
-/// Full per-owner reclustering pass (doc 18 §7.2): Chinese Whispers over every face
-/// embedding, names preserved by majority vote, then exact centroid/cover/count
-/// recomputation and removal of emptied persons. Idempotent — re-running with the
-/// same data converges to the same clustering.
+/// Per-owner clustering pass (doc 18 §7.2), two modes:
+/// <see cref="ReclusterIncrementalAsync"/> (default) only touches faces without a
+/// person — close centroids join their person (MatchThreshold), the rest cluster
+/// via Chinese Whispers into NEW people — so user structure (merges, review
+/// verdicts, move-face) is never undone. <see cref="ReclusterAsync"/> is the full
+/// pass that reassigns every face (majority-vote name preservation, emptied
+/// persons removed) — a repair tool for threshold changes, opted in via
+/// <c>Ml:FullRecluster</c>.
 /// </summary>
 public sealed class PersonClusterJobService(
     IFaceRepository faces,
@@ -26,7 +30,15 @@ public sealed class PersonClusterJobService(
     {
         try
         {
-            await ReclusterAsync(job.OwnerId, cancellationToken);
+            if (options.Value.FullRecluster)
+            {
+                await ReclusterAsync(job.OwnerId, cancellationToken);
+            }
+            else
+            {
+                await ReclusterIncrementalAsync(job.OwnerId, cancellationToken);
+            }
+
             job.Complete(dateTime.UtcNow);
             await unitOfWork.SaveChangesAsync(cancellationToken);
             logger.LogInformation("Cluster job {JobId} finished for owner {OwnerId}", job.Id, job.OwnerId);
@@ -40,7 +52,138 @@ public sealed class PersonClusterJobService(
         }
     }
 
-    public async Task ReclusterAsync(Guid ownerId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Incremental pass: assigned faces are the user's structure and are never
+    /// moved or deleted. Unassigned faces first join the closest centroid above
+    /// MatchThreshold (same signal as the faces job), then the leftovers cluster
+    /// among themselves into new people (Chinese Whispers, MinClusterFaces —
+    /// smaller groups stay unassigned).
+    /// </summary>
+    public async Task ReclusterIncrementalAsync(Guid ownerId, CancellationToken cancellationToken = default)
+    {
+        var allFaces = await faces.ListForOwnerAsync(ownerId, cancellationToken);
+        var unassigned = allFaces.Where(f => f.PersonId is null).ToList();
+        if (unassigned.Count == 0)
+        {
+            return;
+        }
+
+        var allPersons = await persons.ListForOwnerAsync(ownerId, cancellationToken);
+        var candidates = allPersons.Where(p => p.FaceCount > 0 && p.Centroid is not null).ToList();
+        var joinedPersons = new HashSet<Guid>();
+
+        // 1) Close-centroid join — catches faces that predate their person or
+        // missed the faces job's pass.
+        var remaining = new List<PhotoFace>();
+        foreach (var face in unassigned)
+        {
+            Person? best = null;
+            var bestSimilarity = options.Value.MatchThreshold;
+            foreach (var person in candidates)
+            {
+                var similarity = TensorPrimitives.CosineSimilarity(face.Embedding, person.Centroid!);
+                if (similarity >= bestSimilarity)
+                {
+                    best = person;
+                    bestSimilarity = similarity;
+                }
+            }
+
+            if (best is null)
+            {
+                remaining.Add(face);
+            }
+            else
+            {
+                face.PersonId = best.Id;
+                joinedPersons.Add(best.Id);
+            }
+        }
+
+        // 2) Leftovers cluster among themselves into NEW people only.
+        var clusterMembers = new Dictionary<int, List<PhotoFace>>();
+        if (remaining.Count > 0)
+        {
+            var assignments = clusterer.Cluster(
+                remaining.Select(f => f.Embedding).ToList(), options.Value.ClusterThreshold);
+            for (var i = 0; i < remaining.Count; i++)
+            {
+                if (!clusterMembers.TryGetValue(assignments[i], out var members))
+                {
+                    members = [];
+                    clusterMembers[assignments[i]] = members;
+                }
+
+                members.Add(remaining[i]);
+            }
+        }
+
+        // New persons must exist in the DATABASE before any face referencing them
+        // is saved: EF flushes every tracked change on SaveChanges (same FK order
+        // as the full pass — seen live on the first real run). Assignments to
+        // EXISTING persons above are FK-safe to flush early.
+        var newPersonByCluster = new Dictionary<int, Person>();
+        foreach (var (cluster, members) in clusterMembers)
+        {
+            if (members.Count < options.Value.MinClusterFaces)
+            {
+                continue;
+            }
+
+            newPersonByCluster[cluster] = Person.Create(ownerId, dateTime.UtcNow);
+        }
+
+        foreach (var person in newPersonByCluster.Values)
+        {
+            await persons.AddAsync(person, cancellationToken);
+        }
+
+        foreach (var (cluster, members) in clusterMembers)
+        {
+            if (!newPersonByCluster.TryGetValue(cluster, out var person))
+            {
+                continue;
+            }
+
+            foreach (var face in members)
+            {
+                face.PersonId = person.Id;
+            }
+        }
+
+        // 3) Exact aggregates for every person that gained faces this pass.
+        foreach (var person in newPersonByCluster.Values)
+        {
+            ApplyAggregates(person, allFaces.Where(f => f.PersonId == person.Id).ToList());
+        }
+
+        foreach (var person in allPersons.Where(p => joinedPersons.Contains(p.Id)))
+        {
+            ApplyAggregates(person, allFaces.Where(f => f.PersonId == person.Id).ToList());
+        }
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Applies exact per-person aggregates from the in-memory face set.</summary>
+    private void ApplyAggregates(Person person, IReadOnlyList<PhotoFace> members)
+    {
+        person.FaceCount = members.Count;
+        person.Centroid = clusterer.Centroid(members.Select(f => f.Embedding).ToList());
+        person.CoverFaceId = members.Count == 0
+            ? null
+            : members.MaxBy(f => f.CoverScore)!.Id;
+        person.Touch(dateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// FULL reclustering pass (doc 18 §7.2): Chinese Whispers over every face
+    /// embedding, names preserved by majority vote, then exact centroid/cover/count
+    /// recomputation and removal of emptied persons. Idempotent, but it may move
+    /// faces the user assigned manually — only run via <c>Ml:FullRecluster</c>
+    /// (threshold changes, repair).
+    /// </summary>
+    public async Task ReclusterAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         var allFaces = await faces.ListForOwnerAsync(ownerId, cancellationToken);
         var allPersons = await persons.ListForOwnerAsync(ownerId, cancellationToken);

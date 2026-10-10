@@ -113,6 +113,12 @@ export async function mergePeople(sourceId: string, targetId: string): Promise<v
   await apiJson<void>("/api/people/merge", { method: "POST", body: { sourceId, targetId } });
 }
 
+/** Folds several people into one target in a single atomic request — the review
+ * card's "Merge all" never leaves a half-merged group behind. */
+export async function mergePeopleBatch(targetId: string, sourceIds: string[]): Promise<void> {
+  await apiJson<void>("/api/people/merge-batch", { method: "POST", body: { targetId, sourceIds } });
+}
+
 export async function deletePerson(personId: string): Promise<void> {
   await apiJson<void>(`/api/people/${personId}`, { method: "DELETE" });
 }
