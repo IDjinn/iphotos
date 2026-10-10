@@ -114,6 +114,13 @@ web/
 - [x] electron-builder (Windows/NSIS); scripts `dev:electron`, `dist`
 - Aceite: instalador gerado; execução interativa no Windows fica como smoke do usuário.
 
+### 14F — People (rostos, doc 18 §10)
+- [x] `web/src/data/people-repository.ts`: cópia adaptada do contrato mobile (D16) — `Person`, listagem paginada, rename/merge/delete + sugestões "é a mesma pessoa?" (§7.4)
+- [x] `useFaceCropUrl` no `blob-cache.ts`: crop autenticado → object URL, LRU próprio (400) e `staleTime: Infinity` (RN não honra headers; na web o endpoint agora emite `Cache-Control: immutable` p/ o cache HTTP entre reloads)
+- [x] `FaceAvatar` (círculo com skeleton → fade opacity-only); `/people` (grade de círculos + fila de revisão "Same person?" com create/dismiss — dismiss persistido em localStorage) e `/people/[id]` (grade virtualizada como a galeria, rename inline, merge com diálogo + confirmação `AlertDialog`, delete com confirmação, viewer compartilhado)
+- [x] Entrada "People" na sidebar (`NAV_ITEMS`), command palette e e2e Playwright próprio
+- Aceite: `tsc`/`next build` limpos; e2e de navegação + estado vazio. ✔ (smoke completo pendente de validação do usuário com a biblioteca real)
+
 ## 5. Verificação (checklist Romero)
 
 - Ambos os temas em todas as telas; dark é o default.
@@ -132,6 +139,7 @@ web/
 | 14C Galeria + viewer | ✅ Implementado (2026-10-03) |
 | 14D Upload/ZIP/billing/settings | ✅ Implementado (2026-10-03) |
 | 14E Electron | ✅ Implementado (2026-10-03; instalador NSIS gerado) |
+| 14F People (rostos) | ✅ Implementado (2026-10-10) |
 
 ## 7. Verificação executada (2026-10-03)
 

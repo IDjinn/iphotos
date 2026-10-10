@@ -27,6 +27,27 @@
 > `SyncEmbeddingModelSnapshot` (ValueComparers pós-migração deixavam o modelo
 > "pending" e o EF 10 abortava o `MigrateAsync` em bancos existentes).
 >
+> **Round 2 (2026-10-10)** — web People + sugestões + 3 bugs de runtime que a
+> primeira validação não pegou (o clustering nunca tinha rodado de verdade):
+> (1) **workers Cluster/Labels nunca iniciavam** — `AddHostedService` deduplica via
+> `TryAddEnumerable` pelo tipo de implementação e os 3 workers compartilham
+> `MlJobWorker`; agora registrados via `AddSingleton<IHostedService>` na extensão
+> `AddMlJobWorkers` (worker), com testes de registro (`iPhotos.Worker.UnitTests`)
+> pinando 1 worker por kind + handler keyed para todo `MlJobKind`; (2) **FK
+> violation no recluster** — `SaveChanges` descarrega tudo que está tracked, então
+> `PersonClusterJobService` insere as pessoas novas **antes** de marcar faces
+> modificadas; (3) **estado do job nunca persistia** — a entidade reclamada no
+> escopo do loop chega *detached* no handler, cujo `SaveChanges` não a enxerga
+> (faces persistiam, `Complete/Fail` não; cada claim virava `Processing` eterno e
+> cada restart reenfileirava milhares) — `MlJobWorker` agora persiste o estado
+> final com `jobs.SaveAsync` (Update reanexa). Web: stage 14F no doc 14 (People +
+> fila de revisão §7.4); endpoint `GET /api/people/suggestions` +
+> `POST /api/people/suggestions/accept` (`SuggestThreshold`, default 0.65) e knobs
+> expostos no compose (`IPHOTOS_ML__*`, `IPHOTOS_ML_DET_SIZE`); crops com
+> `Cache-Control: immutable` e cache persistente de crops no mobile
+> (`ensureFaceCrop`/`useFaceCropSource`). Instance policy: detecção 0.75,
+> auto-match 0.90, revisão 0.75–0.90 (backend/.env).
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e
@@ -345,7 +366,7 @@ pequenos. Subir para 800–1024 ajuda em fotos de grupo e custa compute ~quadrá
 Erros no formato `{ error }` existente; 404 cross-owner. Documentar no doc 09 §7
 (quando implementar, marcar o item "labels/classificação sync" como coberto por este doc).
 
-## 10. Frontend (mobile; web segue depois no doc 14)
+## 10. Frontend (mobile e web — web no doc 14 stage 14F)
 
 - **`src/data/people-repository.ts`** — contrato tipado no padrão
   `cloud-photos-repository.ts` (`apiJson<T>`, `PagedResult`); crops via
