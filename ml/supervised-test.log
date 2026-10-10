@@ -1,0 +1,365 @@
+Requirement already satisfied: pip in .\.venv\Lib\site-packages (26.2.1)
+Requirement already satisfied: fastapi<1,>=0.115 in .\.venv\Lib\site-packages (from -r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (0.143.0)
+Requirement already satisfied: uvicorn<1,>=0.30 in .\.venv\Lib\site-packages (from uvicorn[standard]<1,>=0.30->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 4)) (0.54.0)
+Requirement already satisfied: opencv-python-headless<5,>=4.10 in .\.venv\Lib\site-packages (from -r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 5)) (4.11.0.86)
+Requirement already satisfied: numpy<2,>=1.26 in .\.venv\Lib\site-packages (from -r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 6)) (1.26.4)
+Requirement already satisfied: insightface==0.7.3 in .\.venv\Lib\site-packages (from -r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (0.7.3)
+Requirement already satisfied: onnxruntime-directml<2,>=1.20 in .\.venv\Lib\site-packages (from -r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 8)) (1.24.4)
+Requirement already satisfied: onnx in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (1.23.2)
+Requirement already satisfied: tqdm in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (4.70.1)
+Requirement already satisfied: requests in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (2.34.2)
+Requirement already satisfied: matplotlib in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (3.11.2)
+Requirement already satisfied: Pillow in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (12.3.0)
+Requirement already satisfied: scipy in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (1.17.1)
+Requirement already satisfied: scikit-learn in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (1.9.1)
+Requirement already satisfied: scikit-image in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (0.26.0)
+Requirement already satisfied: easydict in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (1.13)
+Requirement already satisfied: cython in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (3.3.0)
+Requirement already satisfied: albumentations in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (2.0.8)
+Requirement already satisfied: prettytable in .\.venv\Lib\site-packages (from insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (3.18.0)
+Requirement already satisfied: starlette>=0.46.0 in .\.venv\Lib\site-packages (from fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (1.7.0)
+Requirement already satisfied: pydantic>=2.9.0 in .\.venv\Lib\site-packages (from fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (2.14.0)
+Requirement already satisfied: typing-extensions>=4.8.0 in .\.venv\Lib\site-packages (from fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (4.16.0)
+Requirement already satisfied: typing-inspection>=0.4.2 in .\.venv\Lib\site-packages (from fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (0.4.4)
+Requirement already satisfied: annotated-doc>=0.0.2 in .\.venv\Lib\site-packages (from fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (0.0.5)
+Requirement already satisfied: opentelemetry-api>=1.44.0 in .\.venv\Lib\site-packages (from fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (1.45.1)
+Requirement already satisfied: click>=7.0 in .\.venv\Lib\site-packages (from uvicorn<1,>=0.30->uvicorn[standard]<1,>=0.30->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 4)) (8.5.0)
+Requirement already satisfied: h11>=0.8 in .\.venv\Lib\site-packages (from uvicorn<1,>=0.30->uvicorn[standard]<1,>=0.30->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 4)) (0.16.0)
+Requirement already satisfied: flatbuffers in .\.venv\Lib\site-packages (from onnxruntime-directml<2,>=1.20->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 8)) (25.12.19)
+Requirement already satisfied: packaging in .\.venv\Lib\site-packages (from onnxruntime-directml<2,>=1.20->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 8)) (26.3)
+Requirement already satisfied: protobuf in .\.venv\Lib\site-packages (from onnxruntime-directml<2,>=1.20->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 8)) (7.36.2)
+Requirement already satisfied: sympy in .\.venv\Lib\site-packages (from onnxruntime-directml<2,>=1.20->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 8)) (1.14.0)
+Requirement already satisfied: httptools>=0.8.0 in .\.venv\Lib\site-packages (from uvicorn[standard]<1,>=0.30->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 4)) (0.9.0)
+Requirement already satisfied: python-dotenv>=0.13 in .\.venv\Lib\site-packages (from uvicorn[standard]<1,>=0.30->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 4)) (1.2.4)
+Requirement already satisfied: pyyaml>=5.1 in .\.venv\Lib\site-packages (from uvicorn[standard]<1,>=0.30->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 4)) (6.0.3)
+Requirement already satisfied: watchfiles>=0.20 in .\.venv\Lib\site-packages (from uvicorn[standard]<1,>=0.30->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 4)) (1.3.0)
+Requirement already satisfied: websockets>=13.0 in .\.venv\Lib\site-packages (from uvicorn[standard]<1,>=0.30->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 4)) (17.2)
+Requirement already satisfied: annotated-types>=0.6.0 in .\.venv\Lib\site-packages (from pydantic>=2.9.0->fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (0.8.0)
+Requirement already satisfied: pydantic-core==2.50.0 in .\.venv\Lib\site-packages (from pydantic>=2.9.0->fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (2.50.0)
+Requirement already satisfied: anyio<5,>=4.0.0 in .\.venv\Lib\site-packages (from starlette>=0.46.0->fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (4.15.1)
+Requirement already satisfied: idna>=2.8 in .\.venv\Lib\site-packages (from anyio<5,>=4.0.0->starlette>=0.46.0->fastapi<1,>=0.115->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 3)) (3.20)
+Requirement already satisfied: albucore==0.0.24 in .\.venv\Lib\site-packages (from albumentations->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (0.0.24)
+Requirement already satisfied: stringzilla>=3.10.4 in .\.venv\Lib\site-packages (from albucore==0.0.24->albumentations->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (5.2.0)
+Requirement already satisfied: simsimd>=5.9.2 in .\.venv\Lib\site-packages (from albucore==0.0.24->albumentations->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (6.5.16)
+Requirement already satisfied: contourpy>=1.0.1 in .\.venv\Lib\site-packages (from matplotlib->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (1.3.3)
+Requirement already satisfied: cycler>=0.10 in .\.venv\Lib\site-packages (from matplotlib->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (0.12.1)
+Requirement already satisfied: fonttools>=4.28.2 in .\.venv\Lib\site-packages (from matplotlib->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (4.66.1)
+Requirement already satisfied: kiwisolver>=1.3.1 in .\.venv\Lib\site-packages (from matplotlib->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (1.5.1)
+Requirement already satisfied: pyparsing>=3 in .\.venv\Lib\site-packages (from matplotlib->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (3.3.3)
+Requirement already satisfied: python-dateutil>=2.7 in .\.venv\Lib\site-packages (from matplotlib->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (2.9.0.post0)
+Requirement already satisfied: six>=1.5 in .\.venv\Lib\site-packages (from python-dateutil>=2.7->matplotlib->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (1.17.0)
+Requirement already satisfied: ml_dtypes>=0.5.4 in .\.venv\Lib\site-packages (from onnx->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (0.5.4)
+Requirement already satisfied: wcwidth>=0.3.5 in .\.venv\Lib\site-packages (from prettytable->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (0.9.2)
+Requirement already satisfied: charset_normalizer<4,>=2 in .\.venv\Lib\site-packages (from requests->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (3.5.2)
+Requirement already satisfied: urllib3<3,>=1.26 in .\.venv\Lib\site-packages (from requests->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (2.8.0)
+Requirement already satisfied: certifi>=2023.5.7 in .\.venv\Lib\site-packages (from requests->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (2026.7.22)
+Requirement already satisfied: networkx>=3.0 in .\.venv\Lib\site-packages (from scikit-image->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (3.7)
+Requirement already satisfied: imageio!=2.35.0,>=2.33 in .\.venv\Lib\site-packages (from scikit-image->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (2.38.1)
+Requirement already satisfied: tifffile>=2022.8.12 in .\.venv\Lib\site-packages (from scikit-image->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (2026.3.3)
+Requirement already satisfied: lazy-loader>=0.4 in .\.venv\Lib\site-packages (from scikit-image->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (0.6)
+Requirement already satisfied: joblib>=1.4.0 in .\.venv\Lib\site-packages (from scikit-learn->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (1.6.0)
+Requirement already satisfied: narwhals>=2.0.1 in .\.venv\Lib\site-packages (from scikit-learn->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (2.26.0)
+Requirement already satisfied: threadpoolctl>=3.5.0 in .\.venv\Lib\site-packages (from scikit-learn->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (3.7.0)
+Requirement already satisfied: cloudpickle>=3.0 in .\.venv\Lib\site-packages (from joblib>=1.4.0->scikit-learn->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (3.1.2)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in .\.venv\Lib\site-packages (from sympy->onnxruntime-directml<2,>=1.20->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 8)) (1.3.0)
+Requirement already satisfied: colorama in .\.venv\Lib\site-packages (from tqdm->insightface==0.7.3->-r C:\dev\react-native\iphotos\ml\requirements-directml.txt (line 7)) (0.4.6)
+2026-10-10 01:49:32,152 INFO iphotos-ml Execution providers: available=['DmlExecutionProvider', 'CPUExecutionProvider'] chosen=['DmlExecutionProvider', 'CPUExecutionProvider']
+INFO:     Started server process [28724]
+INFO:     Waiting for application startup.
+2026-10-10 01:49:36,152 INFO iphotos-ml FaceAnalysis ready (model=buffalo_l providers=['DmlExecutionProvider', 'CPUExecutionProvider'])
+2026-10-10 01:49:36,317 INFO iphotos-ml Warmup: detection pipeline warmed (0 faces on blank frame)
+C:\dev\react-native\iphotos\ml\.venv\Lib\site-packages\insightface\utils\transform.py:68: FutureWarning: `rcond` parameter will change to the default of machine precision times ``max(M, N)`` where M and N are the input matrix dimensions.
+To use the future default and silence this warning we advise to pass `rcond=None`, to keep using the old, explicitly pass `rcond=-1`.
+  P = np.linalg.lstsq(X_homo, Y)[0].T # Affine matrix. 3 x 4
+2026-10-10 01:49:36,464 INFO iphotos-ml Warmup: landmark_3d_68 ok
+2026-10-10 01:49:36,496 INFO iphotos-ml Warmup: landmark_2d_106 ok
+2026-10-10 01:49:36,519 INFO iphotos-ml Warmup: genderage ok
+C:\dev\react-native\iphotos\ml\.venv\Lib\site-packages\insightface\utils\face_align.py:23: FutureWarning: `estimate` is deprecated since version 0.26 and will be removed in version 2.2. Please use `SimilarityTransform.from_estimate` class constructor instead.
+  tform.estimate(lmk, dst)
+2026-10-10 01:49:36,580 INFO iphotos-ml Warmup: recognition ok
+2026-10-10 01:49:36,580 INFO iphotos-ml Warmup complete
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5207 (Press CTRL+C to quit)
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\1k3d68.onnx landmark_3d_68 ['None', 3, 192, 192] 0.0 1.0
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\2d106det.onnx landmark_2d_106 ['None', 3, 192, 192] 0.0 1.0
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\det_10g.onnx detection [1, 3, '?', '?'] 127.5 128.0
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\genderage.onnx genderage ['None', 3, 96, 96] 0.0 1.0
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\w600k_r50.onnx recognition ['None', 3, 112, 112] 127.5 127.5
+set det-size: (640, 640)
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3707 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3721 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:3719 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:10266 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42222 - "POST /v1/faces/detect HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21631 - "GET /health HTTP/1.1" 200 OK

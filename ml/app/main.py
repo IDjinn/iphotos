@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import threading
+from contextlib import asynccontextmanager
 
 import cv2
 import numpy as np
@@ -53,7 +54,62 @@ def pick_providers() -> list[str]:
 
 PROVIDERS = pick_providers()
 
-app = FastAPI(title="iPhotos ML", version="1.0.0")
+
+def warm_up() -> None:
+    """Builds every model session and runs one inference through each at boot.
+
+    insightface constructs all model sessions inside FaceAnalysis(...) — lazily
+    reached here on the first request — and the AMD DirectML driver has been
+    crashing (access violation in amdxc64.dll) under that mid-request session
+    storm. Warmup moves it to startup: single-threaded, before the socket
+    serves, with failures logged (or surfaced to the supervisor) instead of
+    killing a request in flight.
+    """
+    analyzer = get_analyzer()
+    dummy = np.zeros((DET_SIZE, DET_SIZE, 3), dtype=np.uint8)
+    faces = analyzer.get(dummy)
+    logger.info("Warmup: detection pipeline warmed (%d faces on blank frame)", len(faces))
+
+    from insightface.app.common import Face
+
+    # Per-face models only run when a detection exists; run each once on a
+    # synthetic centered face so every session has served at least one call.
+    face = Face(
+        bbox=np.array([0.3, 0.3, 0.7, 0.7], dtype=np.float32) * DET_SIZE,
+        kps=np.array(
+            [
+                [0.36, 0.42],
+                [0.64, 0.42],
+                [0.50, 0.56],
+                [0.40, 0.68],
+                [0.60, 0.68],
+            ],
+            dtype=np.float32,
+        )
+        * DET_SIZE,
+        det_score=np.float32(1.0),
+    )
+    for taskname, model in analyzer.models.items():
+        if taskname == "detection":
+            continue
+        try:
+            model.get(dummy, face)
+            logger.info("Warmup: %s ok", taskname)
+        except Exception:
+            logger.warning("Warmup: %s failed; continuing", taskname, exc_info=True)
+    logger.info("Warmup complete")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    try:
+        warm_up()
+    except Exception:
+        logger.exception("Warmup failed; serving anyway")
+    yield
+
+
+app = FastAPI(title="iPhotos ML", version="1.0.0", lifespan=lifespan)
 _analyzer = None
 _inference_slots = threading.Semaphore(max(1, CONCURRENCY))
 
@@ -71,12 +127,55 @@ def get_analyzer():
     return _analyzer
 
 
+def demote_to_cpu() -> None:
+    """Rebuild the analyzer on CPU after a GPU (DirectML) inference failure.
+
+    The AMD DirectML driver (amdxc64.dll) fails intermittently mid-inference —
+    sometimes as a native access violation that kills the process (0xC0000005,
+    see ml/crash-log.txt), sometimes as an EP error whose message is not valid
+    UTF-8, which surfaces from session.run as UnicodeDecodeError. After the
+    first in-process failure, stop sending work to the GPU for the lifetime of
+    this process; the supervisor restart brings DML back on the next boot.
+    """
+    global _analyzer, PROVIDERS
+    if _on_cpu():
+        return
+    logger.warning("Demoting inference to CPU after GPU failure")
+    PROVIDERS = ["CPUExecutionProvider"]
+    _analyzer = _build_analyzer(PROVIDERS)
+
+
+def _build_analyzer(providers: list[str]):
+    from insightface.app import FaceAnalysis
+
+    # Models are baked into the image at /models/models/<name>/ (the extra
+    # level is insightface's storage layout: <root>/models/<name>/*.onnx).
+    analyzer = FaceAnalysis(name=MODEL_NAME, root="/models", providers=providers)
+    analyzer.prepare(ctx_id=0 if providers[0] != "CPUExecutionProvider" else -1, det_size=(DET_SIZE, DET_SIZE))
+    logger.info("FaceAnalysis ready (model=%s providers=%s)", MODEL_NAME, providers)
+    return analyzer
+
+
+def _on_cpu() -> bool:
+    return PROVIDERS[0] == "CPUExecutionProvider"
+
+
 def run_detection(body: bytes) -> list[dict]:
     image = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise HTTPException(status_code=400, detail="Body is not a decodable image.")
     results = []
-    for face in get_analyzer().get(image):
+    try:
+        faces = get_analyzer().get(image)
+    except Exception:
+        # GPU (DirectML) inference failures — including the UTF-8 decoding error
+        # on the driver's message — demote the analyzer to CPU and retry once.
+        if _on_cpu():
+            raise
+        logger.exception("GPU inference failed; retrying on CPU")
+        demote_to_cpu()
+        faces = get_analyzer().get(image)
+    for face in faces:
         x1, y1, x2, y2 = [float(v) for v in face.bbox]
         embedding = getattr(face, "normed_embedding", None)
         if embedding is None:

@@ -1,0 +1,12 @@
+[2026-10-10 09:50:13] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:53:19] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:53:43] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:54:07] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:54:30] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:54:51] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:55:10] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:55:32] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:58:31] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:58:54] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:59:17] uvicorn exited with code -1073741819 (0xC0000005) - restarting in 5s
+[2026-10-10 09:59:17] 3 consecutive driver crashes - falling back to ML_EXECUTION_PROVIDER=cpu

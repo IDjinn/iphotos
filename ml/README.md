@@ -78,6 +78,28 @@ With the host service running on DirectML, auto-detect picks
 `DmlExecutionProvider` and inference runs on the RX 6700 XT; the compose CPU
 container remains the zero-setup fallback whenever the host service is off.
 
+### Driver crash watch (amdxc64.dll) — warmup + supervisor
+
+The AMD DirectML driver has crashed the process with access violations
+(`0xC0000005` in `amdxc64.dll`, visible in the Windows Application event log —
+Event ID 1000), typically right after the first real inference requests. Two
+mitigations are built in:
+
+- **Startup warmup** (`main.py`, `warm_up()`): insightface constructs all model
+  sessions on first use — previously inside the first request. Warmup builds
+  every session and runs one inference through each at boot, single-threaded,
+  before the socket serves. Since this change the service survived hundreds of
+  consecutive real requests where it previously died on the first or second.
+- **Supervisor loop** (`start-host-directml.ps1`): if the process still dies,
+  the script restarts it after 5s and appends each exit code (with hex) to
+  `ml\crash-log.txt`. Exit codes seen: bash reports `139` (0xC0000005 as
+  SIGSEGV); note `powershell -File` alone reports `0` — it does not propagate
+  the inner process code.
+
+If crashes resume, update the AMD Adrenalin driver first — the fault is in the
+driver, not in this code.
+
+
 The compose service in `backend/compose.yaml` wires this in as `ml`
 (loopback debug port 5207; the api/worker reach it over the compose network).
 Note: ROCm wheels for onnxruntime are the fragile piece (doc 18 §14) — the CPU

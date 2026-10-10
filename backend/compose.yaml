@@ -117,6 +117,12 @@ services:
       Ml__InputCacheDir: /var/lib/iphotos/ml-inputs
     volumes:
       - ml-inputs:/var/lib/iphotos/ml-inputs
+    # Docker Desktop's newer networking resolves host.docker.internal to an IPv6
+    # ULA with no working route ("Network is unreachable" from .NET). Pin it to
+    # the daemon's host-gateway IPv4 so api/worker reach the host-run ML service
+    # (IPHOTOS_ML_BASE_URL=http://host.docker.internal:5207).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Reachable on the LAN (large zip imports bypass the Cloudflare 100 MB body
     # cap via the LAN address); remote traffic keeps flowing through the
     # cloudflared tunnel below (TLS via Cloudflare edge).
@@ -180,6 +186,12 @@ services:
       Ml__InputCacheDir: /var/lib/iphotos/ml-inputs
     volumes:
       - ml-inputs:/var/lib/iphotos/ml-inputs
+    # Docker Desktop's newer networking resolves host.docker.internal to an IPv6
+    # ULA with no working route ("Network is unreachable" from .NET). Pin it to
+    # the daemon's host-gateway IPv4 so api/worker reach the host-run ML service
+    # (IPHOTOS_ML_BASE_URL=http://host.docker.internal:5207).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # Face detection + embeddings (doc 18 §4): insightface buffalo_l baked in,
   # stateless, internal-only. Unset IPHOTOS_AI_ENABLED=false to disable the

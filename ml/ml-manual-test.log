@@ -1,0 +1,23 @@
+2026-10-10 01:41:12,407 INFO iphotos-ml Execution providers: available=['DmlExecutionProvider', 'CPUExecutionProvider'] chosen=['DmlExecutionProvider', 'CPUExecutionProvider']
+INFO:     Started server process [27232]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5207 (Press CTRL+C to quit)
+2026-10-10 01:41:20,841 INFO iphotos-ml FaceAnalysis ready (model=buffalo_l providers=['DmlExecutionProvider', 'CPUExecutionProvider'])
+C:\dev\react-native\iphotos\ml\.venv\Lib\site-packages\insightface\utils\transform.py:68: FutureWarning: `rcond` parameter will change to the default of machine precision times ``max(M, N)`` where M and N are the input matrix dimensions.
+To use the future default and silence this warning we advise to pass `rcond=None`, to keep using the old, explicitly pass `rcond=-1`.
+  P = np.linalg.lstsq(X_homo, Y)[0].T # Affine matrix. 3 x 4
+C:\dev\react-native\iphotos\ml\.venv\Lib\site-packages\insightface\utils\face_align.py:23: FutureWarning: `estimate` is deprecated since version 0.26 and will be removed in version 2.2. Please use `SimilarityTransform.from_estimate` class constructor instead.
+  tform.estimate(lmk, dst)
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\1k3d68.onnx landmark_3d_68 ['None', 3, 192, 192] 0.0 1.0
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\2d106det.onnx landmark_2d_106 ['None', 3, 192, 192] 0.0 1.0
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\det_10g.onnx detection [1, 3, '?', '?'] 127.5 128.0
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\genderage.onnx genderage ['None', 3, 96, 96] 0.0 1.0
+Applied providers: ['DmlExecutionProvider', 'CPUExecutionProvider'], with options: {'DmlExecutionProvider': {}, 'CPUExecutionProvider': {}}
+find model: /models\models\buffalo_l\w600k_r50.onnx recognition ['None', 3, 112, 112] 127.5 127.5
+set det-size: (640, 640)
+INFO:     127.0.0.1:41364 - "POST /v1/faces/detect HTTP/1.1" 200 OK
