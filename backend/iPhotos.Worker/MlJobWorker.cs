@@ -106,6 +106,12 @@ public sealed class MlJobWorker(
             try
             {
                 await handler.ProcessJobAsync(job, budget.Token);
+                // The job entity was claimed on the loop scope's context, which is
+                // gone by now — it is detached here, so the handler's own
+                // SaveChanges never sees its Complete/Fail transitions (they'd sit
+                // in Processing forever and get requeued on every restart). Update
+                // re-attaches it as modified and persists the final state.
+                await jobs.SaveAsync(job, stoppingToken);
                 logger.LogInformation("ML job {JobId} finished in state {State}", job.Id, job.State);
             }
             catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested && budget.IsCancellationRequested)
