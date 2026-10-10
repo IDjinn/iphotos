@@ -367,43 +367,46 @@ export function ViewerPager({
             backdropOpacity.value = withTiming(1, { duration: 180 });
             rotation.value = withSpring(0, Springs.snappy);
           }
-        } else if (mode.value === MODE_ZOOM && current) {
-          const nx = baseZoomTx.value + dx;
-          const overX = Math.max(0, Math.abs(nx) - current.boundX.value);
-          const dir = nx > 0 ? 1 : nx < 0 ? -1 : 0;
-          const hasNext = dir < 0 ? homePage.value < assets.length - 1 : homePage.value > 0;
-          const sameWay = event.velocityX * dir > 0;
-          const commit =
-            overX > 0 &&
-            hasNext &&
-            (overX > pageWidth * EDGE_COMMIT_RATIO ||
-              (overX > EDGE_COMMIT_MIN &&
-                sameWay &&
-                Math.abs(event.velocityX) > EDGE_COMMIT_VELOCITY));
-          if (commit) {
-            // Carry the drag into the neighbouring page and reset the zoom —
-            // the incoming page lands fresh at 1×.
-            const target = clamp(homePage.value + dir, 0, assets.length - 1);
-            current.scale.value = 1;
-            current.tx.value = 0;
-            current.ty.value = 0;
-            runOnJS(onIndexChange)(target);
-            offset.value = withSpring(-target * pageWidth, Springs.slide);
-          } else {
-            // Settle the photo back inside its bounds, momentum seeded.
-            const settledTx = clamp(
-              nx + event.velocityX * 0.08,
-              -current.boundX.value,
-              current.boundX.value
-            );
-            const settledTy = clamp(
-              baseZoomTy.value + dy + event.velocityY * 0.08,
-              -current.boundY.value,
-              current.boundY.value
-            );
-            current.tx.value = withSpring(settledTx, Springs.gentle);
-            current.ty.value = withSpring(settledTy, Springs.gentle);
-            offset.value = withSpring(-homePage.value * pageWidth, Springs.snappy);
+        } else if (mode.value === MODE_ZOOM) {
+          const current = controllers.current.get(homePage.value);
+          if (current) {
+            const nx = baseZoomTx.value + dx;
+            const overX = Math.max(0, Math.abs(nx) - current.boundX.value);
+            const dir = nx > 0 ? 1 : nx < 0 ? -1 : 0;
+            const hasNext = dir < 0 ? homePage.value < assets.length - 1 : homePage.value > 0;
+            const sameWay = event.velocityX * dir > 0;
+            const commit =
+              overX > 0 &&
+              hasNext &&
+              (overX > pageWidth * EDGE_COMMIT_RATIO ||
+                (overX > EDGE_COMMIT_MIN &&
+                  sameWay &&
+                  Math.abs(event.velocityX) > EDGE_COMMIT_VELOCITY));
+            if (commit) {
+              // Carry the drag into the neighbouring page and reset the zoom —
+              // the incoming page lands fresh at 1×.
+              const target = clamp(homePage.value + dir, 0, assets.length - 1);
+              current.scale.value = 1;
+              current.tx.value = 0;
+              current.ty.value = 0;
+              runOnJS(onIndexChange)(target);
+              offset.value = withSpring(-target * pageWidth, Springs.slide);
+            } else {
+              // Settle the photo back inside its bounds, momentum seeded.
+              const settledTx = clamp(
+                nx + event.velocityX * 0.08,
+                -current.boundX.value,
+                current.boundX.value
+              );
+              const settledTy = clamp(
+                baseZoomTy.value + dy + event.velocityY * 0.08,
+                -current.boundY.value,
+                current.boundY.value
+              );
+              current.tx.value = withSpring(settledTx, Springs.gentle);
+              current.ty.value = withSpring(settledTy, Springs.gentle);
+              offset.value = withSpring(-homePage.value * pageWidth, Springs.snappy);
+            }
           }
         }
         ended.value = true;

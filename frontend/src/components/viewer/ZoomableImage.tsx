@@ -14,22 +14,11 @@ import Animated, {
 
 import { ZoomFill } from '@/components/viewer/ZoomableImage.styles';
 import type { PhotoAsset } from '@/data/types';
+import { shouldCommitPinchDismiss, PINCH_FLOOR } from '@/animations/gestures';
 import { Durations, Springs } from '@/theme/tokens';
 
 const MAX_SCALE = 5;
 const DOUBLE_TAP_SCALE = 2.5;
-
-/** Pinch shrink past 1× that commits the dismiss (iOS Photos turns the pinch into the close). */
-export const DISMISS_COMMIT_SCALE = 0.92;
-/** Pinch velocity (scale/s) considered a deliberate shrink. */
-export const DISMISS_COMMIT_VELOCITY = -1;
-/** Visual floor for the pinch-shrunk photo. */
-export const PINCH_FLOOR = 0.45;
-
-/** Pure dismiss-pinch commit decision — exported for unit tests. */
-export function shouldCommitPinchDismiss(scale: number, velocity: number): boolean {
-  return scale <= DISMISS_COMMIT_SCALE || velocity <= DISMISS_COMMIT_VELOCITY;
-}
 
 /**
  * Overlay-owned shared values a page drives while a pinch shrinks the photo

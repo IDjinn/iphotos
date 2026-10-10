@@ -69,13 +69,12 @@ Já implementado:
 - **Pinch 1×..MAX** com clamp focal + **double-tap 2×** ancorado + **single-tap** (`ZoomableImage.tsx`).
 - Chrome (`ViewerChrome`), vídeo (`VideoPage`), `FastScroll`, haptics (`expo-haptics`).
 
-Gaps (ordem sugerida):
+Gaps identificados na pesquisa — **todos implementados em 2026-10-10** (§8):
 
-1. **Pinch-to-dismiss** — pinch abaixo de 1× deve continuar no dismiss (maior assinatura ausente).
-2. **Pinch de colunas na grade** — v1 discreta com snap + haptic; versão fluida é layout custom (referência SWM part 1).
-3. **Zoomed pan edge-carry** para a foto vizinha (exclusividade entre o pan da imagem zoomada e o pan do pager).
-4. Resistência nas extremidades do pager; conferir dismiss diagonal.
-5. Scrubber de vídeo arrastável (controles custom do expo-video).
+1. ~~**Pinch-to-dismiss**~~ ✅ implementado (§8.1) — a maior assinatura ausente.
+2. ~~**Pinch de colunas na grade**~~ ✅ implementado na versão discreta com snap + haptic (§8.3); a versão fluida (morph contínuo) segue pendente.
+3. ~~**Zoomed pan edge-carry**~~ ✅ implementado (§8.2). A resistência nas extremidades do paging já existia (fator 0.3).
+4. ~~**Scrubber de vídeo arrastável**~~ ✅ implementado (§8.4).
 
 ## 6. Estratégia de replicação (stack: RNGH 2.32 + Reanimated 4.5 + FlashList + expo-image)
 
@@ -88,8 +87,21 @@ Gaps (ordem sugerida):
 
 ## 7. Decisões
 
-- (Nenhuma ainda — ao implementar, propor D23: "UX da galeria segue o padrão iOS Fotos; sem libs externas de viewer".)
+- **D23** (2026-10-10): a UX da galeria segue o padrão do app Fotos (iOS); gestos replicados em **JS puro** (RNGH + Reanimated, cross-platform), **sem libs externas de viewer**; a transição tile↔viewer permanece no hero próprio (o AppleZoom do Expo é iOS 18+ only e não cobre Android).
 
-## 8. Registro
+## 8. Implementação (2026-10-10)
+
+1. **Pinch-to-dismiss** (`ZoomableImage.tsx` + drivers em `ViewerPager.tsx`): o pinch que cruza 1× para baixo passa a dirigir os mesmos canais do pull-down (`dismissScale`/`dismissTy`/`backdropOpacity`/`hideNeighbors`), com shrink ancorado no focal; commit no release quando `scale ≤ 0.92` ou `velocity ≤ −1.0` (`shouldCommitPinchDismiss`), senão spring de volta (`Springs.gentle`). O close flight do overlay já começa do ponto onde o pinch soltou — handoff pixel-invisível reutilizado. Sem os drivers (vídeo), o pinch clampa em 1× como antes.
+2. **Zoomed pan edge-carry** (`ViewerPager.tsx`, MODE_ZOOM): o excesso horizontal além dos bounds do zoom carrega para o offset do pager (resistência 0.35; rubber-band 0.15 na primeira/última página); no release vira página se o excesso > 20% da tela, ou > 24 dp com `|velocityX| > 600` na mesma direção; caso contrário a foto assenta de volta nos bounds com momentum semeado. `onFinalize` cobre o cancelamento do gesto.
+3. **Pinch de colunas** (`usePinchColumns.ts`): gesto contínuo com acumulador (passo por fator 1.3×, clamp 2–7 colunas, `haptic('selection')` por passo, estado por sessão — iOS não persiste). `PhotoGrid` é agnóstico a colunas (linhas pré-loteadas) e preserva a âncora da 1ª foto visível entre re-batches (`photoAnchorAtOffset`/`offsetForPhotoIndex` em `grid-metrics.ts`); `CloudGallery`/`CloudPhotoGrid` remontam a FlatList com `key={columns}` (exigência do RN) e restauram o offset escalado pela razão de colunas; rail da CloudGallery parametrizado.
+4. **Scrubber de vídeo** (`VideoPage.tsx` + styles): barra fina no rodapé espelhando o chrome (`chromeVisible` thread Overlay→Pager→página); `timeUpdate` alimenta shared values (sem re-render; labels `m:ss`/`-m:ss` re-renderizam só no segundo inteiro); arraste pausa e faz seek ao vivo (retoma se estava tocando), thumb + labels aparecem ao agarrar; double-tap na superfície pula ±10 s e o single-tap espera o double falhar (mesmo trade-off do iOS).
+5. **Módulo puro** `src/animations/gestures.ts` (`shouldCommitPinchDismiss`, `applyPinchStep` + constantes de calibração) — sem imports de RN, testável e usado em worklets; testes novos em `gestures.test.ts` e âncoras em `grid-metrics.test.ts`.
+
+Constantes: `DISMISS_COMMIT_SCALE = 0.92`, `DISMISS_COMMIT_VELOCITY = −1.0`, `PINCH_FLOOR = 0.45`, `EDGE_COMMIT_RATIO = 0.2`, `EDGE_COMMIT_MIN = 24`, `EDGE_COMMIT_VELOCITY = 600`, `EDGE_RESISTANCE = 0.35`, `EDGE_RUBBER = 0.15`, `PINCH_STEP = 1.3`, `COLUMNS_MIN = 2`, `COLUMNS_MAX = 7`. Springs existentes reutilizados (`gentle/snappy/slide`).
+
+Verificação: `tsc --noEmit` limpo, vitest 49/49 (+11 novos), lint sem classes de erro novas (os erros `react-hooks/immutability` em `.value` de worklets são falso-positivos pré-existentes na base).
+
+## 9. Registro
 
 - Pesquisa: 2026-10-10.
+- Implementação dos gaps (pinch-to-dismiss, edge-carry, pinch de colunas, scrubber): 2026-10-10.
