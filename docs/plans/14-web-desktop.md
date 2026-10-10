@@ -119,6 +119,25 @@ web/
 - [x] `useFaceCropUrl` no `blob-cache.ts`: crop autenticado → object URL, LRU próprio (400) e `staleTime: Infinity` (RN não honra headers; na web o endpoint agora emite `Cache-Control: immutable` p/ o cache HTTP entre reloads)
 - [x] `FaceAvatar` (círculo com skeleton → fade opacity-only); `/people` (grade de círculos + fila de revisão "Same person?" com create/dismiss — dismiss persistido em localStorage) e `/people/[id]` (grade virtualizada como a galeria, rename inline, merge com diálogo + confirmação `AlertDialog`, delete com confirmação, viewer compartilhado)
 - [x] Entrada "People" na sidebar (`NAV_ITEMS`), command palette e e2e Playwright próprio
+- [x] **Round 6 (2026-10-10)**: stepper de faces com **3 vereditos** ("Same person" /
+  "Not sure" / "Not the same") gravados no backend (`POST /suggestions/review`) —
+  deferred volta quando a pessoa ganha rostos, rejected nunca mais para aquela
+  pessoa; review de grupos mostra **% match por candidato**; hub **colapsa** os
+  membros de um grupo pendente no tile do alvo ("+N groups · review")
+- [x] **Round 5 (2026-10-10)**: revisão "same person?" sai do grid do hub e vira
+  **banner dentro da página da pessoa** (faces candidatas + grupos de duplicados —
+  `personMergeGroups`, "Merge all"/"Merge into X"/"Not now" sobre o grid de fotos);
+  hub volta a ser grade uniforme de círculos com **ponto** de revisão pendente no
+  tile; grid de fotos da pessoa com o espaçamento da galeria (`CellWrap`);
+  botão **Review faces** abre revisão **uma por uma** (referência ao lado do
+  candidato, 140px, contador "n of m" + barra de progresso; "Same person"/"Not the
+  same" — só o aceito é aplicado ao finalizar); merge/delete navegam para a pessoa
+  sobrevivente **antes** de invalidar (sem passar por "Person not found"); payload
+  antigo em cache tolerado (`?? []`)
+- [x] **Round 4 (2026-10-10)**: fila de revisão ganha `personMerges` — card pessoa↔pessoa
+  (`PersonMergeSuggestion`) no slot da pessoa de origem: dois avatars, "Same person?",
+  % match, **Merge**/`Add to {nome}` (reusa `mergePeople`) ou Not now; toast "Merged into X"
+  *(substituído pelo Round 5: `personMergeGroups` + banner na página)*
 - [x] **Round 3 (2026-10-10)**: revisão "same person?" **dentro do slot da pessoa**
   no grid (estilo Google Fotos — sem lista plana): pessoa nomeada/unnamed com faces
   pendentes vira card com avatar + candidatos + "% match" + Add/Not now; seção

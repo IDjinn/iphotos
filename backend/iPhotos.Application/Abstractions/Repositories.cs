@@ -197,6 +197,23 @@ public interface IFaceRepository
         Guid ownerId, Guid personId, int page, int pageSize, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Per-face review verdicts (doc 18 §7.4): the persisted "not the same"
+/// and "not sure" answers from the one-by-one review, scoped to one person.</summary>
+public interface IFaceReviewRepository
+{
+    Task<IReadOnlyList<FaceReviewDecision>> ListForOwnerAsync(
+        Guid ownerId, CancellationToken cancellationToken = default);
+
+    Task AddRangeAsync(IReadOnlyList<FaceReviewDecision> decisions, CancellationToken cancellationToken = default);
+
+    /// <summary>Moves every decision of one person to another (merge: a rejection
+    /// of a fragment carries over to the surviving person).</summary>
+    Task ReassignPersonAsync(Guid fromPersonId, Guid toPersonId, CancellationToken cancellationToken = default);
+
+    /// <summary>Drops every decision aimed at one person (delete path).</summary>
+    Task DeleteForPersonAsync(Guid personId, CancellationToken cancellationToken = default);
+}
+
 public interface IPhotoLabelRepository
 {
     /// <summary>Replaces the photo's label set in one transaction.</summary>

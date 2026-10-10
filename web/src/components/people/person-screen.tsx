@@ -6,25 +6,34 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowLeftIcon,
+  CircleHelpIcon,
   ImageOffIcon,
+  ImagesIcon,
   MergeIcon,
   PencilIcon,
   PlayIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { CloudPhoto } from "@/data/cloud-photos-repository";
 import {
+  acceptMergeSuggestion,
   deletePerson,
   getPerson,
   listPeople,
   listPersonPhotos,
+  listPersonSuggestions,
   mergePeople,
   renamePerson,
+  submitFaceReview,
+  type MergeSuggestion,
+  type PersonMergeGroup,
 } from "@/data/people-repository";
 import { useViewerStore } from "@/stores/ui";
 import { AuthImage } from "@/components/media/auth-image";
 import {
+  CellWrap,
   GridInner,
   GridRow,
   GridScroll,
@@ -39,12 +48,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FaceAvatar } from "./face-avatar";
+import { ReviewMore } from "./people.styles";
 import {
   ConfidenceBar,
   ConfidenceFill,
@@ -56,7 +67,16 @@ import {
   PersonHeader,
   PersonSubtitle,
   PersonTitle,
+  ReviewBanner,
+  ReviewBannerActions,
+  ReviewBannerFaces,
+  ReviewBannerInfo,
+  ReviewProgress,
+  ReviewProgressFill,
+  ReviewStep,
+  ReviewStepFigure,
 } from "./person.styles";
+import { useSuggestionDismissals } from "./use-suggestion-dismissals";
 
 const PAGE_SIZE = 60;
 /** Measured layout for the virtualized grid (dynamic runtime values). */
@@ -87,6 +107,206 @@ export function PersonScreen({ personId }: { personId: string }) {
     queryFn: () => getPerson(personId),
   });
   const confidence = detailQuery.data?.confidence ?? null;
+
+  // ── Pending "same person?" review (doc 18 §7.4) — lives on this page so the
+  // people hub stays a uniform grid. Faces may join this person; whole duplicate
+  // groups may fold into it (or this person into another).
+  const { dismissed, dismiss } = useSuggestionDismissals();
+  const suggestionsQuery = useQuery({
+    queryKey: ["people-suggestions"],
+    queryFn: listPersonSuggestions,
+  });
+  /** The review action in flight — only its button disables. */
+  const [busyReviewId, setBusyReviewId] = useState<string | null>(null);
+  /** One-by-one review dialog, opened from a banner ("faces" = unassigned
+   * candidates, "group" = duplicate people). */
+  const [reviewFor, setReviewFor] = useState<"faces" | "group" | null>(null);
+  /** Stepper position and the verdicts so far — applied when the review ends. */
+  const [stepIndex, setStepIndex] = useState(0);
+  const [acceptedIds, setAcceptedIds] = useState<string[]>([]);
+  const [rejectedFaceIds, setRejectedFaceIds] = useState<string[]>([]);
+  const [unsureFaceIds, setUnsureFaceIds] = useState<string[]>([]);
+
+  // `?? []` keeps stale cached payloads (or a mid-deploy API) from crashing —
+  // old responses predate personMergeGroups.
+  const pendingFaceMerge = useMemo(
+    () =>
+      (suggestionsQuery.data?.merges ?? []).find(
+        (m) => m.personId === personId && !dismissed.includes(m.id),
+      ) ?? null,
+    [suggestionsQuery.data, personId, dismissed],
+  );
+  const pendingGroup = useMemo(() => {
+    const group = (suggestionsQuery.data?.personMergeGroups ?? []).find(
+      (g) =>
+        !dismissed.includes(g.id) &&
+        (g.target.personId === personId ||
+          g.members.some((m) => m.personId === personId)),
+    );
+    return group ?? null;
+  }, [suggestionsQuery.data, personId, dismissed]);
+
+  const invalidateReview = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["people"] });
+    await queryClient.invalidateQueries({ queryKey: ["people-suggestions"] });
+    await queryClient.invalidateQueries({ queryKey: ["person-photos"] });
+    await queryClient.invalidateQueries({ queryKey: ["person-detail"] });
+  };
+
+  const addFaces = useMutation({
+    mutationFn: (suggestion: MergeSuggestion) =>
+      acceptMergeSuggestion(personId, suggestion.faceIds),
+    onMutate: (suggestion) => setBusyReviewId(suggestion.id),
+    onSuccess: async (_data, suggestion) => {
+      setBusyReviewId(null);
+      setReviewFor(null);
+      await invalidateReview();
+      toast.success(`Added ${suggestion.faceCount} ${suggestion.faceCount === 1 ? "face" : "faces"}`);
+    },
+    onError: () => {
+      setBusyReviewId(null);
+      toast.error("Couldn't add the faces. Try again.");
+    },
+  });
+
+  /** Merges exactly the reviewed subset into the target — the stepper's verdict
+   * and the banner's "Merge all" both land here. */
+  const mergeReviewed = useMutation({
+    mutationFn: async (vars: { personIds: string[]; targetId: string; suggestionId: string }) => {
+      for (const id of vars.personIds) {
+        await mergePeople(id, vars.targetId);
+      }
+      return vars;
+    },
+    onMutate: (vars) => setBusyReviewId(vars.suggestionId),
+    onSuccess: async (_data, vars) => {
+      setBusyReviewId(null);
+      setReviewFor(null);
+      // If this page's person folded into the target, follow it.
+      if (vars.personIds.includes(personId) && personId !== vars.targetId) {
+        router.push(`/people/${vars.targetId}`);
+      }
+      await invalidateReview();
+      toast.success(
+        `Merged ${vars.personIds.length} ${vars.personIds.length === 1 ? "person" : "people"}`,
+      );
+    },
+    onError: () => {
+      setBusyReviewId(null);
+      toast.error("Couldn't merge the people. Try again.");
+    },
+  });
+
+  const addReviewedFaces = useMutation({
+    mutationFn: (vars: {
+      acceptedFaceIds: string[];
+      rejectedFaceIds: string[];
+      unsureFaceIds: string[];
+      suggestionId: string;
+    }) => submitFaceReview(personId, {
+        acceptedFaceIds: vars.acceptedFaceIds,
+        rejectedFaceIds: vars.rejectedFaceIds,
+        unsureFaceIds: vars.unsureFaceIds,
+      }),
+    onMutate: (vars) => setBusyReviewId(vars.suggestionId),
+    onSuccess: async (_data, vars) => {
+      setBusyReviewId(null);
+      setReviewFor(null);
+      dismiss(vars.suggestionId);
+      await invalidateReview();
+      toast.success(
+        vars.acceptedFaceIds.length > 0
+          ? `Added ${vars.acceptedFaceIds.length} ${
+              vars.acceptedFaceIds.length === 1 ? "face" : "faces"
+            }`
+          : "Review saved",
+      );
+    },
+    onError: () => {
+      setBusyReviewId(null);
+      toast.error("Couldn't save the review. Try again.");
+    },
+  });
+
+  // ── One-by-one stepper ──────────────────────────────────────────────────────
+  const reviewItems =
+    reviewFor === "faces"
+      ? (pendingFaceMerge?.faceIds ?? [])
+      : (pendingGroup?.members.map((m) => m.personId) ?? []);
+  const stepMember = reviewFor === "group" ? pendingGroup?.members[stepIndex] : undefined;
+
+  const openReview = (kind: "faces" | "group") => {
+    setAcceptedIds([]);
+    setRejectedFaceIds([]);
+    setUnsureFaceIds([]);
+    setStepIndex(0);
+    setReviewFor(kind);
+  };
+
+  const finishReview = () => {
+    if (reviewFor === "faces") {
+      if (pendingFaceMerge) {
+        addReviewedFaces.mutate({
+          acceptedFaceIds: acceptedIds,
+          rejectedFaceIds: rejectedFaceIds,
+          unsureFaceIds: unsureFaceIds,
+          suggestionId: pendingFaceMerge.id,
+        });
+      }
+    } else if (pendingGroup) {
+      if (acceptedIds.length > 0) {
+        mergeReviewed.mutate({
+          personIds: acceptedIds,
+          targetId: pendingGroup.target.personId,
+          suggestionId: pendingGroup.id,
+        });
+      } else {
+        dismiss(pendingGroup.id);
+        setReviewFor(null);
+      }
+    }
+  };
+
+  /** Advances the stepper; on the last step applies the verdicts. */
+  const advance = (verdict?: "accept" | "reject" | "defer") => {
+    if (verdict === "accept") {
+      setAcceptedIds((prev) => [...prev, reviewItems[stepIndex]]);
+    } else if (verdict === "reject") {
+      setRejectedFaceIds((prev) => [...prev, reviewItems[stepIndex]]);
+    } else if (verdict === "defer") {
+      setUnsureFaceIds((prev) => [...prev, reviewItems[stepIndex]]);
+    }
+
+    if (stepIndex + 1 < reviewItems.length) {
+      setStepIndex(stepIndex + 1);
+    } else {
+      finishReview();
+    }
+  };
+
+  const skipStep = () => {
+    if (stepIndex + 1 < reviewItems.length) {
+      setStepIndex(stepIndex + 1);
+    } else {
+      finishReview();
+    }
+  };
+
+  const mergeIntoTarget = useMutation({
+    mutationFn: (group: PersonMergeGroup) => mergePeople(personId, group.target.personId),
+    onMutate: (group) => setBusyReviewId(group.id),
+    onSuccess: async (_data, group) => {
+      setBusyReviewId(null);
+      // Leave the dead page before refetching — see the merge dialog above.
+      router.push(`/people/${group.target.personId}`);
+      await invalidateReview();
+      toast.success(`Merged into ${group.target.name ?? "Unnamed"}`);
+    },
+    onError: () => {
+      setBusyReviewId(null);
+      toast.error("Couldn't merge the people. Try again.");
+    },
+  });
 
   const photosQuery = useInfiniteQuery({
     queryKey: ["person-photos", personId],
@@ -172,11 +392,13 @@ export function PersonScreen({ personId }: { personId: string }) {
     onSuccess: async (_data, targetId) => {
       setMergeOpen(false);
       setMergeTarget(null);
+      // Leave the dead page before refetching — the merged-away person is gone
+      // from the list, so waiting would land on "Person not found".
+      router.push(`/people/${targetId}`);
       await queryClient.invalidateQueries({ queryKey: ["people"] });
       await queryClient.invalidateQueries({ queryKey: ["person-photos"] });
       await queryClient.invalidateQueries({ queryKey: ["person-detail"] });
       toast.success("People merged");
-      router.push(`/people/${targetId}`);
     },
     onError: () => toast.error("Couldn't merge the people. Try again."),
   });
@@ -187,11 +409,10 @@ export function PersonScreen({ personId }: { personId: string }) {
     mutationFn: () => deletePerson(personId),
     onSuccess: async () => {
       setDeleteOpen(false);
-      await queryClient.invalidateQueries({ queryKey: ["people"] });
-      await queryClient.invalidateQueries({ queryKey: ["person-photos"] });
-      await queryClient.invalidateQueries({ queryKey: ["person-detail"] });
-      toast.success("Person deleted — their faces are now unassigned");
+      // Same as merge: leave before the list refetch drops this person.
       router.push("/people");
+      await queryClient.invalidateQueries({ queryKey: ["people"] });
+      toast.success("Person deleted — their faces are now unassigned");
     },
     onError: () => toast.error("Couldn't delete the person. Try again."),
   });
@@ -286,6 +507,179 @@ export function PersonScreen({ personId }: { personId: string }) {
         </PersonActions>
       </PersonHeader>
 
+      {pendingFaceMerge ? (
+        <ReviewBanner aria-label="Faces that may belong to this person">
+          <ReviewBannerFaces>
+            <FaceAvatar
+              faceId={pendingFaceMerge.coverFaceId}
+              size={40}
+              label="Suggested face"
+            />
+            {pendingFaceMerge.faceCount > 1 ? (
+              <ReviewMore>+{pendingFaceMerge.faceCount - 1}</ReviewMore>
+            ) : null}
+          </ReviewBannerFaces>
+          <ReviewBannerInfo>
+            <strong>
+              {pendingFaceMerge.faceCount} new{" "}
+              {pendingFaceMerge.faceCount === 1 ? "face looks" : "faces look"} like this
+              person
+            </strong>
+            <span>{Math.round(pendingFaceMerge.similarity * 100)}% match</span>
+          </ReviewBannerInfo>
+          <ReviewBannerActions>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busyReviewId !== null}
+              onClick={() => openReview("faces")}
+            >
+              <ImagesIcon aria-hidden />
+              Review faces
+            </Button>
+            <Button
+              size="sm"
+              disabled={busyReviewId !== null}
+              onClick={() => addFaces.mutate(pendingFaceMerge)}
+            >
+              <MergeIcon aria-hidden />
+              {busyReviewId === pendingFaceMerge.id ? "Adding…" : "Add faces"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Dismiss suggestion"
+              disabled={busyReviewId !== null}
+              onClick={() => dismiss(pendingFaceMerge.id)}
+            >
+              <XIcon aria-hidden />
+              Not now
+            </Button>
+          </ReviewBannerActions>
+        </ReviewBanner>
+      ) : null}
+
+      {pendingGroup ? (
+        pendingGroup.target.personId === personId ? (
+          <ReviewBanner aria-label="Similar people review">
+            <ReviewBannerFaces>
+              {pendingGroup.members.slice(0, 4).map((member) => (
+                <FaceAvatar
+                  key={member.personId}
+                  faceId={member.coverFaceId}
+                  size={40}
+                  label={member.name ?? "Unnamed"}
+                />
+              ))}
+            </ReviewBannerFaces>
+            <ReviewBannerInfo>
+              <strong>
+                {pendingGroup.members.length} similar{" "}
+                {pendingGroup.members.length === 1 ? "group looks" : "groups look"} like
+                the same person
+              </strong>
+              <span>
+                {pendingGroup.target.faceCount + pendingGroup.members.reduce((sum, m) => sum + m.faceCount, 0)}{" "}
+                faces total · {Math.round(pendingGroup.minSimilarity * 100)}% match
+              </span>
+            </ReviewBannerInfo>
+            <ReviewBannerActions>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busyReviewId !== null}
+                onClick={() => openReview("group")}
+              >
+                <ImagesIcon aria-hidden />
+                Review faces
+              </Button>
+              <Button
+                size="sm"
+                disabled={busyReviewId !== null}
+                onClick={() =>
+                  mergeReviewed.mutate({
+                    personIds: pendingGroup.members.map((m) => m.personId),
+                    targetId: pendingGroup.target.personId,
+                    suggestionId: pendingGroup.id,
+                  })
+                }
+              >
+                <MergeIcon aria-hidden />
+                {busyReviewId === pendingGroup.id ? "Merging…" : "Merge all"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Dismiss suggestion"
+                disabled={busyReviewId !== null}
+                onClick={() => dismiss(pendingGroup.id)}
+              >
+                <XIcon aria-hidden />
+                Not now
+              </Button>
+            </ReviewBannerActions>
+          </ReviewBanner>
+        ) : (
+          <ReviewBanner aria-label="Similar person review">
+            <ReviewBannerFaces>
+              <FaceAvatar
+                faceId={person?.coverFaceId}
+                size={40}
+                label={person?.name ?? "Unnamed"}
+              />
+              <FaceAvatar
+                faceId={pendingGroup.target.coverFaceId}
+                size={40}
+                label={pendingGroup.target.name ?? "Unnamed"}
+              />
+            </ReviewBannerFaces>
+            <ReviewBannerInfo>
+              <strong>
+                Same person as {pendingGroup.target.name ?? "Unnamed"}?
+              </strong>
+              <span>
+                {pendingGroup.target.faceCount}{" "}
+                {pendingGroup.target.faceCount === 1 ? "face" : "faces"} ·{" "}
+                {Math.round(pendingGroup.minSimilarity * 100)}% match
+              </span>
+            </ReviewBannerInfo>
+            <ReviewBannerActions>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busyReviewId !== null}
+                onClick={() => openReview("group")}
+              >
+                <ImagesIcon aria-hidden />
+                Review faces
+              </Button>
+              <Button
+                size="sm"
+                disabled={busyReviewId !== null}
+                onClick={() => mergeIntoTarget.mutate(pendingGroup)}
+              >
+                <MergeIcon aria-hidden />
+                {busyReviewId === pendingGroup.id
+                  ? "Merging…"
+                  : pendingGroup.target.name
+                    ? `Merge into ${pendingGroup.target.name}`
+                    : "Merge"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Dismiss suggestion"
+                disabled={busyReviewId !== null}
+                onClick={() => dismiss(pendingGroup.id)}
+              >
+                <XIcon aria-hidden />
+                Not now
+              </Button>
+            </ReviewBannerActions>
+          </ReviewBanner>
+        )
+      ) : null}
+
       {confidence !== null ? (
         <ConfidenceBar role="status">
           <span>Match confidence</span>
@@ -374,6 +768,105 @@ export function PersonScreen({ personId }: { personId: string }) {
         </DialogContent>
       </Dialog>
 
+      {/* One-by-one review (doc 18 §7.4): the person as reference beside a
+          single large candidate — judged one at a time, applied at the end. */}
+      <Dialog
+        open={reviewFor !== null && reviewItems.length > 0}
+        onOpenChange={(open) => (!open ? setReviewFor(null) : null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Is this the same person?</DialogTitle>
+            <DialogDescription>
+              {reviewFor === "faces"
+                ? "Compare each face with this person — accepted faces are added when you finish."
+                : "Compare each group with the one that survives — merges apply when you finish."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <ReviewStep>
+            <ReviewStepFigure>
+              <FaceAvatar
+                faceId={
+                  reviewFor === "faces"
+                    ? (person?.coverFaceId ?? null)
+                    : (pendingGroup?.target.coverFaceId ?? null)
+                }
+                size={140}
+                label="Reference person"
+              />
+              <span>
+                {reviewFor === "faces"
+                  ? (person?.name ?? "Unnamed")
+                  : (pendingGroup?.target.name ?? "Unnamed")}
+              </span>
+            </ReviewStepFigure>
+            <ReviewStepFigure>
+              <FaceAvatar
+                faceId={
+                  reviewFor === "faces"
+                    ? (reviewItems[stepIndex] ?? null)
+                    : (pendingGroup?.members[stepIndex]?.coverFaceId ?? null)
+                }
+                size={140}
+                label="Candidate"
+              />
+              <span>
+                {reviewFor === "faces"
+                  ? "Candidate face"
+                  : `${stepMember?.name ?? "Unnamed"} · ${stepMember?.faceCount ?? 0} faces${
+                      stepMember?.similarity != null
+                        ? ` · ${Math.round(stepMember.similarity * 100)}% match`
+                        : ""
+                    }`}
+              </span>
+            </ReviewStepFigure>
+          </ReviewStep>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs tabular-nums text-[var(--muted-foreground)]">
+              {stepIndex + 1} of {reviewItems.length}
+            </span>
+            <ReviewProgress aria-hidden>
+              <ReviewProgressFill
+                $value={reviewItems.length > 0 ? stepIndex / reviewItems.length : 0}
+              />
+            </ReviewProgress>
+          </div>
+
+          <DialogFooter>
+            {reviewFor === "faces" ? (
+              <Button
+                variant="ghost"
+                disabled={busyReviewId !== null}
+                onClick={() => advance("defer")}
+              >
+                <CircleHelpIcon aria-hidden />
+                Not sure
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              disabled={busyReviewId !== null}
+              onClick={() => (reviewFor === "faces" ? advance("reject") : skipStep())}
+            >
+              <XIcon aria-hidden />
+              {reviewFor === "faces" ? "Not the same" : "Not now"}
+            </Button>
+            <Button disabled={busyReviewId !== null} onClick={() => advance("accept")}>
+              <MergeIcon aria-hidden />
+              {busyReviewId !== null
+                ? reviewFor === "faces"
+                  ? "Adding…"
+                  : "Merging…"
+                : reviewFor === "faces"
+                  ? "Same person"
+                  : "Same person — merge"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog
         open={mergeTarget !== null}
         onOpenChange={(open) => (open ? null : setMergeTarget(null))}
@@ -432,27 +925,29 @@ export function PersonScreen({ personId }: { personId: string }) {
   );
 }
 
-/** Viewer cell for the person grid — no selection, tap to open. */
+/** Viewer cell for the person grid — no selection, tap to open. Sized through
+ * CellWrap so the row spacing matches the gallery grid exactly. */
 function PersonCell({ photo, size, onOpen }: { photo: CloudPhoto; size: number; onOpen: () => void }) {
   const isVideo = photo.mediaType === "Video";
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`Open ${photo.fileName}`}
-      className="relative block cursor-pointer overflow-hidden rounded-[var(--radius-md)] bg-[var(--muted)]"
-      style={{ width: size, height: size }}
-    >
-      <AuthImage photo={photo} fill />
-      {isVideo ? (
-        <span
-          aria-hidden
-          className="absolute bottom-1 left-1 flex items-center gap-1 rounded-[var(--radius-sm)] bg-black/70 px-1.5 py-0.5 text-xs text-white"
-        >
-          <PlayIcon className="size-3" fill="currentColor" />
-          {photo.durationSeconds ? formatDuration(photo.durationSeconds) : null}
-        </span>
-      ) : null}
-    </button>
+    <CellWrap style={{ width: size, height: size }}>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open ${photo.fileName}`}
+        className="relative block size-full cursor-pointer overflow-hidden rounded-[var(--radius-md)] bg-[var(--muted)]"
+      >
+        <AuthImage photo={photo} fill />
+        {isVideo ? (
+          <span
+            aria-hidden
+            className="absolute bottom-1 left-1 flex items-center gap-1 rounded-[var(--radius-sm)] bg-black/70 px-1.5 py-0.5 text-xs text-white"
+          >
+            <PlayIcon className="size-3" fill="currentColor" />
+            {photo.durationSeconds ? formatDuration(photo.durationSeconds) : null}
+          </span>
+        ) : null}
+      </button>
+    </CellWrap>
   );
 }

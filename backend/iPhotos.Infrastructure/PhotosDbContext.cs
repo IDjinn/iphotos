@@ -43,6 +43,8 @@ public sealed class PhotosDbContext(DbContextOptions<PhotosDbContext> options) :
 
     public DbSet<PhotoFace> PhotoFaces => Set<PhotoFace>();
 
+    public DbSet<FaceReviewDecision> FaceReviewDecisions => Set<FaceReviewDecision>();
+
     public DbSet<PhotoLabel> PhotoLabels => Set<PhotoLabel>();
 
     public DbSet<MlJob> MlJobs => Set<MlJob>();
@@ -214,6 +216,29 @@ public sealed class PhotosDbContext(DbContextOptions<PhotosDbContext> options) :
                 .WithMany()
                 .HasForeignKey(f => f.PersonId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // Per-face review verdicts (doc 18 §7.4): rejections/deferrals from the
+        // one-by-one review. Cascades follow both lifecycles: face deletion drops
+        // its verdicts; person deletion (recluster/merge/delete) drops the ones
+        // aimed at it — merges reassign them to the survivor first.
+        modelBuilder.Entity<FaceReviewDecision>(entity =>
+        {
+            entity.ToTable("face_review_decisions");
+            entity.HasKey(d => d.Id);
+            entity.Property(d => d.Decision).HasConversion<string>().HasMaxLength(10);
+            entity.HasIndex(d => new { d.OwnerId, d.PersonId });
+            entity.HasIndex(d => d.FaceId);
+
+            entity.HasOne<PhotoFace>()
+                .WithMany()
+                .HasForeignKey(d => d.FaceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<Person>()
+                .WithMany()
+                .HasForeignKey(d => d.PersonId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<PhotoLabel>(entity =>

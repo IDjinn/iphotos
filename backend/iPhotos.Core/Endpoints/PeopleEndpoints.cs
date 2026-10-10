@@ -91,6 +91,25 @@ public static class PeopleEndpoints
         })
         .WithName("AcceptMergeSuggestion");
 
+        // One-by-one review verdicts (doc 18 §7.4): accepted faces join the
+        // person; rejections/deferrals persist so the queue stops re-asking.
+        group.MapPost("/suggestions/review", async (
+            ClaimsPrincipal principal,
+            ReviewSuggestionRequest request,
+            PersonService people,
+            CancellationToken cancellationToken) =>
+        {
+            await people.ReviewSuggestionAsync(
+                principal.GetUserId(),
+                request.PersonId,
+                request.AcceptedFaceIds,
+                request.RejectedFaceIds,
+                request.UnsureFaceIds,
+                cancellationToken);
+            return Results.NoContent();
+        })
+        .WithName("ReviewSuggestion");
+
         // targetPersonId null = start a new person with the moved face (split).
         group.MapPost("/{id:guid}/faces", async (
             Guid id,
@@ -149,4 +168,10 @@ public static class PeopleEndpoints
     public sealed record AcceptSuggestionRequest(IReadOnlyList<Guid> FaceIds);
 
     public sealed record AcceptMergeSuggestionRequest(Guid PersonId, IReadOnlyList<Guid> FaceIds);
+
+    public sealed record ReviewSuggestionRequest(
+        Guid PersonId,
+        IReadOnlyList<Guid> AcceptedFaceIds,
+        IReadOnlyList<Guid> RejectedFaceIds,
+        IReadOnlyList<Guid> UnsureFaceIds);
 }

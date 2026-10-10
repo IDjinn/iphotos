@@ -61,6 +61,34 @@
 > Web: cards de revisão dentro do slot da pessoa no grid + seção "Unnamed" +
 > "New faces"; margens `lg` alinhadas à galeria. Testes: `PersonServiceTests` (8).
 >
+> **Round 4 (2026-10-10)** — **PersonMerges** (§7.4): `GET /api/people/suggestions`
+> passa a devolver também `personMerges` — pares de pessoas existentes cujos
+> centróides dão `≥ min(Suggest, Match)` (o caso "uma pessoa partida em vários
+> Unnamed"); source é sempre unnamed, named/lado maior absorve, cada pessoa entra
+> em no máximo uma sugestão (greedy), pares nome↔nome nunca sugeridos; aceite
+> reusa `POST /api/people/merge`. Web: card de revisão no slot da pessoa de
+> origem (dois avatars + "Merge"/"Add to X"). Testes: `PersonServiceTests` (13).
+> Sinal de timestamp/burst (fotos em sequência) avaliado e **não** implementado —
+> ver §7.5 (próximo passo: boost de aresta no grafo do Chinese Whispers).
+>
+> **Round 5 (2026-10-10)** — feedback da biblioteca real: (1) pares greedies +
+> cap 20 deixavam de fora os duplicados óbvios (ex. trio 68/48/46 faces da mesma
+> pessoa) — trocados por **grupos transitivos** (union-find) ordenados por total
+> de faces, `PersonMergeGroups` (§7.4); (2) cards dentro do grid do hub quebravam
+> o alinhamento — revisão movida para **banner na página da pessoa** (sobre o
+> grid de fotos) e hub volta a ser grade uniforme com ponto de pendência;
+> (3) grid de fotos da pessoa sem margem lateral — `PersonCell` reusa o
+> `CellWrap` da galeria. Web blindada contra payload antigo em cache
+> (`?? []` nos arrays da fila). Testes: `PersonServiceTests` (13, semântica de
+> grupos).
+>
+> **Round 6 (2026-10-10)** — decisões de revisão **por rosto** (§7.4): tabela
+> `face_review_decisions` + `POST /api/people/suggestions/review`; stepper ganha
+> "Not sure" (Deferred — volta quando a pessoa ganha rostos) e "Not the same"
+> (Rejected — nunca mais para aquela pessoa); grupos mostram confiança por
+> candidato (`PersonMergeMemberDto.Similarity`); hub colapsa membros pendentes no
+> tile do alvo ("+N groups · review"). Testes: `PersonServiceTests` (17).
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e
@@ -369,6 +397,55 @@ sem pessoa do owner, dividida por **destino** como no Google Fotos:
   owner-checked (404 cross-owner), pulam faces já atribuídas e disparam
   recompute exato (centróide/capa/contagem).
 
+**PersonMergeGroups (pessoa ↔ pessoa, Rounds 4–5)** — um `ClusterThreshold`
+rígido (0.90 na instância) costuma partir uma pessoa em vários grupos "Unnamed"
+cujos centróides continuam próximos. Pares com centróides `≥ min(Suggest, Match)`
+encadeiam **transitivamente** (A≈B≈C via union-find; pares nome↔nome nunca geram
+aresta — e componente com 2+ nomeadas é descartada) e viram **um** card só
+`PersonMergeGroupDto` (`target` = lado nomeado ou o maior; `members` ordenados
+por faceCount; `MinSimilarity` = elo mais fraco do grupo, exibido como % match
+conservador). A fila ordena por **total de faces** (os duplicados óbvios da
+biblioteca vêm primeiro), cap de 20. Id = SHA-256 truncado com tag `"pmg"` +
+ids dos membros ordenados. Nada é mesclado automaticamente: o aceite (um clique)
+reusa `POST /api/people/merge` uma vez por membro. **UI (web)**: a revisão mora
+**dentro da página da pessoa** (banner sobre o grid de fotos — "Merge all" no
+alvo, "Merge into X" nos membros, "Not now" persistido no mesmo localStorage);
+o hub `/people` volta a ser grade uniforme de círculos com um **ponto** nos tiles
+com revisão pendente. O botão "Review faces" abre o julgamento **um por um**
+(referência ao lado do candidato em crops grandes; avanço com contador e barra de
+progresso). **Round 6**: o stepper de faces tem três vereditos — "Same person",
+"Not sure" e "Not the same" — gravados no backend via `POST /suggestions/review`
+(novo payload com as 3 listas de face ids): **Rejected** nunca mais sugere o rosto
+para aquela pessoa (ainda pode ir para outra); **Deferred** fica em silêncio até a
+pessoa **ganhar rostos** (`FaceCount` > snapshot gravado na decisão = embedding
+melhorou) e então volta à fila — o "re-processar com embedding melhor" do Google
+Fotos. Entidade `FaceReviewDecision` (`face_review_decisions`, FKs cascade p/ face
+e pessoa; merge de pessoas reatribui as decisões da origem ao alvo). O review de
+grupos mostra a **confiança por candidato** (`PersonMergeMemberDto.Similarity`,
+centroide do membro vs. do alvo). **Listagem colapsada**: membros de um grupo
+pendente somem da grade do hub e aparecem como linha "+N groups · review" no tile
+do alvo — uma entrada por pessoa visual, sem mudar dado; dispensar a revisão
+devolve os tiles.
+
+### 7.5 Sinais auxiliares de agrupamento — timestamp/burst (design, não implementado)
+
+Pergunta do autor (Round 4): usar timestamp/metadados melhora o agrupamento?
+**Sim** — fotos tiradas em sequência (burst/mesmo evento) quase sempre contêm as
+mesmas pessoas, e dois rostos na **mesma foto** são garantidamente pessoas
+diferentes. O uso correto é como **peso de grafo**, não regra dura:
+
+- **Boost temporal** — no grafo do Chinese Whispers, pares de rostos cujas fotos
+  têm `TakenAt` a ≤ N segundos (burst; N ≈ 10) recebem um boost no peso da aresta
+  (ex. +0.15 no cosseno): pares de fronteira (0.75–0.90) cruzam o limiar, rostos
+  dissimilares continuam separados.
+- **Restrição negativa (mesma foto)** — aresta proibida entre dois rostos do
+  mesmo `PhotoId` (evita agrupar duas pessoas da mesma cena).
+- **Custo**: muda o contrato `IFaceClusterer.Cluster` (de embeddings para pares
+  `(embedding, takenAt?)`) + join faces→photos no job de recluster + testes —
+  rodada própria. O `SuggestAsync` (passes 1–3) continua só-embeddings.
+- **GPS/local** (se existir no EXIF ingerido) seguiria a mesma ideia por evento,
+  mas timestamp já cobre a maior parte do ganho para bursts.
+
 ## 8. Labels de cena (`VisionLabeler`, .NET)
 
 - Cliente HTTP tipado para o formato OpenAI (`POST {BaseUrl}/chat/completions`,
@@ -395,7 +472,8 @@ sem pessoa do owner, dividida por **destino** como no Google Fotos:
 | `POST /api/people/merge` | `{ sourceId, targetId }` |
 | `POST /api/people/{id}/faces` | `{ faceId, targetPersonId: uuid \| "new" }` |
 | `DELETE /api/people/{id}` | pessoa some; rostos ficam não atribuídos |
-| `GET /api/people/suggestions` | `{ newPeople: [...], merges: [...] }` (§7.4) |
+| `GET /api/people/suggestions` | `{ newPeople: [...], merges: [...], personMergeGroups: [...] }` (§7.4) |
+| `POST /api/people/suggestions/review` | `{ personId, acceptedFaceIds, rejectedFaceIds, unsureFaceIds }` — vereditos do review um a um (§7.4) |
 | `POST /api/people/suggestions/accept` | `{ faceIds }` → cria pessoa com os rostos |
 | `POST /api/people/suggestions/merge` | `{ personId, faceIds }` → atribui os rostos à pessoa |
 | `GET /api/faces/{id}/crop` | JPEG do rosto (auth igual `files/{kind}`, `Cache-Control: immutable`) |

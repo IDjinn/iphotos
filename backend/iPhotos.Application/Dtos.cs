@@ -216,12 +216,32 @@ public sealed record MergeSuggestionDto(
     IReadOnlyList<Guid> SamplePhotoIds,
     float Similarity);
 
+/// <summary>One of the existing people in a <see cref="PersonMergeGroupDto"/>.
+/// Similarity is this member's centroid-to-target cosine (null on the target
+/// itself) — the per-candidate confidence shown in the one-by-one review.</summary>
+public sealed record PersonMergeMemberDto(
+    Guid PersonId, string? Name, Guid? CoverFaceId, int FaceCount, float? Similarity);
+
+/// <summary>"Same person?" review card for several existing people (doc 18 §7.4):
+/// groups whose centroids chain together above the suggestion threshold — the
+/// typical split of one person into several "Unnamed" clusters. Accepting merges
+/// every Member into Target (the named or largest side); nothing is merged before
+/// that single confirmation. MinSimilarity is the weakest centroid link keeping
+/// the group together — the confidence shown in the review.</summary>
+public sealed record PersonMergeGroupDto(
+    string Id,
+    PersonMergeMemberDto Target,
+    IReadOnlyList<PersonMergeMemberDto> Members,
+    float MinSimilarity);
+
 /// <summary>The review queue split by destination (doc 18 §7.4): faces that look
-/// like an existing person (Merges, grouped per person) vs faces that would form
-/// a new person (NewPeople).</summary>
+/// like an existing person (Merges, grouped per person), faces that would form a
+/// new person (NewPeople), and existing people that look like each other
+/// (PersonMergeGroups).</summary>
 public sealed record PersonSuggestionsDto(
     IReadOnlyList<PersonSuggestionDto> NewPeople,
-    IReadOnlyList<MergeSuggestionDto> Merges);
+    IReadOnlyList<MergeSuggestionDto> Merges,
+    IReadOnlyList<PersonMergeGroupDto> PersonMergeGroups);
 
 public sealed record LabelCount(string Label, int Count);
 

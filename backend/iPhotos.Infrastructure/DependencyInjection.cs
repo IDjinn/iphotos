@@ -44,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<IBillingPurchaseRepository, BillingPurchaseRepository>();
         services.AddScoped<IPersonRepository, PersonRepository>();
         services.AddScoped<IFaceRepository, FaceRepository>();
+        services.AddScoped<IFaceReviewRepository, FaceReviewRepository>();
         services.AddScoped<IPhotoLabelRepository, PhotoLabelRepository>();
         services.AddScoped<IMlJobRepository, MlJobRepository>();
         // Blob storage backend is picked at resolution time (late binding keeps

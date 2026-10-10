@@ -533,7 +533,7 @@ export function ImportPanel() {
                     <div>
                       <strong>{totals.ignored}</strong>
                       <span>Ignored</span>
-                      <small>Files that aren't valid for upload</small>
+                      <small>Files that aren&apos;t valid for upload</small>
                     </div>
                     <div>
                       <strong>{totals.failed}</strong>

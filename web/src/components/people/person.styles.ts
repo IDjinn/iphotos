@@ -40,6 +40,106 @@ export const PersonActions = styled.div`
   gap: 0.5rem;
 `;
 
+/** "Same person?" review banner above the photo grid (doc 18 §7.4): the review
+ * lives inside the person's page, so the hub grid stays a uniform circle grid. */
+export const ReviewBanner = styled.section`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0 1rem 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+
+  ${breakpoint.lg} {
+    margin: 0 2rem 0.75rem;
+  }
+`;
+
+/** Overlapping circle row for a review banner's faces. */
+export const ReviewBannerFaces = styled.div`
+  display: flex;
+  align-items: center;
+
+  & > * + * {
+    margin-left: -0.75rem;
+  }
+
+  & > * {
+    box-shadow: 0 0 0 2px var(--background);
+  }
+`;
+
+export const ReviewBannerInfo = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  margin-right: auto;
+
+  strong {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  span {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+`;
+
+export const ReviewBannerActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+`;
+
+/** One-by-one review stepper (doc 18 §7.4): the person as reference on one side,
+ * a single candidate on the other — enough detail to actually judge. */
+export const ReviewStep = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1.5rem;
+`;
+
+export const ReviewStepFigure = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 10rem;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  text-align: center;
+
+  > span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+`;
+
+export const ReviewProgress = styled.div`
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: var(--muted);
+  overflow: hidden;
+`;
+
+export const ReviewProgressFill = styled.div<{ $value: number }>`
+  width: 100%;
+  height: 100%;
+  background: var(--primary);
+  transform: scaleX(${(props) => Math.min(1, Math.max(0, props.$value))});
+  transform-origin: left;
+`;
+
 /** Group-coherence readout under the header: how tight this person's faces are
  * (mean member-to-centroid similarity from the backend, 0..1). */
 export const ConfidenceBar = styled.div`

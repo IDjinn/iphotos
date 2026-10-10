@@ -46,11 +46,40 @@ export interface MergeSuggestion {
   similarity: number;
 }
 
+/** One of the existing people in a PersonMergeGroup. */
+export interface PersonMergeMember {
+  personId: string;
+  name: string | null;
+  coverFaceId: string | null;
+  faceCount: number;
+  /** This member's centroid-to-target cosine (null on the target itself) —
+   * the per-candidate confidence shown in the one-by-one review. */
+  similarity: number | null;
+}
+
+/** "Same person?" review card for several existing people (doc 18 §7.4): groups
+ * whose centroids chain together above the suggestion threshold — the typical
+ * split of one person into several "Unnamed" clusters. Accepting merges every
+ * member into the target (the named or largest side). Nothing merges before
+ * that single confirmation. */
+export interface PersonMergeGroup {
+  /** Stable hash of the sorted member ids — the key for persisted dismissals. */
+  id: string;
+  /** The person that absorbs the rest and keeps the name. */
+  target: PersonMergeMember;
+  /** The other members, largest first — each merges into the target. */
+  members: PersonMergeMember[];
+  /** Weakest centroid similarity linking the group (0..1) — the review
+   * confidence, shown as the conservative "% match". */
+  minSimilarity: number;
+}
+
 /** The review queue split by destination: merge into an existing person vs
- * start a new one. */
+ * start a new one vs merge existing people that look like each other. */
 export interface PersonSuggestions {
   newPeople: PersonSuggestion[];
   merges: MergeSuggestion[];
+  personMergeGroups: PersonMergeGroup[];
 }
 
 export interface PersonDetail extends Person {
@@ -110,6 +139,23 @@ export async function acceptMergeSuggestion(
   await apiJson<void>("/api/people/suggestions/merge", {
     method: "POST",
     body: { personId, faceIds },
+  });
+}
+
+/** Records the one-by-one review verdicts (doc 18 §7.4): accepted faces join
+ * the person, rejections stop resurfacing for that person, and unsure ones
+ * come back once the person's embedding improves (it gains faces). */
+export async function submitFaceReview(
+  personId: string,
+  submission: {
+    acceptedFaceIds: string[];
+    rejectedFaceIds: string[];
+    unsureFaceIds: string[];
+  },
+): Promise<void> {
+  await apiJson<void>("/api/people/suggestions/review", {
+    method: "POST",
+    body: { personId, ...submission },
   });
 }
 

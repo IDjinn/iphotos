@@ -20,6 +20,7 @@ public sealed class PersonServiceTests
 
     private readonly InMemoryPersonRepository persons = new();
     private readonly InMemoryFaceRepository faces = new();
+    private readonly InMemoryFaceReviewRepository reviews = new();
     private readonly PersonService service;
 
     public PersonServiceTests()
@@ -27,6 +28,7 @@ public sealed class PersonServiceTests
         service = new PersonService(
             persons,
             faces,
+            reviews,
             new ChineseWhispersClusterer(),
             new FakeUnitOfWork(),
             new StubDateTimeProvider(Now),
@@ -180,6 +182,196 @@ public sealed class PersonServiceTests
 
         await Assert.ThrowsAsync<NotFoundException>(
             () => service.AcceptMergeSuggestionAsync(Owner, alice.Id, [foreign.Id]));
+    }
+
+    [Fact]
+    public async Task SuggestAsync_chains_transitive_duplicates_into_a_single_group()
+    {
+        // A·B and B·C clear the threshold while A·C does not — one fragmented
+        // person whose clusters only connect through the middle one.
+        var big = NewPerson(null, UnitVector(1, 0, 0));
+        big.FaceCount = 48;
+        var mid = NewPerson(null, UnitVector(0.8f, 0.6f, 0));
+        mid.FaceCount = 13;
+        var far = NewPerson(null, UnitVector(0.25f, 0.968f, 0));
+        far.FaceCount = 4;
+
+        var result = await service.SuggestAsync(Owner);
+
+        var group = Assert.Single(result.PersonMergeGroups);
+        Assert.Equal(big.Id, group.Target.PersonId);
+        Assert.Equal([mid.Id, far.Id], group.Members.Select(m => m.PersonId).ToList());
+        Assert.True(group.MinSimilarity >= 0.75f);
+        Assert.Empty(result.Merges);
+        Assert.Empty(result.NewPeople);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_orders_person_merge_groups_by_total_faces()
+    {
+        var bigA = NewPerson(null, UnitVector(1, 0, 0));
+        bigA.FaceCount = 90;
+        var bigB = NewPerson(null, UnitVector(0.97f, 0.24f, 0));
+        bigB.FaceCount = 30;
+        var smallA = NewPerson(null, UnitVector(0, 1, 0));
+        smallA.FaceCount = 15;
+        var smallB = NewPerson(null, UnitVector(0.24f, 0.97f, 0));
+        smallB.FaceCount = 5;
+
+        var result = await service.SuggestAsync(Owner);
+
+        Assert.Equal(2, result.PersonMergeGroups.Count);
+        Assert.Equal(bigA.Id, result.PersonMergeGroups[0].Target.PersonId);
+        Assert.Equal(smallA.Id, result.PersonMergeGroups[1].Target.PersonId);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_person_merge_targets_the_named_side()
+    {
+        var named = NewPerson("Lucas", UnitVector(1, 0, 0));
+        named.FaceCount = 3;
+        var unnamed = NewPerson(null, UnitVector(0.97f, 0.24f, 0));
+        unnamed.FaceCount = 9;
+
+        var result = await service.SuggestAsync(Owner);
+
+        var group = Assert.Single(result.PersonMergeGroups);
+        Assert.Equal(named.Id, group.Target.PersonId);
+        var member = Assert.Single(group.Members);
+        Assert.Equal(unnamed.Id, member.PersonId);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_never_suggests_merging_two_named_people()
+    {
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        alice.FaceCount = 3;
+        var bea = NewPerson("Bea", UnitVector(0.97f, 0.24f, 0));
+        bea.FaceCount = 3;
+
+        var result = await service.SuggestAsync(Owner);
+
+        Assert.Empty(result.PersonMergeGroups);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_suggests_person_merges_without_unassigned_faces()
+    {
+        var big = NewPerson(null, UnitVector(1, 0, 0));
+        big.FaceCount = 10;
+        var small = NewPerson(null, UnitVector(0.97f, 0.24f, 0));
+        small.FaceCount = 4;
+
+        var result = await service.SuggestAsync(Owner);
+
+        var group = Assert.Single(result.PersonMergeGroups);
+        Assert.Equal(big.Id, group.Target.PersonId);
+    }
+
+    [Fact]
+    public async Task ReviewSuggestionAsync_records_decisions_and_assigns_accepted_faces()
+    {
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        alice.FaceCount = 1;
+        NewFace(UnitVector(1, 0, 0), alice.Id);
+        var accepted = NewFace(UnitVector(0.97f, 0.24f, 0));
+        var rejected = NewFace(UnitVector(0.9f, 0.3f, 0.1f));
+        var unsure = NewFace(UnitVector(0.85f, 0.4f, 0.2f));
+
+        await service.ReviewSuggestionAsync(Owner, alice.Id, [accepted.Id], [rejected.Id], [unsure.Id]);
+
+        Assert.Equal(alice.Id, accepted.PersonId);
+        Assert.Null(rejected.PersonId);
+        Assert.Equal(2, alice.FaceCount);
+        var rejectedDecision = reviews.Decisions.Single(d => d.FaceId == rejected.Id);
+        Assert.Equal(FaceReviewKind.Rejected, rejectedDecision.Decision);
+        Assert.Equal(2, rejectedDecision.PersonFaceCount);
+        var deferredDecision = reviews.Decisions.Single(d => d.FaceId == unsure.Id);
+        Assert.Equal(FaceReviewKind.Deferred, deferredDecision.Decision);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_skips_rejected_faces_for_that_person()
+    {
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        alice.FaceCount = 3;
+        var face = NewFace(UnitVector(0.97f, 0.24f, 0));
+        await service.ReviewSuggestionAsync(Owner, alice.Id, [], [face.Id], []);
+
+        var result = await service.SuggestAsync(Owner);
+
+        Assert.Empty(result.Merges);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_reoffers_deferred_faces_once_the_person_grows()
+    {
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        alice.FaceCount = 3;
+        var face = NewFace(UnitVector(0.97f, 0.24f, 0));
+        await service.ReviewSuggestionAsync(Owner, alice.Id, [], [], [face.Id]);
+
+        // Same size — still deferred.
+        var held = await service.SuggestAsync(Owner);
+        Assert.Empty(held.Merges);
+
+        // The person gains faces (better embedding) — the deferral expires.
+        alice.FaceCount = 4;
+        var retried = await service.SuggestAsync(Owner);
+        var merge = Assert.Single(retried.Merges);
+        Assert.Contains(face.Id, merge.FaceIds);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_rejection_only_blocks_the_rejected_person()
+    {
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        alice.FaceCount = 3;
+        var bob = NewPerson("Bob", UnitVector(0.8f, 0.5f, 0.2f));
+        bob.FaceCount = 3;
+        var face = NewFace(UnitVector(0.97f, 0.24f, 0));
+        await service.ReviewSuggestionAsync(Owner, alice.Id, [], [face.Id], []);
+
+        var result = await service.SuggestAsync(Owner);
+
+        // Alice scored higher (0.97) but is rejected; Bob (0.93) still clears
+        // the threshold, so the face routes there.
+        var merge = Assert.Single(result.Merges);
+        Assert.Equal(bob.Id, merge.PersonId);
+    }
+
+    private sealed class InMemoryFaceReviewRepository : IFaceReviewRepository
+    {
+        public List<FaceReviewDecision> Decisions { get; } = [];
+
+        public Task<IReadOnlyList<FaceReviewDecision>> ListForOwnerAsync(
+            Guid ownerId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<FaceReviewDecision>>(
+                Decisions.Where(d => d.OwnerId == ownerId).ToList());
+
+        public Task AddRangeAsync(
+            IReadOnlyList<FaceReviewDecision> decisions, CancellationToken cancellationToken = default)
+        {
+            Decisions.AddRange(decisions);
+            return Task.CompletedTask;
+        }
+
+        public Task ReassignPersonAsync(
+            Guid fromPersonId, Guid toPersonId, CancellationToken cancellationToken = default)
+        {
+            foreach (var decision in Decisions.Where(d => d.PersonId == fromPersonId))
+            {
+                decision.PersonId = toPersonId;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteForPersonAsync(Guid personId, CancellationToken cancellationToken = default)
+        {
+            Decisions.RemoveAll(d => d.PersonId == personId);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class InMemoryPersonRepository : IPersonRepository

@@ -3,14 +3,12 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImageOffIcon, MergeIcon, UserRoundPlusIcon, XIcon } from "lucide-react";
+import { ImageOffIcon, UserRoundPlusIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
-  acceptMergeSuggestion,
   acceptPersonSuggestion,
   listPeople,
   listPersonSuggestions,
-  type MergeSuggestion,
   type Person,
   type PersonSuggestion,
 } from "@/data/people-repository";
@@ -26,29 +24,20 @@ import {
   PersonTileCount,
   PersonTileName,
   ReviewActions,
+  ReviewBadge,
   ReviewCard,
   ReviewFaces,
   ReviewInfo,
-  ReviewMore,
   SectionTitle,
 } from "./people.styles";
-
-const DISMISSED_KEY = "iphotos.dismissed-person-suggestions";
-
-function loadDismissed(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(DISMISSED_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
-  } catch {
-    return [];
-  }
-}
+import { useSuggestionDismissals } from "./use-suggestion-dismissals";
 
 /**
  * People hub (doc 18 §10), Google-Photos style: named people first, unnamed
- * auto-groups after. A person with pending faces shows the "same person?" review
- * card in their own grid slot; clusters that match nobody sit under New faces.
+ * auto-groups after. A uniform circle grid — pending "same person?" reviews
+ * show as a dot on the tile and are resolved inside the person's page, where
+ * the merge happens over the photo grid. Clusters that match nobody sit under
+ * New faces.
  */
 export function PeopleScreen() {
   const router = useRouter();
@@ -58,21 +47,17 @@ export function PeopleScreen() {
     queryKey: ["people-suggestions"],
     queryFn: listPersonSuggestions,
   });
-  const [dismissed, setDismissed] = useState<string[]>(loadDismissed);
+  const { dismissed, dismiss } = useSuggestionDismissals();
   /** The suggestion whose action is in flight — only its button disables. */
   const [busyId, setBusyId] = useState<string | null>(null);
-
-  const invalidate = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["people"] });
-    await queryClient.invalidateQueries({ queryKey: ["people-suggestions"] });
-  };
 
   const create = useMutation({
     mutationFn: (suggestion: PersonSuggestion) => acceptPersonSuggestion(suggestion.faceIds),
     onMutate: (suggestion) => setBusyId(suggestion.id),
     onSuccess: async (person) => {
       setBusyId(null);
-      await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ["people"] });
+      await queryClient.invalidateQueries({ queryKey: ["people-suggestions"] });
       toast.success("Person created");
       router.push(`/people/${person.id}`);
     },
@@ -82,44 +67,49 @@ export function PeopleScreen() {
     },
   });
 
-  const merge = useMutation({
-    mutationFn: (suggestion: MergeSuggestion) =>
-      acceptMergeSuggestion(suggestion.personId, suggestion.faceIds),
-    onMutate: (suggestion) => setBusyId(suggestion.id),
-    onSuccess: async (_data, suggestion) => {
-      setBusyId(null);
-      await invalidate();
-      toast.success(`Added to ${suggestion.personName ?? "the person"}`);
-    },
-    onError: () => {
-      setBusyId(null);
-      toast.error("Couldn't add the faces. Try again.");
-    },
-  });
-
-  const dismiss = (id: string) => {
-    const next = [...dismissed, id];
-    setDismissed(next);
-    try {
-      localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
-    } catch {
-      // Private mode — dismissal lasts for the session only.
-    }
-  };
-
   const people = peopleQuery.data ?? [];
-  const named = people.filter((p) => p.name !== null);
-  const unnamed = people.filter((p) => p.name === null);
+
+  /** Pending duplicate groups (not dismissed): members hide behind the target's
+   * tile so the hub shows one entry per visual person — nothing is merged until
+   * the review is accepted on the person's page (doc 18 §7.4). */
+  const activeGroups = useMemo(
+    () =>
+      (suggestionsQuery.data?.personMergeGroups ?? []).filter(
+        (g) => !dismissed.includes(g.id),
+      ),
+    [suggestionsQuery.data, dismissed],
+  );
+  const collapsedMemberIds = useMemo(
+    () => new Set(activeGroups.flatMap((g) => g.members.map((m) => m.personId))),
+    [activeGroups],
+  );
+  const groupByTarget = useMemo(
+    () => new Map(activeGroups.map((g) => [g.target.personId, g])),
+    [activeGroups],
+  );
+
+  const named = people.filter((p) => p.name !== null && !collapsedMemberIds.has(p.id));
+  const unnamed = people.filter((p) => p.name === null && !collapsedMemberIds.has(p.id));
   const newPeople = (suggestionsQuery.data?.newPeople ?? []).filter(
     (s) => !dismissed.includes(s.id),
   );
-  const merges = (suggestionsQuery.data?.merges ?? []).filter(
-    (s) => !dismissed.includes(s.id),
-  );
-  const mergeByPerson = useMemo(
-    () => new Map(merges.map((s) => [s.personId, s])),
-    [merges],
-  );
+
+  /** People with a pending review — the dot that leads to their page. `?? []`
+   * tolerates stale cached payloads that predate personMergeGroups. */
+  const pendingReview = useMemo(() => {
+    const data = suggestionsQuery.data;
+    const ids = new Set<string>();
+    if (!data) return ids;
+    for (const merge of data.merges ?? []) {
+      if (!dismissed.includes(merge.id)) ids.add(merge.personId);
+    }
+    for (const group of data.personMergeGroups ?? []) {
+      if (dismissed.includes(group.id)) continue;
+      ids.add(group.target.personId);
+      for (const member of group.members) ids.add(member.personId);
+    }
+    return ids;
+  }, [suggestionsQuery.data, dismissed]);
 
   if (peopleQuery.isError) {
     return (
@@ -158,38 +148,7 @@ export function PeopleScreen() {
     );
   }
 
-  /** A person's grid slot: the review card when the queue has faces for them,
-   * the plain circle tile otherwise. */
-  const renderPerson = (person: Person) => {
-    const pending = mergeByPerson.get(person.id);
-    if (pending) {
-      return (
-        <MergeReviewCard
-          key={`review-${pending.id}`}
-          suggestion={pending}
-          busy={busyId === pending.id}
-          onAccept={() => merge.mutate(pending)}
-          onDismiss={() => dismiss(pending.id)}
-        />
-      );
-    }
-
-    return (
-      <PersonTile
-        key={person.id}
-        onClick={() => router.push(`/people/${person.id}`)}
-        aria-label={person.name ?? "Unnamed person"}
-      >
-        <FaceAvatar faceId={person.coverFaceId} size={80} label={person.name ?? "Unnamed"} />
-        <PersonTileName>{person.name ?? "Unnamed"}</PersonTileName>
-        <PersonTileCount>
-          {person.faceCount} {person.faceCount === 1 ? "face" : "faces"}
-        </PersonTileCount>
-      </PersonTile>
-    );
-  };
-
-  const isEmpty = people.length === 0 && merges.length === 0 && newPeople.length === 0;
+  const isEmpty = people.length === 0 && newPeople.length === 0;
 
   return (
     <>
@@ -239,55 +198,31 @@ export function PeopleScreen() {
       )}
     </>
   );
-}
 
-/** Review card for one person's candidate faces ("Alice — same person?"). */
-function MergeReviewCard({
-  suggestion,
-  busy,
-  onAccept,
-  onDismiss,
-}: {
-  suggestion: MergeSuggestion;
-  busy: boolean;
-  onAccept: () => void;
-  onDismiss: () => void;
-}) {
-  return (
-    <ReviewCard>
-      <ReviewFaces>
-        <FaceAvatar
-          faceId={suggestion.personCoverFaceId}
-          size={40}
-          label={suggestion.personName ?? "Unnamed"}
-        />
-        <FaceAvatar faceId={suggestion.coverFaceId} size={40} label="Suggested face" />
-        {suggestion.faceCount > 1 ? <ReviewMore>+{suggestion.faceCount - 1}</ReviewMore> : null}
-      </ReviewFaces>
-      <ReviewInfo>
-        <strong>{suggestion.personName ?? "Unnamed"} — same person?</strong>
-        <span>
-          {suggestion.faceCount} new {suggestion.faceCount === 1 ? "face" : "faces"} ·{" "}
-          {Math.round(suggestion.similarity * 100)}% match
-        </span>
-      </ReviewInfo>
-      <ReviewActions>
-        <Button size="sm" disabled={busy} onClick={onAccept}>
-          <MergeIcon aria-hidden />
-          {busy ? "Adding…" : `Add to ${suggestion.personName ?? "this person"}`}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label="Dismiss suggestion"
-          onClick={onDismiss}
-        >
-          <XIcon aria-hidden />
-          Not now
-        </Button>
-      </ReviewActions>
-    </ReviewCard>
-  );
+  /** Every slot is the same circle tile — pending reviews only add a dot, and a
+   * merge target shows how many duplicate groups are waiting behind it. */
+  function renderPerson(person: Person) {
+    const group = groupByTarget.get(person.id);
+    return (
+      <PersonTile
+        key={person.id}
+        onClick={() => router.push(`/people/${person.id}`)}
+        aria-label={person.name ?? "Unnamed person"}
+      >
+        {pendingReview.has(person.id) ? <ReviewBadge aria-hidden /> : null}
+        <FaceAvatar faceId={person.coverFaceId} size={80} label={person.name ?? "Unnamed"} />
+        <PersonTileName>{person.name ?? "Unnamed"}</PersonTileName>
+        <PersonTileCount>
+          {person.faceCount} {person.faceCount === 1 ? "face" : "faces"}
+        </PersonTileCount>
+        {group ? (
+          <PersonTileCount>
+            +{group.members.length} {group.members.length === 1 ? "group" : "groups"} · review
+          </PersonTileCount>
+        ) : null}
+      </PersonTile>
+    );
+  }
 }
 
 /** Review card for a cluster that matches no existing person — creating a person

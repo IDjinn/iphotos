@@ -141,3 +141,39 @@ public sealed class PhotoLabelRepository(PhotosDbContext db) : IPhotoLabelReposi
         return new PagedResult<Photo>(items, page, pageSize, total);
     }
 }
+
+public sealed class FaceReviewRepository(PhotosDbContext db) : IFaceReviewRepository
+{
+    public async Task<IReadOnlyList<FaceReviewDecision>> ListForOwnerAsync(
+        Guid ownerId, CancellationToken cancellationToken = default) =>
+        await db.FaceReviewDecisions
+            .Where(d => d.OwnerId == ownerId)
+            .ToListAsync(cancellationToken);
+
+    public async Task AddRangeAsync(
+        IReadOnlyList<FaceReviewDecision> decisions, CancellationToken cancellationToken = default)
+    {
+        if (decisions.Count == 0)
+        {
+            return;
+        }
+
+        db.FaceReviewDecisions.AddRange(decisions);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ReassignPersonAsync(
+        Guid fromPersonId, Guid toPersonId, CancellationToken cancellationToken = default)
+    {
+        await db.FaceReviewDecisions
+            .Where(d => d.PersonId == fromPersonId)
+            .ExecuteUpdateAsync(set => set.SetProperty(d => d.PersonId, toPersonId), cancellationToken);
+    }
+
+    public async Task DeleteForPersonAsync(Guid personId, CancellationToken cancellationToken = default)
+    {
+        await db.FaceReviewDecisions
+            .Where(d => d.PersonId == personId)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+}

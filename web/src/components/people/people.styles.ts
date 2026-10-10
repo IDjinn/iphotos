@@ -38,6 +38,7 @@ export const PeopleGrid = styled.div`
 `;
 
 export const PersonTile = styled.button`
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -54,6 +55,18 @@ export const PersonTile = styled.button`
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+`;
+
+/** Pending-review dot on a person tile — the review itself lives inside the
+ * person's page, so the hub grid stays a uniform circle grid (doc 18 §10). */
+export const ReviewBadge = styled.span`
+  position: absolute;
+  top: 0.625rem;
+  right: 0.875rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--primary);
 `;
 
 export const PersonTileName = styled.span`
