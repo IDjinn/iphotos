@@ -2,6 +2,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 
 import { authHeaders, forceRefreshAccessToken } from '@/data/api-client';
 import { fileUrl, type CloudPhoto, type VariantKind } from '@/data/cloud-photos-repository';
+import { faceCropUrl } from '@/data/people-repository';
 import { useSettingsStore } from '@/stores/settings';
 
 /**
@@ -233,4 +234,82 @@ export function purgeCloudMediaCache(): void {
     // Best-effort.
   }
   knownFiles.clear();
+  faceKnown.clear();
+}
+
+// ── Face crops (doc 18 §10) ──────────────────────────────────────────────────
+// RN networking ignores HTTP cache headers, so person covers/chips keep their
+// own cache entries: `face-{faceId}.crop` next to the photo variants. Crops are
+// immutable (one file per face id) and a few KB — exempt from size eviction.
+
+const faceKnown = new Set<string>();
+let faceKnownLoaded = false;
+
+function faceCacheFile(faceId: string): File {
+  return new File(cacheDirectory(), `face-${faceId}.crop`);
+}
+
+function loadFaceKnownFromDisk(): void {
+  if (faceKnownLoaded) return;
+  faceKnownLoaded = true;
+  try {
+    const dir = cacheDirectory();
+    if (!dir.exists) return;
+    for (const child of dir.list()) {
+      if (child.name.startsWith('face-') && child.name.endsWith('.crop')) {
+        faceKnown.add(child.name.slice('face-'.length, -'.crop'.length));
+      }
+    }
+  } catch {
+    // Directory unreadable — treat as empty.
+  }
+}
+
+/** Synchronous lookup for the render path; null while the crop is not cached. */
+export function getCachedFaceCropUri(faceId: string): string | null {
+  loadFaceKnownFromDisk();
+  return faceKnown.has(faceId) ? faceCacheFile(faceId).uri : null;
+}
+
+const facePending = new Set<string>();
+
+/**
+ * Downloads the face crop (authenticated) into the cache and resolves with the
+ * local URI. Resolves with null while another download for the same face is in
+ * flight or on failure — callers fall back to the authenticated remote URL.
+ */
+export async function ensureFaceCrop(faceId: string): Promise<string | null> {
+  const cached = getCachedFaceCropUri(faceId);
+  if (cached) return cached;
+  if (facePending.has(faceId)) return null;
+  facePending.add(faceId);
+  try {
+    const { downloadAsync } = await import('expo-file-system/legacy');
+    cacheDirectory().create({ idempotent: true, intermediates: true });
+    let result = await downloadAsync(faceCropUrl(faceId), faceCacheFile(faceId).uri, {
+      headers: authHeaders(),
+    });
+    if (result.status === 401) {
+      // Same as variants: this bypasses axios, so refresh once and retry.
+      await forceRefreshAccessToken();
+      result = await downloadAsync(faceCropUrl(faceId), faceCacheFile(faceId).uri, {
+        headers: authHeaders(),
+      });
+    }
+    if (result.status < 200 || result.status >= 300) {
+      try {
+        const file = faceCacheFile(faceId);
+        if (file.exists) file.delete();
+      } catch {
+        // Best-effort cleanup.
+      }
+      return null;
+    }
+    faceKnown.add(faceId);
+    return result.uri;
+  } catch {
+    return null;
+  } finally {
+    facePending.delete(faceId);
+  }
 }

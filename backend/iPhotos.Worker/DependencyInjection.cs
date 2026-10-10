@@ -6,6 +6,8 @@ using iPhotos.Imaging;
 using iPhotos.Infrastructure.Ai;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace iPhotos.Worker;
@@ -100,6 +102,45 @@ public static class DependencyInjection
         services.AddKeyedScoped<IMlJobHandler, PersonClusterJobService>(MlJobKind.Cluster);
         services.AddKeyedScoped<IMlJobHandler, LabelProcessingService>(MlJobKind.Labels);
         services.AddScoped<MlJobEnqueuer>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers one ml_jobs worker per job kind + the startup/backfill sweeper.
+    /// Caller provides IOptions&lt;WorkerOptions&gt; and the PostgresQueueListener.
+    /// These MUST be plain AddSingleton&lt;IHostedService&gt; registrations —
+    /// AddHostedService dedupes through TryAddEnumerable on the implementation
+    /// type, and all three workers share the MlJobWorker type, so only the first
+    /// registration ever started and Cluster/Labels jobs sat queued forever
+    /// (the worker-registration tests pin this).
+    /// </summary>
+    public static IServiceCollection AddMlJobWorkers(this IServiceCollection services)
+    {
+        services.AddSingleton<IHostedService>(sp => new MlJobWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<PostgresQueueListener>(),
+            sp.GetRequiredService<IOptions<WorkerOptions>>(),
+            MlJobKind.Faces,
+            sp.GetRequiredService<IOptions<WorkerOptions>>().Value.MlFaceLaneConcurrency,
+            TimeSpan.FromMinutes(Math.Max(1, sp.GetRequiredService<IOptions<WorkerOptions>>().Value.MlFaceJobTimeoutMinutes)),
+            sp.GetRequiredService<ILogger<MlJobWorker>>()));
+        services.AddSingleton<IHostedService>(sp => new MlJobWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<PostgresQueueListener>(),
+            sp.GetRequiredService<IOptions<WorkerOptions>>(),
+            MlJobKind.Cluster,
+            sp.GetRequiredService<IOptions<WorkerOptions>>().Value.MlClusterLaneConcurrency,
+            TimeSpan.FromMinutes(Math.Max(1, sp.GetRequiredService<IOptions<WorkerOptions>>().Value.MlClusterJobTimeoutMinutes)),
+            sp.GetRequiredService<ILogger<MlJobWorker>>()));
+        services.AddSingleton<IHostedService>(sp => new MlJobWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<PostgresQueueListener>(),
+            sp.GetRequiredService<IOptions<WorkerOptions>>(),
+            MlJobKind.Labels,
+            sp.GetRequiredService<IOptions<WorkerOptions>>().Value.MlLabelLaneConcurrency,
+            TimeSpan.FromMinutes(Math.Max(1, sp.GetRequiredService<IOptions<WorkerOptions>>().Value.MlLabelJobTimeoutMinutes)),
+            sp.GetRequiredService<ILogger<MlJobWorker>>()));
+        services.AddHostedService<MlBackfillSweeper>();
         return services;
     }
 

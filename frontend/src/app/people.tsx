@@ -20,8 +20,9 @@ import {
   PersonName,
   Screen,
 } from '@/screens/people.styles';
-import { faceCropSource, listPeople, type Person } from '@/data/people-repository';
+import { listPeople, type Person } from '@/data/people-repository';
 import { useTranslation } from '@/i18n/hook';
+import { useFaceCropSource } from '@/hooks/use-cloud-file';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
@@ -83,34 +84,43 @@ export default function PeopleScreen() {
       ) : (
         <PeopleGrid contentContainerStyle={{ paddingBottom: insets.bottom }}>
           <PeopleWrap>
-            {(people ?? []).map((person) => {
-              const cover = person.coverFaceId ? faceCropSource(person.coverFaceId) : null;
-              return (
-                <PersonCardWrap key={person.id}>
-                  <PersonCircle
-                    onPress={() => {
-                      haptic('light');
-                      router.push(`/person/${person.id}`);
-                    }}
-                    accessibilityLabel={person.name ?? t('people.unnamed')}
-                    accessibilityRole="button"
-                  >
-                    {cover ? (
-                      <PersonCircleImage source={cover} contentFit="cover" recyclingKey={person.id} />
-                    ) : (
-                      <Icon name="person" size={28} color={colors.textSecondary} />
-                    )}
-                  </PersonCircle>
-                  <PersonName numberOfLines={1}>{person.name ?? t('people.unnamed')}</PersonName>
-                  <PersonCount>
-                    {tCount('people.photosCount', person.faceCount, { count: person.faceCount })}
-                  </PersonCount>
-                </PersonCardWrap>
-              );
-            })}
+            {(people ?? []).map((person) => (
+              <PersonCardItem key={person.id} person={person} />
+            ))}
           </PeopleWrap>
         </PeopleGrid>
       )}
     </Screen>
+  );
+}
+
+/** People-grid card: cover from the persistent face-crop cache, name + count. */
+function PersonCardItem({ person }: { person: Person }) {
+  const { t, tCount } = useTranslation();
+  const { colors } = useTheme();
+  const router = useRouter();
+  const cover = useFaceCropSource(person.coverFaceId);
+
+  return (
+    <PersonCardWrap>
+      <PersonCircle
+        onPress={() => {
+          haptic('light');
+          router.push(`/person/${person.id}`);
+        }}
+        accessibilityLabel={person.name ?? t('people.unnamed')}
+        accessibilityRole="button"
+      >
+        {cover ? (
+          <PersonCircleImage source={cover} contentFit="cover" recyclingKey={person.id} />
+        ) : (
+          <Icon name="person" size={28} color={colors.textSecondary} />
+        )}
+      </PersonCircle>
+      <PersonName numberOfLines={1}>{person.name ?? t('people.unnamed')}</PersonName>
+      <PersonCount>
+        {tCount('people.photosCount', person.faceCount, { count: person.faceCount })}
+      </PersonCount>
+    </PersonCardWrap>
   );
 }

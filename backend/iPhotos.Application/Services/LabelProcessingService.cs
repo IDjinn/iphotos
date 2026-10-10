@@ -94,7 +94,9 @@ public sealed class LabelProcessingService(
             return cached;
         }
 
-        logger.LogDebug("ML input cache miss for photo {PhotoId} (Thumbnail); downloading {BlobPath}", photoId, blobPath);
+        // Information, not Debug: one line = one blob-storage GET on the ML path
+        // (mirrors FaceProcessingService.OpenInputAsync).
+        logger.LogInformation("ML input cache miss for photo {PhotoId} (Thumbnail); downloading {BlobPath}", photoId, blobPath);
         return await blobStorage.OpenReadAsync(blobPath, cancellationToken);
     }
 }

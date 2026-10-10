@@ -1,4 +1,5 @@
 import { fetchFileBlob, type VariantKind } from "@/data/cloud-photos-repository";
+import { fetchFaceCropBlob } from "@/data/people-repository";
 import { useQuery } from "@tanstack/react-query";
 
 /**
@@ -75,6 +76,22 @@ export function useAuthFileUrl(photoId: string, kind: VariantKind, enabled = tru
     queryKey: ["file-url", photoId, kind],
     queryFn: () => cache.load(`${photoId}:${kind}`, () => fetchFileBlob(photoId, kind)),
     enabled: enabled && typeof window !== "undefined",
+    staleTime: Infinity,
+  });
+}
+
+const faceCropCache = new BlobUrlCache(400);
+
+/**
+ * Resolves an authenticated, cached object URL for a face crop (person covers,
+ * merge chips, review suggestions). Same model as `useAuthFileUrl`: the request
+ * carries the Authorization header, so the session keeps its own LRU.
+ */
+export function useFaceCropUrl(faceId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ["face-crop-url", faceId],
+    queryFn: () => faceCropCache.load(faceId!, () => fetchFaceCropBlob(faceId!)),
+    enabled: enabled && !!faceId && typeof window !== "undefined",
     staleTime: Infinity,
   });
 }

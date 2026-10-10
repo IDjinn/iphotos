@@ -23,6 +23,26 @@ rules live in the .NET backend.
 | `ML_CONCURRENCY` | `2` | Parallel inference slots |
 | `ML_MODEL` | `buffalo_l` | Model pack baked under `/models/models/<name>` |
 
+`ML_DET_SIZE` is the lever for small faces: the detector resizes the whole
+image to this size, so it — not the original resolution — decides the smallest
+detectable face. Raising it (800–1024) helps group shots and costs compute
+~quadratically.
+
+## Recognition tuning knobs (backend side)
+
+Thresholds, filters and clustering live in the .NET worker (`MlOptions`,
+doc 18 §6.3) — exposed in `backend/compose.yaml` as env placeholders, no
+rebuild needed (restart only):
+
+| Env | Default | Effect of raising |
+|---|---|---|
+| `IPHOTOS_ML__MIN_DET_SCORE` | `0.5` | Fewer false faces; may drop hard ones (profiles, low light) |
+| `IPHOTOS_ML__MIN_FACE_SIZE_PX` | `40` | Less junk; small faces (group shots) stop being indexed |
+| `IPHOTOS_ML__MATCH_THRESHOLD` | `0.55` | Cleaner people; more faces stay "Unnamed" until reclustering |
+| `IPHOTOS_ML__CLUSTER_THRESHOLD` | `0.55` | Splits people more easily; may split one person in two |
+| `IPHOTOS_ML__SUGGEST_THRESHOLD` | `0.65` | Lower bound of the "same person?" review band — unassigned faces cluster as suggestions at this similarity |
+| `IPHOTOS_ML__MIN_CLUSTER_FACES` | `2` | Fewer single-photo people; singletons stay unassigned longer |
+
 ## Build/run
 
 CPU image (universal default):

@@ -252,6 +252,14 @@ public sealed class MlOptions
     public int MinClusterFaces { get; set; } = 2;
 
     /// <summary>
+    /// Cosine similarity for "same person?" review groups (doc 18 §7.4): unassigned
+    /// faces clustered at this threshold surface as suggestions in the clients.
+    /// Sits below MatchThreshold — the band [SuggestThreshold, MatchThreshold) is
+    /// what the review UI asks the user to confirm.
+    /// </summary>
+    public float SuggestThreshold { get; set; } = 0.65f;
+
+    /// <summary>
     /// Local directory where the pipeline stages freshly generated preview/thumbnail
     /// bytes for the ML jobs (doc 18 §6.2), so faces/labels workers skip the blob
     /// re-download. In compose this is a named volume shared by api and worker.

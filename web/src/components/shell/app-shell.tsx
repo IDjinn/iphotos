@@ -10,6 +10,7 @@ import {
   SettingsIcon,
   SparklesIcon,
   SquareArrowOutUpRightIcon,
+  UsersIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ import {
 
 const NAV_ITEMS = [
   { href: "/photos", label: "Photos", icon: ImagesIcon },
+  { href: "/people", label: "People", icon: UsersIcon },
   { href: "/import", label: "Import", icon: SquareArrowOutUpRightIcon },
   { href: "/subscription", label: "Subscription", icon: CreditCardIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },

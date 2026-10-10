@@ -53,6 +53,24 @@ public static class PeopleEndpoints
         })
         .WithName("MergePeople");
 
+        // "Same person?" review (doc 18 §7.4): clusters of unassigned faces above
+        // the suggestion threshold, biggest first. Dismissal is client-side, keyed
+        // by the stable suggestion id.
+        group.MapGet("/suggestions", async (
+            ClaimsPrincipal principal,
+            PersonService people,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await people.SuggestAsync(principal.GetUserId(), cancellationToken)))
+        .WithName("SuggestPeople");
+
+        group.MapPost("/suggestions/accept", async (
+            ClaimsPrincipal principal,
+            AcceptSuggestionRequest request,
+            PersonService people,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await people.AcceptSuggestionAsync(principal.GetUserId(), request.FaceIds, cancellationToken)))
+        .WithName("AcceptSuggestion");
+
         // targetPersonId null = start a new person with the moved face (split).
         group.MapPost("/{id:guid}/faces", async (
             Guid id,
@@ -80,6 +98,7 @@ public static class PeopleEndpoints
         // Face crops back the People row circles and merge chips; same access model
         // as photo files (owner-checked, immutable, cached aggressively).
         app.MapGet("/api/faces/{id:guid}/crop", async (
+            HttpContext context,
             Guid id,
             ClaimsPrincipal principal,
             PersonService people,
@@ -89,6 +108,9 @@ public static class PeopleEndpoints
         {
             var cropPath = await people.GetFaceCropAsync(principal.GetUserId(), id, faces, cancellationToken);
             var stream = await blobs.OpenReadAsync(cropPath, cancellationToken);
+            // One crop per face id, never rewritten — the browser (and any client
+            // cache) can keep it for the year without re-downloading.
+            context.Response.Headers.CacheControl = "private, max-age=31536000, immutable";
             return Results.Stream(stream, "image/jpeg");
         })
         .WithTags("People")
@@ -103,4 +125,6 @@ public static class PeopleEndpoints
     public sealed record MergePeopleRequest(Guid SourceId, Guid TargetId);
 
     public sealed record MoveFaceRequest(Guid FaceId, Guid? TargetPersonId);
+
+    public sealed record AcceptSuggestionRequest(IReadOnlyList<Guid> FaceIds);
 }

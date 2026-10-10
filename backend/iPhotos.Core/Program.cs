@@ -43,6 +43,8 @@ builder.Services.AddOptions<UploadOptions>().Configure<IConfiguration>((o, c) =>
 // synchronously (multipart/zip) and serves people/labels reads.
 builder.Services.AddOptions<AiOptions>().Configure<IConfiguration>((o, c) => c.GetSection(AiOptions.SectionName).Bind(o));
 builder.Services.AddOptions<VisionOptions>().Configure<IConfiguration>((o, c) => c.GetSection(VisionOptions.SectionName).Bind(o));
+// The api hosts the people suggestion endpoint, which reads Ml:SuggestThreshold.
+builder.Services.AddOptions<MlOptions>().Configure<IConfiguration>((o, c) => c.GetSection(MlOptions.SectionName).Bind(o));
 
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<JwtOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<Argon2HasherOptions>>().Value);

@@ -20,6 +20,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 const PLACES = [
   { href: "/photos", label: "Photos" },
+  { href: "/people", label: "People" },
   { href: "/import", label: "Import archive" },
   { href: "/subscription", label: "Subscription" },
   { href: "/settings", label: "Settings" },

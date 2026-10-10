@@ -94,6 +94,20 @@ public sealed class PersonClusterJobService(
             }
         }
 
+        // New persons must exist in the DATABASE before any face referencing them
+        // is saved: EF flushes every tracked change on SaveChanges, so the person
+        // inserts go first — BEFORE the assignment loop below marks faces modified
+        // (a combined save violates the FK; seen live on the first real run).
+        foreach (var person in personsToCreate)
+        {
+            await persons.AddAsync(person, cancellationToken);
+        }
+
+        if (personsToCreate.Count > 0)
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
         // Apply assignments.
         foreach (var (cluster, members) in clusterMembers)
         {
@@ -106,12 +120,6 @@ public sealed class PersonClusterJobService(
                     face.PersonId = personId;
                 }
             }
-        }
-
-        // New persons must be in the change tracker before faces referencing them save.
-        foreach (var person in personsToCreate)
-        {
-            await persons.AddAsync(person, cancellationToken);
         }
 
         // Recompute exact aggregates per person; emptied persons are removed.

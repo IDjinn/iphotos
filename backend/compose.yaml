@@ -174,6 +174,15 @@ services:
       Ai__BackfillEnabled: ${IPHOTOS_AI_BACKFILL_ENABLED:-false}
       Ml__BaseUrl: ${IPHOTOS_ML_BASE_URL:-http://ml:8080}
       Ml__ApiKey: ${IPHOTOS_ML_API_KEY:-change-me-ml-api-key}
+      # Recognition tuning (doc 18 §6.3): detection confidence/size filters and the
+      # cosine thresholds that decide who groups with whom. Raise Match/Cluster
+      # thresholds for stricter grouping (fewer, cleaner people); lower them to
+      # merge more aggressively. Worker-only — the api never runs ML jobs.
+      Ml__MinDetScore: ${IPHOTOS_ML__MIN_DET_SCORE:-0.5}
+      Ml__MinFaceSizePx: ${IPHOTOS_ML__MIN_FACE_SIZE_PX:-40}
+      Ml__MatchThreshold: ${IPHOTOS_ML__MATCH_THRESHOLD:-0.55}
+      Ml__ClusterThreshold: ${IPHOTOS_ML__CLUSTER_THRESHOLD:-0.55}
+      Ml__MinClusterFaces: ${IPHOTOS_ML__MIN_CLUSTER_FACES:-2}
       Vision__BaseUrl: ${IPHOTOS_VISION_BASE_URL:-}
       Vision__ApiKey: ${IPHOTOS_VISION_API_KEY:-}
       Vision__Model: ${IPHOTOS_VISION_MODEL:-}
@@ -204,6 +213,10 @@ services:
     environment:
       ML_API_KEY: ${IPHOTOS_ML_API_KEY:-change-me-ml-api-key}
       ML_EXECUTION_PROVIDER: ${IPHOTOS_ML_EXECUTION_PROVIDER:-auto}
+      # Detection input size (square, px): the model resizes whatever it gets to
+      # this, so it — not the original image — decides how small a face can be
+      # found. Higher finds smaller faces but costs compute ~quadratically.
+      ML_DET_SIZE: ${IPHOTOS_ML_DET_SIZE:-640}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 30s

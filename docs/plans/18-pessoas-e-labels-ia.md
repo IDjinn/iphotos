@@ -252,13 +252,31 @@ CREATE INDEX idx_ml_jobs_state ON ml_jobs (state, created_at);
 ### 6.3 Configuração (padrão `Options` do backend)
 
 ```jsonc
-"Ai":  { "Enabled": true },
+"Ai":  { "Enabled": true, "BackfillEnabled": false },
 "Ml":  { "BaseUrl": "http://ml:8080", "ApiKey": "...", "TimeoutSeconds": 60,
-         "MinDetScore": 0.5, "MinFaceSizePx": 40 },
+         "MinDetScore": 0.5, "MinFaceSizePx": 40,
+         "MatchThreshold": 0.55, "ClusterThreshold": 0.55, "MinClusterFaces": 2 },
 "Vision": { "BaseUrl": "http://host.docker.internal:11434/v1", "ApiKey": "",
             "Model": "qwen2.5vl:7b", "MaxLabels": 8, "MinScore": 0.4,
             "TimeoutSeconds": 90 }
 ```
+
+Knobs de reconhecimento — consumidos só pelo worker; no compose ficam expostos como
+`IPHOTOS_ML__*` em `backend/compose.yaml` (ajuste sem recompilar, basta restart):
+
+| Opção (`Ml:*`) | Env no compose | Default | O que controla | Efeito de aumentar |
+|---|---|---|---|---|
+| `MinDetScore` | `IPHOTOS_ML__MIN_DET_SCORE` | 0.5 | Confiança mínima da detecção (SCRFD) | Menos falsos rostos; pode descartar rostos difíceis (perfil, pouca luz) |
+| `MinFaceSizePx` | `IPHOTOS_ML__MIN_FACE_SIZE_PX` | 40 | Tamanho mín. do bbox no preview (px) | Menos lixo; rostos pequenos (fotos de grupo) deixam de ser indexados |
+| `MatchThreshold` | `IPHOTOS_ML__MATCH_THRESHOLD` | 0.55 | Cosseno mín. p/ atribuir rosto novo a pessoa existente (§7.1) | Grupos mais limpos; mais rostos ficam "Unnamed" até o recluster |
+| `ClusterThreshold` | `IPHOTOS_ML__CLUSTER_THRESHOLD` | 0.55 | Aresta mín. do Chinese Whispers (§7.2) | Separa pessoas com mais facilidade; pode dividir a mesma pessoa em duas |
+| `SuggestThreshold` | `IPHOTOS_ML__SUGGEST_THRESHOLD` | 0.65 | Limite inferior da faixa de revisão "é a mesma pessoa?" (§7.4): rostos sem pessoa agrupados como sugestões | Revisão mais rigorosa; mais rostos ficam sem sugestão |
+| `MinClusterFaces` | `IPHOTOS_ML__MIN_CLUSTER_FACES` | 2 | Mín. de rostos p/ criar pessoa nova | Menos pessoas "de uma foto só"; singletons ficam soltos por mais tempo |
+
+Do lado do serviço `ml`, o `ML_DET_SIZE` (default 640, env `IPHOTOS_ML_DET_SIZE` no
+compose) decide o menor rosto detectável: o detector redimensiona a imagem inteira para
+esse tamanho, então ele — e não a resolução da original — é a alavanca para rostos
+pequenos. Subir para 800–1024 ajuda em fotos de grupo e custa compute ~quadrático.
 
 ## 7. Clustering (regra de negócio no .NET)
 

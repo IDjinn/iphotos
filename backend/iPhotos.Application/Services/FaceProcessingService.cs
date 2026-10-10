@@ -141,7 +141,11 @@ public sealed class FaceProcessingService(
             return cached;
         }
 
-        logger.LogDebug("ML input cache miss for photo {PhotoId} ({Kind}); downloading {BlobPath}", photoId, kind, blobPath);
+        // Information, not Debug: every one of these lines is one blob-storage
+        // (S3) GET on the ML path — the level that makes cold-cache causes
+        // (backfill, 48h sweep, volume recreated) visible next to the
+        // storage host's "GET s3:..." line.
+        logger.LogInformation("ML input cache miss for photo {PhotoId} ({Kind}); downloading {BlobPath}", photoId, kind, blobPath);
         return await blobStorage.OpenReadAsync(blobPath, cancellationToken);
     }
 

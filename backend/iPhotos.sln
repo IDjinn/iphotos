@@ -42,6 +42,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "iPhotos.Storage.Host.Integr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "iPhotos.Infrastructure.UnitTests", "tests\iPhotos.Infrastructure.UnitTests\iPhotos.Infrastructure.UnitTests.csproj", "{B872E8EE-1FD6-4E19-B094-90D760C26EF9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "iPhotos.Worker.UnitTests", "tests\iPhotos.Worker.UnitTests\iPhotos.Worker.UnitTests.csproj", "{22469760-CE2A-46A2-8ADF-0A65105CCA12}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -256,6 +258,18 @@ Global
 		{B872E8EE-1FD6-4E19-B094-90D760C26EF9}.Release|x64.Build.0 = Release|Any CPU
 		{B872E8EE-1FD6-4E19-B094-90D760C26EF9}.Release|x86.ActiveCfg = Release|Any CPU
 		{B872E8EE-1FD6-4E19-B094-90D760C26EF9}.Release|x86.Build.0 = Release|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Debug|x64.Build.0 = Debug|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Debug|x86.Build.0 = Debug|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Release|x64.ActiveCfg = Release|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Release|x64.Build.0 = Release|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Release|x86.ActiveCfg = Release|Any CPU
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -269,5 +283,6 @@ Global
 		{B798999F-5D46-46B9-8C4A-81C4EBCFE488} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{D5E7208B-912E-4664-AA62-4E4CBF966137} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{B872E8EE-1FD6-4E19-B094-90D760C26EF9} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{22469760-CE2A-46A2-8ADF-0A65105CCA12} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

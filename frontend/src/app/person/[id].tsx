@@ -32,7 +32,6 @@ import {
 } from '@/screens/person/[id].styles';
 import {
   deletePerson,
-  faceCropSource,
   listPeople,
   listPersonPhotos,
   mergePeople,
@@ -40,6 +39,7 @@ import {
   type Person,
 } from '@/data/people-repository';
 import { useTranslation } from '@/i18n/hook';
+import { useFaceCropSource } from '@/hooks/use-cloud-file';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
@@ -227,35 +227,9 @@ export default function PersonScreen() {
               {t('person.mergeEmpty')}
             </MergeEmpty>
           ) : null}
-          {mergeTargets.map((target) => {
-            const cover = target.coverFaceId ? faceCropSource(target.coverFaceId) : null;
-            return (
-              <MergeRow
-                key={target.id}
-                $pressed={false}
-                onPressIn={() => undefined}
-                onPressOut={() => undefined}
-                onPress={() => void handleMerge(target)}
-                accessibilityRole="button"
-              >
-                {cover ? (
-                  <MergeCircle source={cover} contentFit="cover" recyclingKey={target.id} />
-                ) : (
-                  <MergeCirclePlaceholder>
-                    <Icon name="person" size={20} color={colors.textSecondary} />
-                  </MergeCirclePlaceholder>
-                )}
-                <MergeMeta>
-                  <MergeName variant="body" numberOfLines={1}>
-                    {target.name ?? t('people.unnamed')}
-                  </MergeName>
-                  <ThemedText variant="bodySmall" color="secondary">
-                    {tCount('people.photosCount', target.faceCount, { count: target.faceCount })}
-                  </ThemedText>
-                </MergeMeta>
-              </MergeRow>
-            );
-          })}
+          {mergeTargets.map((target) => (
+            <MergeTargetRow key={target.id} target={target} onMerge={handleMerge} />
+          ))}
         </MergeList>
       </BottomSheet>
 
@@ -272,5 +246,39 @@ export default function PersonScreen() {
 
       <MiniToast message={toast} onDismissed={() => setToast(null)} />
     </Screen>
+  );
+}
+
+/** Merge-sheet row: target cover from the persistent face-crop cache. */
+function MergeTargetRow({ target, onMerge }: { target: Person; onMerge: (target: Person) => Promise<void> }) {
+  const { t, tCount } = useTranslation();
+  const { colors } = useTheme();
+  const cover = useFaceCropSource(target.coverFaceId);
+
+  return (
+    <MergeRow
+      $pressed={false}
+      onPressIn={() => undefined}
+      onPressOut={() => undefined}
+      onPress={() => void onMerge(target)}
+      accessibilityRole="button"
+      accessibilityLabel={target.name ?? t('people.unnamed')}
+    >
+      {cover ? (
+        <MergeCircle source={cover} contentFit="cover" recyclingKey={target.id} />
+      ) : (
+        <MergeCirclePlaceholder>
+          <Icon name="person" size={20} color={colors.textSecondary} />
+        </MergeCirclePlaceholder>
+      )}
+      <MergeMeta>
+        <MergeName variant="body" numberOfLines={1}>
+          {target.name ?? t('people.unnamed')}
+        </MergeName>
+        <ThemedText variant="bodySmall" color="secondary">
+          {tCount('people.photosCount', target.faceCount, { count: target.faceCount })}
+        </ThemedText>
+      </MergeMeta>
+    </MergeRow>
   );
 }

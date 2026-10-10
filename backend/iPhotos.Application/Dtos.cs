@@ -190,6 +190,13 @@ public sealed record UpdateUserPreferencesRequest(string UploadQuality, bool App
 /// fetched via /api/faces/{coverFaceId}/crop (client builds the URL).</summary>
 public sealed record PersonDto(Guid Id, string? Name, int FaceCount, Guid? CoverFaceId);
 
+/// <summary>"Same person?" review candidate (doc 18 §7.4): a cluster of unassigned
+/// faces above the suggestion threshold. The id is a stable hash of the member face
+/// ids, so clients can persist dismissals across reloads; FaceIds drives the
+/// accept call (capped at PersonService.MaxSuggestionFaces).</summary>
+public sealed record PersonSuggestionDto(
+    string Id, int FaceCount, Guid? CoverFaceId, IReadOnlyList<Guid> FaceIds, IReadOnlyList<Guid> SamplePhotoIds);
+
 public sealed record LabelCount(string Label, int Count);
 
 public sealed record PhotoLabelDto(Guid PhotoId, string Label, float Score);

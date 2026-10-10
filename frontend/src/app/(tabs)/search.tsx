@@ -33,13 +33,14 @@ import {
 } from '@/screens/(tabs)/search.styles';
 import { listAlbums } from '@/data/albums-repository';
 import { listTopLabels, type LabelCount } from '@/data/cloud-labels-repository';
-import { faceCropSource, listPeople, type Person } from '@/data/people-repository';
+import { listPeople, type Person } from '@/data/people-repository';
 import { queryAssets } from '@/data/media-repository';
 import { parseQuery } from '@/data/search-providers';
 import { addRecentSearch, clearRecentSearches, listRecentSearches, removeRecentSearch } from '@/data/search-repository';
 import type { AlbumRecord, PhotoAsset } from '@/data/types';
 import type { TranslationKey } from '@/i18n';
 import { useTranslation } from '@/i18n/hook';
+import { useFaceCropSource } from '@/hooks/use-cloud-file';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
@@ -171,31 +172,9 @@ export default function SearchScreen() {
                 </Pressable>
               </ChipHeader>
               <PeopleRow>
-                {people.slice(0, 12).map((person) => {
-                  const cover = person.coverFaceId ? faceCropSource(person.coverFaceId) : null;
-                  return (
-                    <PersonChip
-                      key={person.id}
-                      onPress={() => {
-                        haptic('light');
-                        router.push(`/person/${person.id}`);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={person.name ?? t('people.unnamed')}
-                    >
-                      <PersonChipCircle>
-                        {cover ? (
-                          <PersonChipImage source={cover} contentFit="cover" recyclingKey={person.id} />
-                        ) : (
-                          <Icon name="person" size={24} color={colors.textSecondary} />
-                        )}
-                      </PersonChipCircle>
-                      <PersonChipName numberOfLines={1}>
-                        {person.name ?? t('people.unnamed')}
-                      </PersonChipName>
-                    </PersonChip>
-                  );
-                })}
+                {people.slice(0, 12).map((person) => (
+                  <PersonChipItem key={person.id} person={person} />
+                ))}
               </PeopleRow>
             </>
           ) : null}
@@ -319,5 +298,33 @@ export default function SearchScreen() {
       )}
       </Screen>
     </TabSwipe>
+  );
+}
+
+/** Search-tab chip: cover from the persistent face-crop cache, name below. */
+function PersonChipItem({ person }: { person: Person }) {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
+  const router = useRouter();
+  const cover = useFaceCropSource(person.coverFaceId);
+
+  return (
+    <PersonChip
+      onPress={() => {
+        haptic('light');
+        router.push(`/person/${person.id}`);
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={person.name ?? t('people.unnamed')}
+    >
+      <PersonChipCircle>
+        {cover ? (
+          <PersonChipImage source={cover} contentFit="cover" recyclingKey={person.id} />
+        ) : (
+          <Icon name="person" size={24} color={colors.textSecondary} />
+        )}
+      </PersonChipCircle>
+      <PersonChipName numberOfLines={1}>{person.name ?? t('people.unnamed')}</PersonChipName>
+    </PersonChip>
   );
 }

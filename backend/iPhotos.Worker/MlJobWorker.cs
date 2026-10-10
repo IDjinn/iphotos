@@ -20,7 +20,7 @@ public sealed class MlJobWorker(
     MlJobKind kind,
     int lanes,
     TimeSpan timeout,
-    ILogger logger) : BackgroundService
+    ILogger<MlJobWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

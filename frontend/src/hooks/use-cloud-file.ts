@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
 
 import { authHeaders } from '@/data/api-client';
-import { ensureCloudFile, getCachedCloudFileUri } from '@/data/cloud-media-cache';
+import {
+  ensureCloudFile,
+  ensureFaceCrop,
+  getCachedCloudFileUri,
+  getCachedFaceCropUri,
+} from '@/data/cloud-media-cache';
 import { fileUrl, type VariantKind } from '@/data/cloud-photos-repository';
+import { faceCropUrl } from '@/data/people-repository';
 
 interface CloudFileState {
   /** Local cached URI, or null while the variant is not (yet) on disk. */
@@ -77,4 +83,51 @@ export function useCloudThumbnailUri(photoId: string): CloudFileSource | null {
 export function useCloudPreviewUri(photoId: string): CloudFileSource | null {
   const { localUri, failed } = useCloudFile(photoId, 'preview');
   return cloudFileSource(localUri, failed, photoId, 'preview');
+}
+
+interface FaceCropState {
+  /** Local cached URI, or null while the crop is not (yet) on disk. */
+  localUri: string | null;
+  /** True once the download failed — callers should fall back to the remote URL. */
+  failed: boolean;
+}
+
+/**
+ * Person cover / face chip (doc 18 §10): served from the persistent face-crop
+ * cache (RN ignores HTTP cache headers), downloading on first view; falls back
+ * to the authenticated remote URL when the download fails. Null until there is
+ * something to show — callers render their placeholder meanwhile.
+ */
+export function useFaceCropSource(faceId: string | null | undefined): CloudFileSource | null {
+  const emptyId = !faceId;
+  const [state, setState] = useState<FaceCropState>(() => ({
+    localUri: faceId ? getCachedFaceCropUri(faceId) : null,
+    failed: false,
+  }));
+
+  // Render-phase reset when the recycled cell now shows a different face.
+  const [trackedId, setTrackedId] = useState(faceId);
+  if (trackedId !== faceId) {
+    setTrackedId(faceId);
+    setState({ localUri: faceId ? getCachedFaceCropUri(faceId) : null, failed: false });
+  }
+
+  useEffect(() => {
+    if (emptyId || state.localUri) return;
+    let cancelled = false;
+    void ensureFaceCrop(faceId!).then((uri) => {
+      if (cancelled) return;
+      if (uri) setState({ localUri: uri, failed: false });
+      else setState({ localUri: null, failed: true });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `state.localUri` deliberately excluded — a null result must not retrigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faceId, emptyId]);
+
+  if (emptyId) return null;
+  if (state.localUri) return { uri: state.localUri };
+  return state.failed ? { uri: faceCropUrl(faceId!), headers: authHeaders() } : null;
 }
