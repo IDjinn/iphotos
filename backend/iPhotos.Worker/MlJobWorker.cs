@@ -140,6 +140,10 @@ public sealed class MlBackfillSweeper(
     IOptions<AiOptions> aiOptions,
     ILogger<MlBackfillSweeper> logger) : BackgroundService
 {
+    /// <summary>Age at which a staged ML input is presumed orphaned (jobs older than
+    /// this exhausted their retry budget long before; the blob fallback re-serves them).</summary>
+    private static readonly TimeSpan InputCacheMaxAge = TimeSpan.FromHours(48);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var workerOptions = options.Value;
@@ -197,6 +201,11 @@ public sealed class MlBackfillSweeper(
         var sp = scope.ServiceProvider;
         var ai = aiOptions.Value;
         var vision = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VisionOptions>>().Value;
+
+        // Cache hygiene runs regardless of the AI switches: leftovers of deleted
+        // photos or pipelines turned off must not accumulate on the shared volume.
+        await sp.GetRequiredService<IMlInputCache>().DeleteStaleAsync(InputCacheMaxAge, stoppingToken);
+
         if (!ai.Enabled)
         {
             return;

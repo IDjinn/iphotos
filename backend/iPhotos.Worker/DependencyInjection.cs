@@ -94,6 +94,7 @@ public static class DependencyInjection
 
         services.AddSingleton<IFaceClusterer, ChineseWhispersClusterer>();
         services.AddSingleton<IFaceCropper, ImageSharpFaceCropper>();
+        services.AddSingleton<IMlInputCache, DiskMlInputCache>();
         // The ML workers resolve the handler for a job's kind (doc 18 §6.2).
         services.AddKeyedScoped<IMlJobHandler, FaceProcessingService>(MlJobKind.Faces);
         services.AddKeyedScoped<IMlJobHandler, PersonClusterJobService>(MlJobKind.Cluster);

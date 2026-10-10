@@ -222,6 +222,17 @@ CREATE INDEX idx_ml_jobs_state ON ml_jobs (state, created_at);
   app nesta fase — a seção Privacy do app já foi simplificada em 2026-10-09).
 - **Vídeos ficam fora da v1** (fotos apenas; posters de vídeo podem entrar depois
   como uma linha de follow-up).
+- **Cache local de inputs de ML (implementado 2026-10-10, decisão do autor: "usar
+  arquivos locais, sem requisições S3"):** quem gera as variantes (`VariantProcessingHandler`
+  e o upload direto no `PhotoService`) grava o preview/thumbnail recém-gerado em
+  `IMlInputCache` (`DiskMlInputCache`, dir de `Ml:InputCacheDir`) junto ao upload do
+  blob. Os workers de faces/labels leem primeiro do cache e só caem no download do
+  blob storage em cache miss (restart do worker, eviction, backfill) — **o caminho
+  feliz não faz nenhum GET no S3 por foto nova**. No compose o cache é um volume
+  nomeado `ml-inputs` montado em api e worker (o upload direto gera variantes no
+  processo da API; o job é consumido pelo worker). Sucesso do job consome/apaga o
+  arquivo; o `MlBackfillSweeper` apaga órfãos com mais de 48h. Toda operação do cache
+  é best-effort: falha de IO degrada ao fallback, nunca falha o job.
 
 ### 6.2 Workers (espelham o `VariantProcessingWorker`)
 

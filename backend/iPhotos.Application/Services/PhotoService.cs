@@ -80,6 +80,7 @@ public sealed class PhotoService(
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime,
     MlJobEnqueuer mlJobs,
+    IMlInputCache inputCache,
     Microsoft.Extensions.Options.IOptions<UploadOptions> uploadOptions)
 {
     /// <summary>Floor for presigned PUT expiries handed out by upload tickets.</summary>
@@ -422,6 +423,13 @@ public sealed class PhotoService(
         await blobStorage.PutAsync(photo.OriginalBlobPath, stored, cancellationToken);
         var previewPath = BlobPaths.Preview(ownerId, photo.Id);
         var thumbnailPath = BlobPaths.Thumbnail(ownerId, photo.Id);
+
+        // Stage the derived variants for the AI pipelines (doc 18 §6.2) before the
+        // PUTs consume the streams: the ML jobs are claimed by the worker process,
+        // so they consume this local copy instead of re-downloading the blobs.
+        await inputCache.SaveAsync(photo.Id, MlInputKind.Preview, preview.Content, cancellationToken);
+        await inputCache.SaveAsync(photo.Id, MlInputKind.Thumbnail, thumbnail.Content, cancellationToken);
+
         await blobStorage.PutAsync(previewPath, preview.Content, cancellationToken);
         await blobStorage.PutAsync(thumbnailPath, thumbnail.Content, cancellationToken);
 

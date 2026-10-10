@@ -47,6 +47,7 @@ public class ZipImportHandlerTests
             _video,
             _uow, new StubDateTimeProvider(Now),
             TestMlJobs.CreateEnqueuer(),
+            new InMemoryMlInputCache(),
             Microsoft.Extensions.Options.Options.Create(new UploadOptions()));
 
     private ZipImportJob NewJob(byte[] zipBytes)

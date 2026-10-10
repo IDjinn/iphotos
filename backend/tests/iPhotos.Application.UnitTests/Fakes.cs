@@ -625,3 +625,30 @@ public static class TestMlJobs
             Microsoft.Extensions.Options.Options.Create(new VisionOptions()),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<MlJobEnqueuer>.Instance);
 }
+
+public sealed class InMemoryMlInputCache : IMlInputCache
+{
+    public Dictionary<(Guid PhotoId, MlInputKind Kind), byte[]> Entries { get; } = [];
+
+    public async Task SaveAsync(Guid photoId, MlInputKind kind, Stream content, CancellationToken cancellationToken = default)
+    {
+        using var buffer = new MemoryStream();
+        content.Position = 0;
+        await content.CopyToAsync(buffer, cancellationToken);
+        if (content.CanSeek)
+        {
+            content.Position = 0;
+        }
+
+        Entries[(photoId, kind)] = buffer.ToArray();
+    }
+
+    public Task<Stream?> TryOpenReadAsync(Guid photoId, MlInputKind kind, CancellationToken cancellationToken = default) =>
+        Task.FromResult<Stream?>(Entries.TryGetValue((photoId, kind), out var bytes)
+            ? new MemoryStream(bytes, writable: false)
+            : null);
+
+    public void Delete(Guid photoId, MlInputKind kind) => Entries.Remove((photoId, kind));
+
+    public Task DeleteStaleAsync(TimeSpan maxAge, CancellationToken cancellationToken = default) => Task.CompletedTask;
+}

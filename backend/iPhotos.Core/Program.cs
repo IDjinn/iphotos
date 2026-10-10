@@ -8,6 +8,7 @@ using iPhotos.Core.Endpoints;
 using iPhotos.Core.Middleware;
 using iPhotos.Imaging;
 using iPhotos.Infrastructure;
+using iPhotos.Infrastructure.Ai;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.RateLimiting;
@@ -106,7 +107,10 @@ builder.Services.AddScoped<UserPreferencesService>();
 builder.Services.AddScoped<ZipImportHandler>();
 builder.Services.AddScoped<BillingService>();
 // People & labels (doc 18): reads served by the API; the enqueuer feeds the worker.
+// The input cache is shared with the worker through a compose volume: direct uploads
+// generate the variants here, and the ML jobs consume them from the worker side.
 builder.Services.AddSingleton<IFaceClusterer, ChineseWhispersClusterer>();
+builder.Services.AddSingleton<IMlInputCache, DiskMlInputCache>();
 builder.Services.AddScoped<MlJobEnqueuer>();
 builder.Services.AddScoped<PersonService>();
 builder.Services.AddScoped<LabelService>();

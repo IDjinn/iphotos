@@ -24,6 +24,7 @@ public sealed class VariantProcessingHandler(
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime,
     MlJobEnqueuer mlJobs,
+    IMlInputCache inputCache,
     Microsoft.Extensions.Options.IOptions<UploadOptions> uploadOptions)
 {
     public async Task ProcessJobAsync(VariantJob job, CancellationToken cancellationToken = default)
@@ -215,6 +216,17 @@ public sealed class VariantProcessingHandler(
         var blobPath = kind == VariantKind.Preview
             ? BlobPaths.Preview(photo.OwnerId, photo.Id)
             : BlobPaths.Thumbnail(photo.OwnerId, photo.Id);
+
+        // Stage the variant for the AI pipelines (doc 18 §6.2): the faces/labels jobs
+        // consume this local copy instead of re-downloading the blob (S3 GETs).
+        if (photo.MediaType == MediaType.Photo)
+        {
+            await inputCache.SaveAsync(
+                photo.Id,
+                kind == VariantKind.Preview ? MlInputKind.Preview : MlInputKind.Thumbnail,
+                output.Content,
+                cancellationToken);
+        }
 
         await blobStorage.PutAsync(blobPath, output.Content, cancellationToken);
         await variants.AddAsync(

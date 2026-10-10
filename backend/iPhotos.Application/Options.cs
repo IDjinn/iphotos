@@ -250,6 +250,14 @@ public sealed class MlOptions
 
     /// <summary>Minimum faces for a new auto-created person; singletons stay unassigned.</summary>
     public int MinClusterFaces { get; set; } = 2;
+
+    /// <summary>
+    /// Local directory where the pipeline stages freshly generated preview/thumbnail
+    /// bytes for the ML jobs (doc 18 §6.2), so faces/labels workers skip the blob
+    /// re-download. In compose this is a named volume shared by api and worker.
+    /// Empty falls back to the OS temp directory.
+    /// </summary>
+    public string InputCacheDir { get; set; } = string.Empty;
 }
 
 /// <summary>

@@ -29,6 +29,7 @@ public sealed class FaceProcessingService(
     IPersonRepository persons,
     IMlJobRepository jobs,
     IBlobStorage blobStorage,
+    IMlInputCache inputCache,
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime,
     IOptions<MlOptions> options,
@@ -62,7 +63,7 @@ public sealed class FaceProcessingService(
 
             var previewPath = BlobPaths.Preview(photo.OwnerId, photo.Id);
             IReadOnlyList<DetectedFace> detections;
-            await using (var preview = await blobStorage.OpenReadAsync(previewPath, cancellationToken))
+            await using (var preview = await OpenInputAsync(photo.Id, MlInputKind.Preview, previewPath, cancellationToken))
             {
                 detections = await faceProvider.DetectAsync(preview, cancellationToken);
             }
@@ -79,7 +80,7 @@ public sealed class FaceProcessingService(
             var storedFaces = new List<PhotoFace>(accepted.Count);
             if (accepted.Count > 0)
             {
-                await using var preview = await blobStorage.OpenReadAsync(previewPath, cancellationToken);
+                await using var preview = await OpenInputAsync(photo.Id, MlInputKind.Preview, previewPath, cancellationToken);
                 foreach (var detection in accepted)
                 {
                     var face = PhotoFace.Create(
@@ -108,6 +109,10 @@ public sealed class FaceProcessingService(
             job.Complete(dateTime.UtcNow);
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
+            // The staged preview was consumed — drop it (the stale sweep is the
+            // safety net for early-complete paths that never read it).
+            inputCache.Delete(photo.Id, MlInputKind.Preview);
+
             // Keep clusters fresh after new faces land (debounced by HasPending).
             if (storedFaces.Count > 0 && !await jobs.HasPendingAsync(photo.OwnerId, MlJobKind.Cluster, cancellationToken))
             {
@@ -125,6 +130,20 @@ public sealed class FaceProcessingService(
 
     /// <summary>Face crop long edge in pixels — used for person covers/merge UI chips.</summary>
     public const int FaceCropLongEdge = 160;
+
+    /// <summary>Local cache first (doc 18 §6.2); the blob download is the fallback for
+    /// a cold cache (worker restarts, library backfill of pre-cache photos).</summary>
+    private async Task<Stream> OpenInputAsync(Guid photoId, MlInputKind kind, string blobPath, CancellationToken cancellationToken)
+    {
+        var cached = await inputCache.TryOpenReadAsync(photoId, kind, cancellationToken);
+        if (cached is not null)
+        {
+            return cached;
+        }
+
+        logger.LogDebug("ML input cache miss for photo {PhotoId} ({Kind}); downloading {BlobPath}", photoId, kind, blobPath);
+        return await blobStorage.OpenReadAsync(blobPath, cancellationToken);
+    }
 
     /// <summary>
     /// Assigns each new face to the closest person centroid above the match threshold

@@ -26,6 +26,10 @@ public sealed class iPhotosApiFactory : WebApplicationFactory<Program>, IAsyncLi
 
     public string BlobRoot { get; } = Path.Combine(Path.GetTempPath(), "iphotos-blobs-" + Guid.NewGuid().ToString("N"));
 
+    /// <summary>Hermetic ML input staging dir (doc 18 §6.2) — the real pipeline writes
+    /// preview/thumbnail copies here during test uploads.</summary>
+    public string MlInputCacheRoot { get; } = Path.Combine(Path.GetTempPath(), "iphotos-ml-inputs-" + Guid.NewGuid().ToString("N"));
+
     public async Task InitializeAsync()
     {
         await _postgres.StartAsync();
@@ -54,6 +58,7 @@ public sealed class iPhotosApiFactory : WebApplicationFactory<Program>, IAsyncLi
             ["Auth:Argon2:Lanes"] = "2",
             ["RateLimiting:AuthPermitLimit"] = "1000",
             ["BlobStorage:RootPath"] = BlobRoot,
+            ["Ml:InputCacheDir"] = MlInputCacheRoot,
             ["Worker:PollIntervalSeconds"] = "1",
         }));
 
@@ -87,6 +92,11 @@ public sealed class iPhotosApiFactory : WebApplicationFactory<Program>, IAsyncLi
         if (Directory.Exists(BlobRoot))
         {
             Directory.Delete(BlobRoot, recursive: true);
+        }
+
+        if (Directory.Exists(MlInputCacheRoot))
+        {
+            Directory.Delete(MlInputCacheRoot, recursive: true);
         }
     }
 

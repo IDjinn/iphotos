@@ -111,7 +111,12 @@ services:
       Vision__BaseUrl: ${IPHOTOS_VISION_BASE_URL:-}
       Vision__ApiKey: ${IPHOTOS_VISION_API_KEY:-}
       Vision__Model: ${IPHOTOS_VISION_MODEL:-}
-    # No volume: blobs live in the storage service.
+      # ML input staging (doc 18 §6.2): direct uploads generate the preview/thumbnail
+      # here; the worker consumes the staged bytes for faces/labels instead of
+      # re-downloading the blobs from S3. Shared volume with the worker below.
+      Ml__InputCacheDir: /var/lib/iphotos/ml-inputs
+    volumes:
+      - ml-inputs:/var/lib/iphotos/ml-inputs
     # Reachable on the LAN (large zip imports bypass the Cloudflare 100 MB body
     # cap via the LAN address); remote traffic keeps flowing through the
     # cloudflared tunnel below (TLS via Cloudflare edge).
@@ -169,7 +174,12 @@ services:
       Worker__MlFaceLaneConcurrency: ${IPHOTOS_WORKER__ML_FACE_LANES:-2}
       Worker__MlLabelLaneConcurrency: ${IPHOTOS_WORKER__ML_LABEL_LANES:-1}
       Worker__MlBackfillIntervalHours: ${IPHOTOS_WORKER__ML_BACKFILL_HOURS:-6}
-    # No volume: blobs live in the storage service.
+      # Same staging directory as the api (shared ml-inputs volume): faces/labels
+      # jobs read the preview/thumbnail the api/variant pipeline just generated,
+      # so the ML stage does no blob downloads on the happy path.
+      Ml__InputCacheDir: /var/lib/iphotos/ml-inputs
+    volumes:
+      - ml-inputs:/var/lib/iphotos/ml-inputs
 
   # Face detection + embeddings (doc 18 §4): insightface buffalo_l baked in,
   # stateless, internal-only. Unset IPHOTOS_AI_ENABLED=false to disable the
@@ -210,3 +220,4 @@ services:
 volumes:
   pgdata:
   storage-data:
+  ml-inputs:

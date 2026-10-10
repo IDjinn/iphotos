@@ -19,12 +19,14 @@ public class PhotoServiceTests
     private readonly FakeUnitOfWork _uow = new();
     private readonly Sha256ContentHasher _hasher = new();
     private readonly FakeVideoProcessor _video = new();
+    private readonly InMemoryMlInputCache _inputCache = new();
 
     private PhotoService NewService(UploadOptions? uploadOptions = null) => new(
         _photos, _variants, _jobs, _users, _blobs, _hasher, new FakeImageVariantGenerator(),
         new FakeExifExtractor(), _video,
         _uow, new StubDateTimeProvider(Now),
         TestMlJobs.CreateEnqueuer(),
+        _inputCache,
         Microsoft.Extensions.Options.Options.Create(uploadOptions ?? new UploadOptions()));
 
     private User NewUser(long quota = 1_000_000) =>
@@ -671,5 +673,16 @@ public class PhotoServiceTests
 
         await Should.ThrowAsync<ValidationException>(
             () => NewService().CreatePartUrlAsync(owner.Id, ticket.Photo.Id, 1));
+    }
+
+    [Fact]
+    public async Task Upload_Photo_StagesPreviewAndThumbnailForMlJobs()
+    {
+        var owner = NewUser();
+
+        var photo = await UploadAsync(owner);
+
+        _inputCache.Entries.ShouldContainKey((photo.Id, MlInputKind.Preview));
+        _inputCache.Entries.ShouldContainKey((photo.Id, MlInputKind.Thumbnail));
     }
 }

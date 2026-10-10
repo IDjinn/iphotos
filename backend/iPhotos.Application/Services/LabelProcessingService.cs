@@ -17,6 +17,7 @@ public sealed class LabelProcessingService(
     IVisionLabeler labeler,
     IPhotoLabelRepository labels,
     IBlobStorage blobStorage,
+    IMlInputCache inputCache,
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime,
     IOptions<VisionOptions> options,
@@ -44,7 +45,7 @@ public sealed class LabelProcessingService(
             // The 320px thumbnail is enough for scene tags — cheaper for local VLMs.
             var thumbnailPath = BlobPaths.Thumbnail(photo.OwnerId, photo.Id);
             IReadOnlyList<LabelResult> results;
-            await using (var thumbnail = await blobStorage.OpenReadAsync(thumbnailPath, cancellationToken))
+            await using (var thumbnail = await OpenInputAsync(photo.Id, thumbnailPath, cancellationToken))
             {
                 results = await labeler.ClassifyAsync(thumbnail, cancellationToken);
             }
@@ -69,6 +70,10 @@ public sealed class LabelProcessingService(
 
             job.Complete(dateTime.UtcNow);
             await unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // The staged thumbnail was consumed — drop it (the stale sweep is the
+            // safety net for early-complete paths that never read it).
+            inputCache.Delete(photo.Id, MlInputKind.Thumbnail);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -77,5 +82,19 @@ public sealed class LabelProcessingService(
                 job.Id, willRetry ? "requeued" : "permanently failed", job.Attempts, job.MaxAttempts);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    /// <summary>Local cache first (doc 18 §6.2); the blob download is the fallback for
+    /// a cold cache (worker restarts, library backfill of pre-cache photos).</summary>
+    private async Task<Stream> OpenInputAsync(Guid photoId, string blobPath, CancellationToken cancellationToken)
+    {
+        var cached = await inputCache.TryOpenReadAsync(photoId, MlInputKind.Thumbnail, cancellationToken);
+        if (cached is not null)
+        {
+            return cached;
+        }
+
+        logger.LogDebug("ML input cache miss for photo {PhotoId} (Thumbnail); downloading {BlobPath}", photoId, blobPath);
+        return await blobStorage.OpenReadAsync(blobPath, cancellationToken);
     }
 }

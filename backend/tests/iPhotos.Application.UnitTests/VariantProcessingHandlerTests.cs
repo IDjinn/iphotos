@@ -17,6 +17,7 @@ public class VariantProcessingHandlerTests
     private readonly FakeExifExtractor _exif = new();
     private readonly FakeVideoProcessor _video = new();
     private readonly FakeUnitOfWork _uow = new();
+    private readonly InMemoryMlInputCache _inputCache = new();
 
     private VariantProcessingHandler NewHandler(
         UploadOptions? uploadOptions = null,
@@ -26,6 +27,7 @@ public class VariantProcessingHandlerTests
             imageCompressor ?? new FakeImageCompressor(), videoCompressor ?? new FakeVideoCompressor(),
             _uow, new StubDateTimeProvider(Now),
             TestMlJobs.CreateEnqueuer(),
+            _inputCache,
             Microsoft.Extensions.Options.Options.Create(uploadOptions ?? new UploadOptions()));
 
     private User Owner(
@@ -327,6 +329,35 @@ public class VariantProcessingHandlerTests
 
         compressor.LastMaxHeight.ShouldBe(720);
         photo.StoredQuality.ShouldBe(UploadQualities.StorageSaver);
+    }
+
+    [Fact]
+    public async Task Process_Photo_StagesPreviewAndThumbnailForMlJobs()
+    {
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "p.jpg", "image/jpeg", MediaType.Photo, 100);
+        var job = NewJob(photo.Id);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        photo.State.ShouldBe(PhotoState.Ready);
+        _inputCache.Entries[(photo.Id, MlInputKind.Preview)]
+            .ShouldBe(System.Text.Encoding.UTF8.GetBytes("variant-Preview"));
+        _inputCache.Entries[(photo.Id, MlInputKind.Thumbnail)]
+            .ShouldBe(System.Text.Encoding.UTF8.GetBytes("variant-Thumbnail"));
+    }
+
+    [Fact]
+    public async Task Process_Video_DoesNotStageMlInputs()
+    {
+        var owner = Owner();
+        var photo = NewStoredPhoto(owner, "clip.mp4", "video/mp4", MediaType.Video, 500);
+        var job = NewJob(photo.Id);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        photo.State.ShouldBe(PhotoState.Ready);
+        _inputCache.Entries.ShouldBeEmpty();
     }
 
     private static string Sha256Of(byte[] bytes) =>
