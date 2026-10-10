@@ -48,6 +48,19 @@
 > (`ensureFaceCrop`/`useFaceCropSource`). Instance policy: detecção 0.75,
 > auto-match 0.90, revisão 0.75–0.90 (backend/.env).
 >
+> **Round 3 (2026-10-10)** — fila de revisão "é a mesma pessoa?" por pessoa
+> (estilo Google Fotos, §7.4) + confiança por pessoa: `GET /api/people/suggestions`
+> passa devolver `{ newPeople, merges }` — `merges` agrupa rostos sem pessoa pelo
+> **melhor centróide** de pessoa existente ≥ `SuggestThreshold` (faixa 0.75–0.90 na
+> instância; cada rosto entra em no máximo um grupo) e `newPeople` mantém os
+> clusters Chinese Whispers do restante; `POST /api/people/suggestions/merge`
+> aceita o merge (owner-checked, faces já atribuídas são puladas). Novo
+> `GET /api/people/{id}` com `Confidence` = similaridade cosseno média
+> membro→centroide (coerência do grupo, 0..1) — barra no topo da pessoa na web.
+> Listagem ordena **nomeadas antes de Unnamed** (backend, beneficia mobile e web).
+> Web: cards de revisão dentro do slot da pessoa no grid + seção "Unnamed" +
+> "New faces"; margens `lg` alinhadas à galeria. Testes: `PersonServiceTests` (8).
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e
@@ -333,6 +346,29 @@ pequenos. Subir para 800–1024 ajuda em fotos de grupo e custa compute ~quadrá
 - **Excluir** (`DELETE`): rostos voltam a `person_id = null` (podem ser re-agrupados
   no próximo recluster).
 
+### 7.4 Fila de revisão "é a mesma pessoa?" (sugestões)
+
+Derivada on-the-fly (`PersonService.SuggestAsync`, nada persistido) sobre os rostos
+sem pessoa do owner, dividida por **destino** como no Google Fotos:
+
+- **Merges (por pessoa existente)** — para cada rosto sem pessoa, melhor
+  similaridade cosseno contra os centróides persistidos; `≥ SuggestThreshold`
+  (limitado por `MatchThreshold`) agrupa o rosto naquela pessoa. Cada rosto entra
+  em **no máximo um** grupo (o melhor match), então merges e candidatos a pessoa
+  nova nunca compartilham membros. DTO `MergeSuggestionDto` carrega
+  `personId/personName/personCoverFaceId`, a faixa de rostos candidatos e
+  `Similarity` (média do grupo) — a confiança exibida na revisão.
+- **NewPeople (pessoa nova)** — o restante passa pelo Chinese Whispers a
+  `min(Suggest, Match)`; grupos ≥ 2 viram `PersonSuggestionDto`.
+- **Estabilidade/despriorização**: id = SHA-256 truncado dos face ids ordenados
+  (merges misturam o `personId` no hash) — cliente guarda dismissals por id; o
+  grupo pode reaparecer se os membros mudarem. Caps: 20 sugestões, 200 faces,
+  8 fotos de amostra por sugestão.
+- **Aceite**: `POST /suggestions/accept` cria pessoa nova com os rostos;
+  `POST /suggestions/merge` atribui os rostos à pessoa existente — ambos
+  owner-checked (404 cross-owner), pulam faces já atribuídas e disparam
+  recompute exato (centróide/capa/contagem).
+
 ## 8. Labels de cena (`VisionLabeler`, .NET)
 
 - Cliente HTTP tipado para o formato OpenAI (`POST {BaseUrl}/chat/completions`,
@@ -352,13 +388,17 @@ pequenos. Subir para 800–1024 ajuda em fotos de grupo e custa compute ~quadrá
 
 | Endpoint | Descrição |
 |---|---|
-| `GET /api/people` | `[{ id, name, faceCount, coverPhotoId, coverCropUrl }]` ordenado por faceCount |
+| `GET /api/people` | `[{ id, name, faceCount, coverFaceId }]` — nomeadas primeiro, depois Unnamed (faceCount desc) |
+| `GET /api/people/{id}` | detalhe: `PersonDetailDto` com `Confidence` (similaridade média membro→centroide, 0..1; null sem centróide) |
 | `GET /api/people/{id}/photos` | fotos da pessoa (paged, mesmo formato de `GET /api/photos`) |
 | `PATCH /api/people/{id}` | `{ name: string \| null }` |
 | `POST /api/people/merge` | `{ sourceId, targetId }` |
 | `POST /api/people/{id}/faces` | `{ faceId, targetPersonId: uuid \| "new" }` |
 | `DELETE /api/people/{id}` | pessoa some; rostos ficam não atribuídos |
-| `GET /api/faces/{id}/crop` | JPEG do rosto (auth igual `files/{kind}`) |
+| `GET /api/people/suggestions` | `{ newPeople: [...], merges: [...] }` (§7.4) |
+| `POST /api/people/suggestions/accept` | `{ faceIds }` → cria pessoa com os rostos |
+| `POST /api/people/suggestions/merge` | `{ personId, faceIds }` → atribui os rostos à pessoa |
+| `GET /api/faces/{id}/crop` | JPEG do rosto (auth igual `files/{kind}`, `Cache-Control: immutable`) |
 | `GET /api/labels` | `[{ label, count }]` (top N do owner) |
 | `GET /api/labels/{label}/photos` | fotos da label (paged) |
 | `GET /api/photos/{id}/labels` | labels da foto |
@@ -378,7 +418,8 @@ Erros no formato `{ error }` existente; 404 cross-owner. Documentar no doc 09 §
   `/people` (grade de cards de pessoa) e `/person/[id]` — polimórfica como
   `album/[id]`: carrega ids de fotos da pessoa → `PhotoGrid` compartilhada, nome
   editável no header, ações por action sheet (rename/merge/delete; mover rosto fica
-  para a v2, UI de "same person?" com pares sugeridos é follow-up).
+  para a v2 — a UI de "same person?" por pessoa já existe na **web**, doc 14 stage
+  14F; o mobile consome o mesmo contrato quando entrar).
 - **`/label/[label]`** volta, orientada ao backend (mesma UX removida em 2026-10-09).
 - Sync local de labels: manter opcional — v1 lê direto da API como a galeria cloud;
   a tabela `asset_labels` (`source='cloud'`) permanece como cache futuro, sem UI

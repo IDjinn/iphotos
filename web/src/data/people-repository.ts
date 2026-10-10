@@ -29,8 +29,41 @@ export interface PersonSuggestion {
   samplePhotoIds: string[];
 }
 
+/** "Same person?" candidate tied to an existing person: unassigned faces whose
+ * best centroid similarity cleared the suggestion threshold (doc 18 §7.4). */
+export interface MergeSuggestion {
+  /** Stable hash of the person id + member face ids — the dismissal key. */
+  id: string;
+  personId: string;
+  personName: string | null;
+  personCoverFaceId: string | null;
+  faceCount: number;
+  /** Best candidate face of the unassigned set (drives the review strip). */
+  coverFaceId: string | null;
+  faceIds: string[];
+  samplePhotoIds: string[];
+  /** Mean centroid similarity of the group (0..1) — the review confidence. */
+  similarity: number;
+}
+
+/** The review queue split by destination: merge into an existing person vs
+ * start a new one. */
+export interface PersonSuggestions {
+  newPeople: PersonSuggestion[];
+  merges: MergeSuggestion[];
+}
+
+export interface PersonDetail extends Person {
+  /** Mean member-to-centroid similarity (0..1); null when it can't be computed. */
+  confidence: number | null;
+}
+
 export async function listPeople(): Promise<Person[]> {
   return apiJson<Person[]>("/api/people");
+}
+
+export async function getPerson(personId: string): Promise<PersonDetail> {
+  return apiJson<PersonDetail>(`/api/people/${personId}`);
 }
 
 export async function listPersonPhotos(
@@ -55,9 +88,10 @@ export async function deletePerson(personId: string): Promise<void> {
   await apiJson<void>(`/api/people/${personId}`, { method: "DELETE" });
 }
 
-/** "Same person?" review candidates: unassigned faces above the suggestion threshold. */
-export async function listPersonSuggestions(): Promise<PersonSuggestion[]> {
-  return apiJson<PersonSuggestion[]>("/api/people/suggestions");
+/** "Same person?" review candidates, split by destination (merges per person +
+ * new-person groups). */
+export async function listPersonSuggestions(): Promise<PersonSuggestions> {
+  return apiJson<PersonSuggestions>("/api/people/suggestions");
 }
 
 /** Creates one person from a reviewed suggestion group; returns the new person. */
@@ -65,6 +99,17 @@ export async function acceptPersonSuggestion(faceIds: string[]): Promise<Person>
   return apiJson<Person>("/api/people/suggestions/accept", {
     method: "POST",
     body: { faceIds },
+  });
+}
+
+/** Assigns reviewed faces into an existing person (the merge half of the review). */
+export async function acceptMergeSuggestion(
+  personId: string,
+  faceIds: string[],
+): Promise<void> {
+  await apiJson<void>("/api/people/suggestions/merge", {
+    method: "POST",
+    body: { personId, faceIds },
   });
 }
 

@@ -119,7 +119,13 @@ web/
 - [x] `useFaceCropUrl` no `blob-cache.ts`: crop autenticado → object URL, LRU próprio (400) e `staleTime: Infinity` (RN não honra headers; na web o endpoint agora emite `Cache-Control: immutable` p/ o cache HTTP entre reloads)
 - [x] `FaceAvatar` (círculo com skeleton → fade opacity-only); `/people` (grade de círculos + fila de revisão "Same person?" com create/dismiss — dismiss persistido em localStorage) e `/people/[id]` (grade virtualizada como a galeria, rename inline, merge com diálogo + confirmação `AlertDialog`, delete com confirmação, viewer compartilhado)
 - [x] Entrada "People" na sidebar (`NAV_ITEMS`), command palette e e2e Playwright próprio
-- Aceite: `tsc`/`next build` limpos; e2e de navegação + estado vazio. ✔ (smoke completo pendente de validação do usuário com a biblioteca real)
+- [x] **Round 3 (2026-10-10)**: revisão "same person?" **dentro do slot da pessoa**
+  no grid (estilo Google Fotos — sem lista plana): pessoa nomeada/unnamed com faces
+  pendentes vira card com avatar + candidatos + "% match" + Add/Not now; seção
+  "Unnamed" separada das nomeadas (ordenação vem do backend); clusters sem dono em
+  "New faces"; margens `lg` (2rem) alinhadas à galeria; barra **Match confidence**
+  (similaridade média membro→centroide de `GET /api/people/{id}`) no topo da pessoa
+  — Aceite: `tsc`/`next build` limpos; e2e de navegação + estado vazio. ✔ (smoke completo pendente de validação do usuário com a biblioteca real)
 
 ## 5. Verificação (checklist Romero)
 

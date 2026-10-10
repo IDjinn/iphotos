@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import type { CloudPhoto } from "@/data/cloud-photos-repository";
 import {
   deletePerson,
+  getPerson,
   listPeople,
   listPersonPhotos,
   mergePeople,
@@ -45,6 +46,9 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FaceAvatar } from "./face-avatar";
 import {
+  ConfidenceBar,
+  ConfidenceFill,
+  ConfidenceTrack,
   MergeList,
   MergeOption,
   MergeOptionMeta,
@@ -76,6 +80,13 @@ export function PersonScreen({ personId }: { personId: string }) {
   const peopleQuery = useQuery({ queryKey: ["people"], queryFn: listPeople });
   const person = peopleQuery.data?.find((p) => p.id === personId);
   const others = (peopleQuery.data ?? []).filter((p) => p.id !== personId);
+
+  // Group coherence for the header bar: mean member-to-centroid similarity.
+  const detailQuery = useQuery({
+    queryKey: ["person-detail", personId],
+    queryFn: () => getPerson(personId),
+  });
+  const confidence = detailQuery.data?.confidence ?? null;
 
   const photosQuery = useInfiniteQuery({
     queryKey: ["person-photos", personId],
@@ -163,6 +174,7 @@ export function PersonScreen({ personId }: { personId: string }) {
       setMergeTarget(null);
       await queryClient.invalidateQueries({ queryKey: ["people"] });
       await queryClient.invalidateQueries({ queryKey: ["person-photos"] });
+      await queryClient.invalidateQueries({ queryKey: ["person-detail"] });
       toast.success("People merged");
       router.push(`/people/${targetId}`);
     },
@@ -177,6 +189,7 @@ export function PersonScreen({ personId }: { personId: string }) {
       setDeleteOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["people"] });
       await queryClient.invalidateQueries({ queryKey: ["person-photos"] });
+      await queryClient.invalidateQueries({ queryKey: ["person-detail"] });
       toast.success("Person deleted — their faces are now unassigned");
       router.push("/people");
     },
@@ -272,6 +285,16 @@ export function PersonScreen({ personId }: { personId: string }) {
           </Button>
         </PersonActions>
       </PersonHeader>
+
+      {confidence !== null ? (
+        <ConfidenceBar role="status">
+          <span>Match confidence</span>
+          <ConfidenceTrack aria-hidden>
+            <ConfidenceFill $value={confidence} />
+          </ConfidenceTrack>
+          <strong>{Math.round(confidence * 100)}%</strong>
+        </ConfidenceBar>
+      ) : null}
 
       {photosQuery.isError ? (
         <StatusArea>

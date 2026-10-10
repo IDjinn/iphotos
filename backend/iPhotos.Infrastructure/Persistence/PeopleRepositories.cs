@@ -105,18 +105,20 @@ public sealed class PhotoLabelRepository(PhotosDbContext db) : IPhotoLabelReposi
 
     public async Task<IReadOnlyList<LabelCount>> ListTopForOwnerAsync(Guid ownerId, int limit, CancellationToken cancellationToken = default)
     {
-        // Distinct (Label, PhotoId) pairs before grouping: COUNT(DISTINCT ...) inside a
-        // GroupBy projection is not translatable in EF Core and throws at runtime.
-        return await db.PhotoLabels
-            .Where(l => l.OwnerId == ownerId)
-            .Select(l => new { l.Label, l.PhotoId })
-            .Distinct()
-            .GroupBy(l => l.Label)
-            .Select(group => new LabelCount(group.Key, group.Count()))
-            .OrderByDescending(c => c.Count)
-            .ThenBy(c => c.Label)
-            .Take(limit)
+        // Raw SQL: EF Core cannot translate COUNT(DISTINCT ...) inside a GroupBy
+        // projection (nor GroupBy over a Distinct subquery) and throws at runtime.
+        var rows = await db.Database
+            .SqlQuery<LabelCount>(
+                $"""
+                SELECT label AS "Label", COUNT(DISTINCT photo_id)::int AS "Count"
+                FROM photo_labels
+                WHERE owner_id = {ownerId}
+                GROUP BY label
+                ORDER BY "Count" DESC, "Label"
+                LIMIT {limit}
+                """)
             .ToListAsync(cancellationToken);
+        return rows;
     }
 
     public async Task<PagedResult<Photo>> ListPhotosForLabelAsync(

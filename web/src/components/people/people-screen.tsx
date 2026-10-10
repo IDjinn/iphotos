@@ -3,12 +3,15 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImageOffIcon, UserRoundPlusIcon, XIcon } from "lucide-react";
+import { ImageOffIcon, MergeIcon, UserRoundPlusIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
+  acceptMergeSuggestion,
   acceptPersonSuggestion,
   listPeople,
   listPersonSuggestions,
+  type MergeSuggestion,
+  type Person,
   type PersonSuggestion,
 } from "@/data/people-repository";
 import { SkeletonGrid, StatusArea, StatusBox } from "@/components/gallery/gallery.styles";
@@ -22,12 +25,12 @@ import {
   PersonTile,
   PersonTileCount,
   PersonTileName,
+  ReviewActions,
+  ReviewCard,
+  ReviewFaces,
+  ReviewInfo,
+  ReviewMore,
   SectionTitle,
-  SuggestionActions,
-  SuggestionCard,
-  SuggestionFaces,
-  SuggestionInfo,
-  SuggestionList,
 } from "./people.styles";
 
 const DISMISSED_KEY = "iphotos.dismissed-person-suggestions";
@@ -43,8 +46,9 @@ function loadDismissed(): string[] {
 }
 
 /**
- * People hub (doc 18 §10): the person circles plus the "same person?" review
- * queue — unassigned faces the clusterer found above the suggestion threshold.
+ * People hub (doc 18 §10), Google-Photos style: named people first, unnamed
+ * auto-groups after. A person with pending faces shows the "same person?" review
+ * card in their own grid slot; clusters that match nobody sit under New faces.
  */
 export function PeopleScreen() {
   const router = useRouter();
@@ -55,27 +59,46 @@ export function PeopleScreen() {
     queryFn: listPersonSuggestions,
   });
   const [dismissed, setDismissed] = useState<string[]>(loadDismissed);
-  /** The suggestion whose "Create person" is in flight — only its button disables. */
-  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  /** The suggestion whose action is in flight — only its button disables. */
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const accept = useMutation({
+  const invalidate = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["people"] });
+    await queryClient.invalidateQueries({ queryKey: ["people-suggestions"] });
+  };
+
+  const create = useMutation({
     mutationFn: (suggestion: PersonSuggestion) => acceptPersonSuggestion(suggestion.faceIds),
-    onMutate: (suggestion) => setAcceptingId(suggestion.id),
+    onMutate: (suggestion) => setBusyId(suggestion.id),
     onSuccess: async (person) => {
-      setAcceptingId(null);
-      await queryClient.invalidateQueries({ queryKey: ["people"] });
-      await queryClient.invalidateQueries({ queryKey: ["people-suggestions"] });
+      setBusyId(null);
+      await invalidate();
       toast.success("Person created");
       router.push(`/people/${person.id}`);
     },
     onError: () => {
-      setAcceptingId(null);
+      setBusyId(null);
       toast.error("Couldn't create the person. Try again.");
     },
   });
 
-  const dismiss = (suggestion: PersonSuggestion) => {
-    const next = [...dismissed, suggestion.id];
+  const merge = useMutation({
+    mutationFn: (suggestion: MergeSuggestion) =>
+      acceptMergeSuggestion(suggestion.personId, suggestion.faceIds),
+    onMutate: (suggestion) => setBusyId(suggestion.id),
+    onSuccess: async (_data, suggestion) => {
+      setBusyId(null);
+      await invalidate();
+      toast.success(`Added to ${suggestion.personName ?? "the person"}`);
+    },
+    onError: () => {
+      setBusyId(null);
+      toast.error("Couldn't add the faces. Try again.");
+    },
+  });
+
+  const dismiss = (id: string) => {
+    const next = [...dismissed, id];
     setDismissed(next);
     try {
       localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
@@ -85,9 +108,17 @@ export function PeopleScreen() {
   };
 
   const people = peopleQuery.data ?? [];
-  const suggestions = useMemo(
-    () => (suggestionsQuery.data ?? []).filter((s) => !dismissed.includes(s.id)),
-    [suggestionsQuery.data, dismissed],
+  const named = people.filter((p) => p.name !== null);
+  const unnamed = people.filter((p) => p.name === null);
+  const newPeople = (suggestionsQuery.data?.newPeople ?? []).filter(
+    (s) => !dismissed.includes(s.id),
+  );
+  const merges = (suggestionsQuery.data?.merges ?? []).filter(
+    (s) => !dismissed.includes(s.id),
+  );
+  const mergeByPerson = useMemo(
+    () => new Map(merges.map((s) => [s.personId, s])),
+    [merges],
   );
 
   if (peopleQuery.isError) {
@@ -127,6 +158,39 @@ export function PeopleScreen() {
     );
   }
 
+  /** A person's grid slot: the review card when the queue has faces for them,
+   * the plain circle tile otherwise. */
+  const renderPerson = (person: Person) => {
+    const pending = mergeByPerson.get(person.id);
+    if (pending) {
+      return (
+        <MergeReviewCard
+          key={`review-${pending.id}`}
+          suggestion={pending}
+          busy={busyId === pending.id}
+          onAccept={() => merge.mutate(pending)}
+          onDismiss={() => dismiss(pending.id)}
+        />
+      );
+    }
+
+    return (
+      <PersonTile
+        key={person.id}
+        onClick={() => router.push(`/people/${person.id}`)}
+        aria-label={person.name ?? "Unnamed person"}
+      >
+        <FaceAvatar faceId={person.coverFaceId} size={80} label={person.name ?? "Unnamed"} />
+        <PersonTileName>{person.name ?? "Unnamed"}</PersonTileName>
+        <PersonTileCount>
+          {person.faceCount} {person.faceCount === 1 ? "face" : "faces"}
+        </PersonTileCount>
+      </PersonTile>
+    );
+  };
+
+  const isEmpty = people.length === 0 && merges.length === 0 && newPeople.length === 0;
+
   return (
     <>
       <PeopleHeader>
@@ -134,58 +198,7 @@ export function PeopleScreen() {
         <CountLabel>{people.length > 0 ? `${people.length}` : ""}</CountLabel>
       </PeopleHeader>
 
-      {suggestions.length > 0 ? (
-        <>
-          <SectionTitle>Same person?</SectionTitle>
-          <SuggestionList>
-            {suggestions.map((suggestion) => {
-              const faces = [
-                suggestion.coverFaceId,
-                ...suggestion.faceIds.filter((id) => id !== suggestion.coverFaceId),
-              ].slice(0, 5);
-              return (
-                <SuggestionCard key={suggestion.id}>
-                  <SuggestionFaces>
-                    {faces.map((faceId, index) => (
-                      <FaceAvatar
-                        key={faceId ?? index}
-                        faceId={faceId}
-                        size={44}
-                        label="Suggested face"
-                      />
-                    ))}
-                  </SuggestionFaces>
-                  <SuggestionInfo>
-                    <strong>{suggestion.faceCount} faces</strong>
-                    <span>These may be the same person. Creating a person groups them.</span>
-                  </SuggestionInfo>
-                  <SuggestionActions>
-                    <Button
-                      size="sm"
-                      disabled={acceptingId === suggestion.id}
-                      onClick={() => accept.mutate(suggestion)}
-                    >
-                      <UserRoundPlusIcon aria-hidden />
-                      {acceptingId === suggestion.id ? "Creating…" : "Create person"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label="Dismiss suggestion"
-                      onClick={() => dismiss(suggestion)}
-                    >
-                      <XIcon aria-hidden />
-                      Not the same
-                    </Button>
-                  </SuggestionActions>
-                </SuggestionCard>
-              );
-            })}
-          </SuggestionList>
-        </>
-      ) : null}
-
-      {people.length === 0 ? (
+      {isEmpty ? (
         <StatusArea>
           <StatusBox>
             <h2>No people yet</h2>
@@ -196,22 +209,133 @@ export function PeopleScreen() {
           </StatusBox>
         </StatusArea>
       ) : (
-        <PeopleGrid>
-          {people.map((person) => (
-            <PersonTile
-              key={person.id}
-              onClick={() => router.push(`/people/${person.id}`)}
-              aria-label={person.name ?? "Unnamed person"}
-            >
-              <FaceAvatar faceId={person.coverFaceId} size={80} label={person.name ?? "Unnamed"} />
-              <PersonTileName>{person.name ?? "Unnamed"}</PersonTileName>
-              <PersonTileCount>
-                {person.faceCount} {person.faceCount === 1 ? "face" : "faces"}
-              </PersonTileCount>
-            </PersonTile>
-          ))}
-        </PeopleGrid>
+        <>
+          {named.length > 0 ? <PeopleGrid>{named.map(renderPerson)}</PeopleGrid> : null}
+
+          {unnamed.length > 0 ? (
+            <>
+              <SectionTitle>Unnamed</SectionTitle>
+              <PeopleGrid>{unnamed.map(renderPerson)}</PeopleGrid>
+            </>
+          ) : null}
+
+          {newPeople.length > 0 ? (
+            <>
+              <SectionTitle>New faces</SectionTitle>
+              <PeopleGrid>
+                {newPeople.map((suggestion) => (
+                  <NewPersonCard
+                    key={suggestion.id}
+                    suggestion={suggestion}
+                    busy={busyId === suggestion.id}
+                    onCreate={() => create.mutate(suggestion)}
+                    onDismiss={() => dismiss(suggestion.id)}
+                  />
+                ))}
+              </PeopleGrid>
+            </>
+          ) : null}
+        </>
       )}
     </>
+  );
+}
+
+/** Review card for one person's candidate faces ("Alice — same person?"). */
+function MergeReviewCard({
+  suggestion,
+  busy,
+  onAccept,
+  onDismiss,
+}: {
+  suggestion: MergeSuggestion;
+  busy: boolean;
+  onAccept: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <ReviewCard>
+      <ReviewFaces>
+        <FaceAvatar
+          faceId={suggestion.personCoverFaceId}
+          size={40}
+          label={suggestion.personName ?? "Unnamed"}
+        />
+        <FaceAvatar faceId={suggestion.coverFaceId} size={40} label="Suggested face" />
+        {suggestion.faceCount > 1 ? <ReviewMore>+{suggestion.faceCount - 1}</ReviewMore> : null}
+      </ReviewFaces>
+      <ReviewInfo>
+        <strong>{suggestion.personName ?? "Unnamed"} — same person?</strong>
+        <span>
+          {suggestion.faceCount} new {suggestion.faceCount === 1 ? "face" : "faces"} ·{" "}
+          {Math.round(suggestion.similarity * 100)}% match
+        </span>
+      </ReviewInfo>
+      <ReviewActions>
+        <Button size="sm" disabled={busy} onClick={onAccept}>
+          <MergeIcon aria-hidden />
+          {busy ? "Adding…" : `Add to ${suggestion.personName ?? "this person"}`}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label="Dismiss suggestion"
+          onClick={onDismiss}
+        >
+          <XIcon aria-hidden />
+          Not now
+        </Button>
+      </ReviewActions>
+    </ReviewCard>
+  );
+}
+
+/** Review card for a cluster that matches no existing person — creating a person
+ * groups the faces. */
+function NewPersonCard({
+  suggestion,
+  busy,
+  onCreate,
+  onDismiss,
+}: {
+  suggestion: PersonSuggestion;
+  busy: boolean;
+  onCreate: () => void;
+  onDismiss: () => void;
+}) {
+  const faces = [
+    suggestion.coverFaceId,
+    ...suggestion.faceIds.filter((id) => id !== suggestion.coverFaceId),
+  ].slice(0, 4);
+
+  return (
+    <ReviewCard>
+      <ReviewFaces>
+        {faces.map((faceId, index) => (
+          <FaceAvatar key={faceId ?? index} faceId={faceId} size={40} label="Suggested face" />
+        ))}
+      </ReviewFaces>
+      <ReviewInfo>
+        <strong>
+          {suggestion.faceCount} {suggestion.faceCount === 1 ? "face" : "faces"}
+        </strong>
+        <span>These may be the same new person.</span>
+      </ReviewInfo>
+      <ReviewActions>
+        <Button size="sm" disabled={busy} onClick={onCreate}>
+          <UserRoundPlusIcon aria-hidden />
+          {busy ? "Creating…" : "Create person"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label="Dismiss suggestion"
+          onClick={onDismiss}
+        >
+          <XIcon aria-hidden />
+          Not now
+        </Button>
+      </ReviewActions>
+    </ReviewCard>
   );
 }
