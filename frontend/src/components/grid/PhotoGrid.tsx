@@ -1,15 +1,20 @@
 import { FlashList, type FlashListRef, type ListRenderItem } from '@shopify/flash-list';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   RefreshControl,
   useWindowDimensions,
   type LayoutChangeEvent,
 } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
 
 import { measureHeroCell } from '@/animations/hero';
 import { buildGridData, type GridItem } from '@/data/grouping';
-import { computeGridLayout } from '@/data/grid-metrics';
+import {
+  computeGridLayout,
+  offsetForPhotoIndex,
+  photoAnchorAtOffset,
+} from '@/data/grid-metrics';
 import type { PhotoAsset } from '@/data/types';
 import { useSelectionStore } from '@/stores/selection';
 import { useViewerStore, type ViewerContext } from '@/stores/viewer';
@@ -21,6 +26,7 @@ import { FastScroll, type FastScrollHandle } from './FastScroll';
 import { DayHeader, GridRow, MonthHeader } from './GridHeaders';
 import { dayHeaderHeight, monthHeaderHeight } from './GridHeaders.styles';
 import { Grid } from './PhotoGrid.styles';
+import { usePinchColumns } from './usePinchColumns';
 
 interface PhotoGridProps {
   assets: PhotoAsset[];
@@ -59,7 +65,15 @@ export function PhotoGrid({
   const [viewportHeight, setViewportHeight] = useState(0);
   const openViewer = useViewerStore((s) => s.open);
   const { width } = useWindowDimensions();
-  const columns = columnsFor(width);
+
+  // Pinch-columns: on each step the first visible photo is captured as the
+  // anchor (old layout) and re-scrolled to its new row offset (new layout),
+  // so the grid keeps its place when rows re-batch.
+  const anchorRef = useRef<number | null>(null);
+  const onStepRef = useRef<(next: number) => void>(() => {});
+  const { columns, gesture: pinchGesture } = usePinchColumns(columnsFor(width), {
+    onStep: (next) => onStepRef.current(next),
+  });
   const cellSize = cellSizeFor(width, columns, GRID_GAP);
 
   const gridData = useMemo(() => buildGridData(assets, columns), [assets, columns]);
@@ -73,6 +87,22 @@ export function PhotoGrid({
       }),
     [gridData, cellSize, theme]
   );
+
+  useEffect(() => {
+    onStepRef.current = () => {
+      anchorRef.current = photoAnchorAtOffset(gridData.items, gridLayout, scrollOffset.value);
+    };
+  }, [gridData, gridLayout, scrollOffset]);
+
+  useEffect(() => {
+    const anchor = anchorRef.current;
+    if (anchor === null) return;
+    anchorRef.current = null;
+    listRef.current?.scrollToOffset({
+      offset: offsetForPhotoIndex(gridData.items, gridLayout, anchor),
+      animated: false,
+    });
+  }, [columns, gridData, gridLayout]);
 
   const handleLayout = useCallback((e: LayoutChangeEvent) => {
     setViewportHeight(e.nativeEvent.layout.height);
@@ -129,32 +159,34 @@ export function PhotoGrid({
 
   return (
     <Grid onLayout={handleLayout}>
-      <FlashList
-        ref={listRef}
-        data={gridData.items}
-        renderItem={renderItem}
-        extraData={cellSize}
-        keyExtractor={(item) => item.key}
-        stickyHeaderIndices={stickyMonths ? gridData.stickyIndices : undefined}
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={(e) => {
-          scrollOffset.value = e.nativeEvent.contentOffset.y;
-          fastScrollRef.current?.reveal();
-        }}
-        onEndReached={onEndReached}
-        onEndReachedThreshold={0.6}
-        refreshControl={
-          onRefresh ? (
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={theme.colors.textSecondary}
-              progressBackgroundColor={theme.colors.surface}
-            />
-          ) : undefined
-        }
-      />
+      <GestureDetector gesture={pinchGesture}>
+        <FlashList
+          ref={listRef}
+          data={gridData.items}
+          renderItem={renderItem}
+          extraData={cellSize}
+          keyExtractor={(item) => item.key}
+          stickyHeaderIndices={stickyMonths ? gridData.stickyIndices : undefined}
+          showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            scrollOffset.value = e.nativeEvent.contentOffset.y;
+            fastScrollRef.current?.reveal();
+          }}
+          onEndReached={onEndReached}
+          onEndReachedThreshold={0.6}
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={theme.colors.textSecondary}
+                progressBackgroundColor={theme.colors.surface}
+              />
+            ) : undefined
+          }
+        />
+      </GestureDetector>
       {fastScroll && viewportHeight > 0 ? (
         <FastScroll
           ref={fastScrollRef}

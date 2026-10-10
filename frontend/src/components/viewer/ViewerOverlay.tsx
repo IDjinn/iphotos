@@ -452,6 +452,7 @@ export function ViewerOverlay() {
           rotation={pagerRotation}
           videoPlaying={videoPlaying}
           videoMuted={videoMuted}
+          chromeVisible={chromeVisible && !infoVisible && !moreVisible && !pickerVisible}
         />
       </PagerLayer>
 

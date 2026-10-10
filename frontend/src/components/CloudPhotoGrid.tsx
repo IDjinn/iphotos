@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -21,6 +22,7 @@ import { useCloudThumbnailUri } from '@/hooks/use-cloud-file';
 import { useViewerStore } from '@/stores/viewer';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
+import { usePinchColumns } from '@/components/grid/usePinchColumns';
 
 interface CloudPhotoGridProps {
   /** One page of photos for the grid (person photos, label photos…). */
@@ -35,13 +37,23 @@ type GridState =
   | { status: 'ready'; items: CloudPhoto[]; page: number; totalPages: number; loadingMore: boolean };
 
 const PAGE_SIZE = 60;
+/** Seed column count — the pinch gesture adjusts it from here. */
+const CLOUD_COLUMNS = 3;
 
 /** Grid cell with the same cached-thumbnail behavior as the cloud gallery. */
-function GridPhotoCell({ item, onPress }: { item: CloudPhoto; onPress: () => void }) {
+function GridPhotoCell({
+  item,
+  columns,
+  onPress,
+}: {
+  item: CloudPhoto;
+  columns: number;
+  onPress: () => void;
+}) {
   const { colors } = useTheme();
   const thumbnailUri = useCloudThumbnailUri(item.id);
   return (
-    <Cell onPress={onPress} accessibilityLabel={item.fileName}>
+    <Cell $columns={columns} onPress={onPress} accessibilityLabel={item.fileName}>
       <CellImage
         source={thumbnailUri}
         contentFit="cover"
@@ -71,6 +83,30 @@ export function CloudPhotoGrid({ fetchPage, refreshToken = 0 }: CloudPhotoGridPr
   const [state, setState] = useState<GridState>({ status: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
   const scrollOffset = useSharedValue(0);
+  const listRef = useRef<FlatList<CloudPhoto>>(null);
+
+  // Pinch-columns (iOS Photos style): the FlatList remounts on a column
+  // change (RN requirement), so the offset is scaled as a best-effort anchor.
+  const restoreRef = useRef<{ offset: number; columns: number } | null>(null);
+  const onStepRef = useRef<(next: number) => void>(() => {});
+  const { columns, gesture: pinchGesture } = usePinchColumns(CLOUD_COLUMNS, {
+    onStep: (next) => onStepRef.current(next),
+  });
+  useEffect(() => {
+    onStepRef.current = () => {
+      restoreRef.current = { offset: scrollOffset.value, columns };
+    };
+  }, [columns, scrollOffset]);
+
+  const handleContentSizeChange = () => {
+    const restore = restoreRef.current;
+    if (!restore) return;
+    restoreRef.current = null;
+    listRef.current?.scrollToOffset({
+      offset: Math.max(0, (restore.offset * restore.columns) / columns),
+      animated: false,
+    });
+  };
 
   const load = useCallback(
     async (page: number) => {
@@ -177,20 +213,27 @@ export function CloudPhotoGrid({ fetchPage, refreshToken = 0 }: CloudPhotoGridPr
   }
 
   return (
-    <FlatList
-      data={state.items}
-      keyExtractor={(item) => item.id}
-      numColumns={3}
-      onEndReached={onEndReached}
-      onEndReachedThreshold={0.5}
-      refreshing={refreshing}
-      onRefresh={onRefresh}
-      ListFooterComponent={state.loadingMore ? <FooterSpin color={colors.accent} /> : null}
-      scrollEventThrottle={16}
-      onScroll={(e) => {
-        scrollOffset.value = e.nativeEvent.contentOffset.y;
-      }}
-      renderItem={({ item }) => <GridPhotoCell item={item} onPress={() => openPhoto(item)} />}
-    />
+    <GestureDetector gesture={pinchGesture}>
+      <FlatList
+        ref={listRef}
+        data={state.items}
+        keyExtractor={(item) => item.id}
+        key={columns}
+        numColumns={columns}
+        onContentSizeChange={handleContentSizeChange}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        ListFooterComponent={state.loadingMore ? <FooterSpin color={colors.accent} /> : null}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          scrollOffset.value = e.nativeEvent.contentOffset.y;
+        }}
+        renderItem={({ item }) => (
+          <GridPhotoCell item={item} columns={columns} onPress={() => openPhoto(item)} />
+        )}
+      />
+    </GestureDetector>
   );
 }

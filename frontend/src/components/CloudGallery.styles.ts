@@ -24,8 +24,8 @@ export const EmptyText = styled(ThemedText)`
   text-align: center;
 `;
 
-export const Cell = styled(Pressable)`
-  flex: 0.333333;
+export const Cell = styled(Pressable)<{ $columns: number }>`
+  flex: ${({ $columns }) => 1 / $columns};
   aspect-ratio: 1;
   padding: 1px;
 `;

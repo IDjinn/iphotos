@@ -71,3 +71,57 @@ export function monthAtOffset(metrics: GridLayoutMetrics, offset: number): Month
   }
   return months[result];
 }
+
+/** Index of the last item whose top edge is at or above `offset` (binary search). */
+function itemIndexAtOffset(metrics: GridLayoutMetrics, offset: number): number {
+  const { offsets } = metrics;
+  let low = 0;
+  let high = offsets.length - 1;
+  let at = 0;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (offsets[mid] <= offset) {
+      at = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return at;
+}
+
+/**
+ * Global photo index of the first photo in the row visible at `offset` (the
+ * row straddling the viewport top) — the anchor that keeps the grid in place
+ * when pinch-columns re-batches the rows.
+ */
+export function photoAnchorAtOffset(
+  items: GridItem[],
+  metrics: GridLayoutMetrics,
+  offset: number
+): number {
+  const at = itemIndexAtOffset(metrics, offset);
+  let count = 0;
+  for (let i = 0; i < at; i += 1) {
+    const item = items[i];
+    if (item.kind === 'row') count += item.assets.length;
+  }
+  return count;
+}
+
+/** Top offset of the row containing the given global photo index. */
+export function offsetForPhotoIndex(
+  items: GridItem[],
+  metrics: GridLayoutMetrics,
+  photoIndex: number
+): number {
+  let count = 0;
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i];
+    if (item.kind !== 'row') continue;
+    const len = item.assets.length;
+    if (photoIndex < count + len) return metrics.offsets[i];
+    count += len;
+  }
+  return metrics.contentHeight;
+}

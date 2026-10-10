@@ -17,7 +17,12 @@ import type { PhotoAsset } from '@/data/types';
 import { Springs } from '@/theme/tokens';
 
 import { VideoPage } from './VideoPage';
-import { useZoomController, ZoomableImage, type ZoomController } from './ZoomableImage';
+import {
+  useZoomController,
+  ZoomableImage,
+  type ViewerDismissDrivers,
+  type ZoomController,
+} from './ZoomableImage';
 
 const PAGE_WINDOW = 1;
 
@@ -26,6 +31,17 @@ const MODE_NONE = 0;
 const MODE_PAGE = 1;
 const MODE_DISMISS = 2;
 const MODE_ZOOM = 3;
+
+/** Zoomed-pan overflow that turns the page on release. */
+const EDGE_COMMIT_RATIO = 0.2;
+/** Minimum overflow (dp) for the velocity-based page commit. */
+const EDGE_COMMIT_MIN = 24;
+/** Horizontal velocity (dp/s) that commits the page from a smaller overflow. */
+const EDGE_COMMIT_VELOCITY = 600;
+/** How much of the past-the-edge drag carries into the pager offset. */
+const EDGE_RESISTANCE = 0.35;
+/** Rubber-band factor at the first/last page (no neighbour to carry into). */
+const EDGE_RUBBER = 0.15;
 
 interface ViewerPagerProps {
   assets: PhotoAsset[];
@@ -43,6 +59,8 @@ interface ViewerPagerProps {
   rotation: SharedValue<number>;
   videoPlaying: boolean;
   videoMuted: boolean;
+  /** Whether the overlay chrome is showing — video pages mirror it on the scrubber. */
+  chromeVisible: boolean;
 }
 
 /** One page of the pager; registers its zoom controller with the pager. */
@@ -53,11 +71,13 @@ function PagerPage({
   active,
   videoPlaying,
   videoMuted,
+  chromeVisible,
   pagerPan,
   hideNeighbors,
   dismissTy,
   dismissScale,
   rotation,
+  dismiss,
   onTap,
   onRegister,
 }: {
@@ -67,11 +87,13 @@ function PagerPage({
   active: boolean;
   videoPlaying: boolean;
   videoMuted: boolean;
+  chromeVisible: boolean;
   pagerPan: GestureType;
   hideNeighbors: SharedValue<number>;
   dismissTy: SharedValue<number>;
   dismissScale: SharedValue<number>;
   rotation: SharedValue<number>;
+  dismiss: ViewerDismissDrivers;
   onTap: () => void;
   onRegister: (index: number, controller: ZoomController | null) => void;
 }) {
@@ -104,11 +126,18 @@ function PagerPage({
           active={active}
           playing={videoPlaying}
           muted={videoMuted}
+          chromeVisible={chromeVisible}
           pagerPan={pagerPan}
           onTap={onTap}
         />
       ) : (
-        <ZoomableImage asset={asset} controller={controller} pagerPan={pagerPan} onTap={onTap} />
+        <ZoomableImage
+          asset={asset}
+          controller={controller}
+          pagerPan={pagerPan}
+          dismiss={dismiss}
+          onTap={onTap}
+        />
       )}
     </Page>
   );
@@ -134,6 +163,7 @@ export function ViewerPager({
   rotation,
   videoPlaying,
   videoMuted,
+  chromeVisible,
 }: ViewerPagerProps) {
   const { width: pageWidth } = useWindowDimensions();
   const mode = useSharedValue(MODE_NONE);
@@ -173,6 +203,18 @@ export function ViewerPager({
       else controllers.current.delete(pageIndex);
     },
     []
+  );
+
+  /** Shrink-pinch dismiss channels, handed to every photo page. */
+  const dismiss = useMemo<ViewerDismissDrivers>(
+    () => ({
+      scale: dismissScale,
+      ty: dismissTy,
+      backdrop: backdropOpacity,
+      hideNeighbors,
+      trigger: onDismiss,
+    }),
+    [dismissScale, dismissTy, backdropOpacity, hideNeighbors, onDismiss]
   );
 
   const pan = useMemo(() => {
@@ -268,16 +310,22 @@ export function ViewerPager({
           backdropOpacity.value = Math.max(0.15, 1 - Math.abs(dy) / 420);
           rotation.value = clamp(dx / pageWidth, -1, 1) * 8;
         } else if (mode.value === MODE_ZOOM && current) {
-          current.tx.value = clamp(
-            baseZoomTx.value + dx,
-            -current.boundX.value,
-            current.boundX.value
-          );
-          current.ty.value = clamp(
-            baseZoomTy.value + dy,
-            -current.boundY.value,
-            current.boundY.value
-          );
+          // Zoomed pan: the photo moves inside its bounds; dragging past a
+          // horizontal edge carries the overflow into the pager offset (iOS
+          // Photos turns the same drag into a page change on release).
+          const nx = baseZoomTx.value + dx;
+          const ny = baseZoomTy.value + dy;
+          const overX = Math.abs(nx) - current.boundX.value;
+          if (overX > 0) {
+            const dir = nx > 0 ? 1 : -1;
+            const hasNext = dir < 0 ? homePage.value < assets.length - 1 : homePage.value > 0;
+            const carry = overX * (hasNext ? EDGE_RESISTANCE : EDGE_RUBBER);
+            offset.value = baseOffset.value + dir * carry;
+          } else {
+            offset.value = baseOffset.value;
+          }
+          current.tx.value = clamp(nx, -current.boundX.value, current.boundX.value);
+          current.ty.value = clamp(ny, -current.boundY.value, current.boundY.value);
         }
       })
       .onEnd((event) => {
@@ -319,6 +367,44 @@ export function ViewerPager({
             backdropOpacity.value = withTiming(1, { duration: 180 });
             rotation.value = withSpring(0, Springs.snappy);
           }
+        } else if (mode.value === MODE_ZOOM && current) {
+          const nx = baseZoomTx.value + dx;
+          const overX = Math.max(0, Math.abs(nx) - current.boundX.value);
+          const dir = nx > 0 ? 1 : nx < 0 ? -1 : 0;
+          const hasNext = dir < 0 ? homePage.value < assets.length - 1 : homePage.value > 0;
+          const sameWay = event.velocityX * dir > 0;
+          const commit =
+            overX > 0 &&
+            hasNext &&
+            (overX > pageWidth * EDGE_COMMIT_RATIO ||
+              (overX > EDGE_COMMIT_MIN &&
+                sameWay &&
+                Math.abs(event.velocityX) > EDGE_COMMIT_VELOCITY));
+          if (commit) {
+            // Carry the drag into the neighbouring page and reset the zoom —
+            // the incoming page lands fresh at 1×.
+            const target = clamp(homePage.value + dir, 0, assets.length - 1);
+            current.scale.value = 1;
+            current.tx.value = 0;
+            current.ty.value = 0;
+            runOnJS(onIndexChange)(target);
+            offset.value = withSpring(-target * pageWidth, Springs.slide);
+          } else {
+            // Settle the photo back inside its bounds, momentum seeded.
+            const settledTx = clamp(
+              nx + event.velocityX * 0.08,
+              -current.boundX.value,
+              current.boundX.value
+            );
+            const settledTy = clamp(
+              baseZoomTy.value + dy + event.velocityY * 0.08,
+              -current.boundY.value,
+              current.boundY.value
+            );
+            current.tx.value = withSpring(settledTx, Springs.gentle);
+            current.ty.value = withSpring(settledTy, Springs.gentle);
+            offset.value = withSpring(-homePage.value * pageWidth, Springs.snappy);
+          }
         }
         ended.value = true;
         mode.value = MODE_NONE;
@@ -339,6 +425,19 @@ export function ViewerPager({
           dismissScale.value = withSpring(1, Springs.gentle);
           backdropOpacity.value = withTiming(1, { duration: 180 });
           rotation.value = withSpring(0, Springs.snappy);
+        } else if (!ended.value && mode.value === MODE_ZOOM) {
+          const zoomed = controllers.current.get(homePage.value);
+          if (zoomed) {
+            zoomed.tx.value = withSpring(
+              clamp(zoomed.tx.value, -zoomed.boundX.value, zoomed.boundX.value),
+              Springs.gentle
+            );
+            zoomed.ty.value = withSpring(
+              clamp(zoomed.ty.value, -zoomed.boundY.value, zoomed.boundY.value),
+              Springs.gentle
+            );
+          }
+          offset.value = withSpring(-homePage.value * pageWidth, Springs.snappy);
         }
         ended.value = false;
         mode.value = MODE_NONE;
@@ -380,11 +479,13 @@ export function ViewerPager({
             active={i === index}
             videoPlaying={videoPlaying}
             videoMuted={videoMuted}
+            chromeVisible={chromeVisible}
             pagerPan={pan}
             hideNeighbors={hideNeighbors}
             dismissTy={dismissTy}
             dismissScale={dismissScale}
             rotation={rotation}
+            dismiss={dismiss}
             onTap={onTap}
             onRegister={registerController}
           />

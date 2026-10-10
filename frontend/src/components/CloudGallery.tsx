@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, type LayoutChangeEvent } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
 
 import { Icon } from '@/components/Icon';
 import { ThemedText } from '@/components/ThemedText';
 import { CloudVideoPlayer } from '@/components/CloudVideoPlayer';
 import { FastScroll, type FastScrollHandle } from '@/components/grid/FastScroll';
+import { usePinchColumns } from '@/components/grid/usePinchColumns';
 import {
   Cell,
   CellImage,
@@ -42,6 +44,8 @@ import { monthBucketLabel, monthEndIso, monthStartIso } from '@/utils/dates';
 import { formatDuration } from '@/utils/format';
 
 const PAGE_SIZE = 60;
+/** Seed column count — the pinch gesture adjusts it from here. */
+const CLOUD_COLUMNS = 3;
 
 type MediaTypeFilter = 'All' | 'Photo' | 'Video' | 'Live';
 type SortOrder = 'desc' | 'asc';
@@ -108,11 +112,21 @@ function SortIcon({ direction }: { active: boolean; direction: 'arrow-down' | 'a
 }
 
 /** Grid cell rendering the cached thumbnail, downloading it on first view. */
-function CloudPhotoCell({ item, isReadyVideo, onPress }: { item: CloudPhoto; isReadyVideo: boolean; onPress: () => void }) {
+function CloudPhotoCell({
+  item,
+  columns,
+  isReadyVideo,
+  onPress,
+}: {
+  item: CloudPhoto;
+  columns: number;
+  isReadyVideo: boolean;
+  onPress: () => void;
+}) {
   const { colors } = useTheme();
   const thumbnailUri = useCloudThumbnailUri(item.id);
   return (
-    <Cell onPress={onPress} accessibilityLabel={item.fileName}>
+    <Cell $columns={columns} onPress={onPress} accessibilityLabel={item.fileName}>
       <CellImage
         source={thumbnailUri}
         contentFit="cover"
@@ -167,6 +181,31 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
   const listRef = useRef<FlatList<CloudPhoto>>(null);
   const fastScrollRef = useRef<FastScrollHandle>(null);
   const scrollOffset = useSharedValue(0);
+
+  // Pinch-columns (iOS Photos style): the FlatList remounts on a column
+  // change (RN requirement), so the scroll offset is scaled by the column
+  // ratio as a best-effort anchor around the filter header.
+  const restoreRef = useRef<{ offset: number; columns: number } | null>(null);
+  const onStepRef = useRef<(next: number) => void>(() => {});
+  const { columns, gesture: pinchGesture } = usePinchColumns(CLOUD_COLUMNS, {
+    onStep: (next) => onStepRef.current(next),
+  });
+  useEffect(() => {
+    onStepRef.current = () => {
+      restoreRef.current = { offset: scrollOffset.value, columns };
+    };
+  }, [columns, scrollOffset]);
+
+  const handleContentSizeChange = () => {
+    const restore = restoreRef.current;
+    if (!restore) return;
+    restoreRef.current = null;
+    const scaledRows = ((restore.offset - headerHeight) * restore.columns) / columns;
+    listRef.current?.scrollToOffset({
+      offset: Math.max(0, headerHeight + (Number.isFinite(scaledRows) ? scaledRows : 0)),
+      animated: false,
+    });
+  };
 
   /** Live total from the usage endpoint — gates the Live chip (best-effort). */
   const refreshLiveCount = useCallback(() => {
@@ -299,14 +338,14 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
    */
   const railMetrics = useMemo<GridLayoutMetrics | null>(() => {
     if (!months || months.length === 0 || layout.width <= 0 || layout.height <= 0) return null;
-    const rowHeight = layout.width / 3; // Cell is a 1/3-width square.
+    const rowHeight = layout.width / columns; // Cell is a 1/columns-width square.
     const totalPhotos = months.reduce((sum, bucket) => sum + bucket.count, 0);
     const markers: GridLayoutMetrics['months'] = [];
     let cum = 0;
     for (const bucket of months) {
       markers.push({
         itemIndex: cum,
-        offset: headerHeight + Math.floor(cum / 3) * rowHeight,
+        offset: headerHeight + Math.floor(cum / columns) * rowHeight,
         key: `m-${bucket.month}`,
         label: monthBucketLabel(bucket.month),
       });
@@ -314,31 +353,31 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     }
     return {
       offsets: [],
-      contentHeight: headerHeight + Math.ceil(totalPhotos / 3) * rowHeight,
+      contentHeight: headerHeight + Math.ceil(totalPhotos / columns) * rowHeight,
       months: markers,
     };
-  }, [months, layout, headerHeight]);
+  }, [months, layout, headerHeight, columns]);
 
   /** Timeline Y of the loaded window's top (its first item's month start). */
   const windowOffset = useMemo(() => {
     if (state.status !== 'ready' || state.items.length === 0 || !months || layout.width <= 0) return 0;
     const first = state.items[0];
     const key = first.takenAt ? first.takenAt.slice(0, 7) : '';
-    const rowHeight = layout.width / 3;
+    const rowHeight = layout.width / columns;
     let cum = 0;
     for (const bucket of months) {
       if (bucket.month === key) break;
       cum += bucket.count;
     }
-    return headerHeight + Math.floor(cum / 3) * rowHeight;
-  }, [state, months, layout.width, headerHeight]);
+    return headerHeight + Math.floor(cum / columns) * rowHeight;
+  }, [state, months, layout.width, headerHeight, columns]);
 
   /** Loaded content height on the timeline scale. */
   const loadedHeight = useMemo(() => {
     if (state.status !== 'ready' || layout.width <= 0) return 0;
-    const rowHeight = layout.width / 3;
-    return headerHeight + Math.ceil(state.items.length / 3) * rowHeight;
-  }, [state, layout.width, headerHeight]);
+    const rowHeight = layout.width / columns;
+    return headerHeight + Math.ceil(state.items.length / columns) * rowHeight;
+  }, [state, layout.width, headerHeight, columns]);
 
   const handleListLayout = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -468,32 +507,37 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
 
   return (
     <>
-      <FlatList
-        ref={listRef}
-        data={state.items}
-        keyExtractor={(item) => item.id}
-        numColumns={3}
-        contentContainerStyle={contentContainerStyle}
-        ListHeaderComponent={filterHeader}
-        onEndReached={onEndReached}
-        onEndReachedThreshold={0.5}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-        ListFooterComponent={state.loadingMore ? <FooterSpin color={colors.accent} /> : null}
-        onLayout={handleListLayout}
-        scrollEventThrottle={16}
-        onScroll={(e) => {
-          scrollOffset.value = e.nativeEvent.contentOffset.y;
-          fastScrollRef.current?.reveal();
-        }}
-        renderItem={({ item }) => (
-          <CloudPhotoCell
-            item={item}
-            isReadyVideo={item.state === 'Ready' && item.mediaType === 'Video'}
-            onPress={() => openPhoto(item)}
-          />
-        )}
-      />
+      <GestureDetector gesture={pinchGesture}>
+        <FlatList
+          ref={listRef}
+          data={state.items}
+          keyExtractor={(item) => item.id}
+          key={columns}
+          numColumns={columns}
+          contentContainerStyle={contentContainerStyle}
+          ListHeaderComponent={filterHeader}
+          onContentSizeChange={handleContentSizeChange}
+          onEndReached={onEndReached}
+          onEndReachedThreshold={0.5}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          ListFooterComponent={state.loadingMore ? <FooterSpin color={colors.accent} /> : null}
+          onLayout={handleListLayout}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            scrollOffset.value = e.nativeEvent.contentOffset.y;
+            fastScrollRef.current?.reveal();
+          }}
+          renderItem={({ item }) => (
+            <CloudPhotoCell
+              item={item}
+              columns={columns}
+              isReadyVideo={item.state === 'Ready' && item.mediaType === 'Video'}
+              onPress={() => openPhoto(item)}
+            />
+          )}
+        />
+      </GestureDetector>
       {railMetrics ? (
         <FastScroll
           ref={fastScrollRef}
