@@ -66,6 +66,13 @@ export const CounterGrid = styled.div`
       color: var(--muted-foreground);
       line-height: 1.4;
     }
+
+    small {
+      display: block;
+      font-size: 0.6875rem;
+      color: var(--muted-foreground);
+      line-height: 1.4;
+    }
   }
 `;
 

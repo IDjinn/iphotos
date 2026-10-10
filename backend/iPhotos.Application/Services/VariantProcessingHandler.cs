@@ -23,6 +23,7 @@ public sealed class VariantProcessingHandler(
     IVideoCompressor videoCompressor,
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime,
+    MlJobEnqueuer mlJobs,
     Microsoft.Extensions.Options.IOptions<UploadOptions> uploadOptions)
 {
     public async Task ProcessJobAsync(VariantJob job, CancellationToken cancellationToken = default)
@@ -68,6 +69,10 @@ public sealed class VariantProcessingHandler(
 
                 photo.MarkReady(metadata, dateTime.UtcNow);
             }
+
+            // Photos that just became Ready enter the AI pipelines (doc 18 §6.1);
+            // best-effort — the enqueuer swallows its own failures.
+            await mlJobs.EnqueueForReadyPhotoAsync(photo, cancellationToken);
 
             job.Complete(dateTime.UtcNow);
         }

@@ -28,8 +28,8 @@
 > - **Vídeos**: ✅ importados desde 2026-10-05 (doc 15) — `mp4 m4v mov webm avi 3gp`
 >   entram pelo mesmo `PhotoService` (poster/duração via ffmpeg no worker) e o
 >   sidecar do Takeout os semeia igual às fotos; contador novo `videosImported`
->   no job. O contador `videosIgnored` (2026-10-04) permanece no contrato como
->   legado (desde então permanece 0). Parte real analisada na época (part 005,
+>   no job. O contador `videosIgnored` (2026-10-04, legado) foi removido do
+>   contrato em 2026-10-09. Parte real analisada na época (part 005,
 >   8,6 GiB): 1.672 imagens (5,19 GiB), 394 vídeos (2,84 GiB), 1.502 sidecars.
 > - **Multi-parte**: cada parte (`takeout-…-1-00N.zip`) é um job independente —
 >   importar todas as partes; duplicadas entre partes viram `duplicated`.

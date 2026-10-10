@@ -17,8 +17,8 @@ export const CellImage = styled(Image)`
   ${absoluteFill}
 `;
 
-/** Video indicator badge pinned to the cell's top-left corner. */
-export const VideoBadge = styled.View`
+/** Media indicator badge pinned to the cell's top-left corner (play/live rings). */
+export const MediaBadge = styled.View`
   position: absolute;
   top: ${({ theme }) => theme.space[1]}px;
   left: ${({ theme }) => theme.space[1]}px;

@@ -36,6 +36,8 @@ export interface CloudPhoto {
   title?: string;
   /** Catalog description/caption seeded by imports (Google Takeout sidecars). */
   description?: string;
+  /** iPhone Live Photo: imported with its paired motion file (never a standalone video). */
+  isLive: boolean;
   state: PhotoState;
   lastError?: string;
   contentHash: string;
@@ -48,6 +50,8 @@ export interface CloudUsage {
   quotaBytes: number;
   photoCount: number;
   variantCount: number;
+  /** Live photos in the library — gates the gallery's Live filter chip. */
+  livePhotoCount: number;
 }
 
 export interface PagedResult<T> {
@@ -82,6 +86,8 @@ export interface ListPhotosQuery {
   pageSize?: number;
   /** Restrict the listing to one media kind. */
   mediaType?: CloudMediaType;
+  /** Only iPhone Live Photos (`mediaType` stays Photo — live photos are photos). */
+  isLive?: boolean;
   /** Sort field — 'takenAt' (default) or 'createdAt'. */
   sortBy?: 'takenAt' | 'createdAt';
   /** Sort direction — 'desc' (default) or 'asc'. */
@@ -100,7 +106,7 @@ export interface PhotoMonthBucket {
 
 /** Timeline month buckets for fast-scroll rails — mirrors the listing order. */
 export async function listPhotoMonths(
-  query: { mediaType?: CloudMediaType; sortBy?: 'takenAt' | 'createdAt' } = {}
+  query: { mediaType?: CloudMediaType; isLive?: boolean; sortBy?: 'takenAt' | 'createdAt' } = {}
 ): Promise<PhotoMonthBucket[]> {
   return apiJson<PhotoMonthBucket[]>('/api/photos/months', { params: query });
 }

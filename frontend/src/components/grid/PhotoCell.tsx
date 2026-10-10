@@ -17,7 +17,7 @@ import {
   CheckWrap,
   DimLayer,
   Duration,
-  VideoBadge,
+  MediaBadge,
 } from '@/components/grid/PhotoCell.styles';
 import { useThumbnailUri } from '@/hooks/use-thumbnail-uri';
 import { useSelectionStore } from '@/stores/selection';
@@ -61,6 +61,7 @@ export function PhotoCell({ asset, size, onPress }: PhotoCellProps) {
   }));
 
   const isVideo = asset.mediaType === 'video';
+  const isLive = !isVideo && asset.isLive === true;
   const sourceUri = useThumbnailUri(asset);
 
   return (
@@ -80,10 +81,14 @@ export function PhotoCell({ asset, size, onPress }: PhotoCellProps) {
             recyclingKey={asset.id}
             cachePolicy="memory-disk"
           />
-          {isVideo ? (
-            <VideoBadge pointerEvents="none">
-              <Icon name="play" size={14} color={colors.textInverse} />
-            </VideoBadge>
+          {isVideo || isLive ? (
+            <MediaBadge pointerEvents="none">
+              <Icon
+                name={isVideo ? 'play' : 'radio-button-on'}
+                size={14}
+                color={colors.textInverse}
+              />
+            </MediaBadge>
           ) : null}
           {isVideo && asset.duration ? (
             <Duration>{formatDuration(asset.duration)}</Duration>

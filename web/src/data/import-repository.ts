@@ -23,8 +23,6 @@ export interface ZipImportJob {
   videosImported: number;
   duplicated: number;
   ignored: number;
-  /** Video entries skipped by the import (legacy counter; video hosting is supported). */
-  videosIgnored: number;
   failed: number;
   error?: string;
   createdAt: string;
@@ -118,8 +116,9 @@ export async function getZipImport(jobId: string): Promise<ZipImportJob> {
 }
 
 /** Recent import jobs for the signed-in user, newest first. The import panel
- * seeds its queue view from this on mount, so a page reload doesn't lose track
- * of archives that are queued or still importing server-side. */
+ * seeds its in-flight queue view from this on mount (finished jobs stay in the
+ * server history but are not restored into the list), so a page reload doesn't
+ * lose track of archives that are queued or still importing server-side. */
 export function listZipImports(): Promise<ZipImportJob[]> {
   return apiJson<ZipImportJob[]>("/api/imports");
 }

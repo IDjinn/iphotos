@@ -28,6 +28,32 @@ public sealed class WorkerOptions
 
     /// <summary>Hard wall-clock budget per video job (large originals + transcode).</summary>
     public int VideoJobTimeoutMinutes { get; set; } = 60;
+
+    // ── AI pipelines (doc 18) ────────────────────────────────────────────────
+
+    /// <summary>Parallel lanes for faces jobs (one inference + crop round-trip each).</summary>
+    public int MlFaceLaneConcurrency { get; set; } = 2;
+
+    /// <summary>Hard wall-clock budget per faces job (detect + N crops + uploads).</summary>
+    public int MlFaceJobTimeoutMinutes { get; set; } = 2;
+
+    /// <summary>Parallel lanes for labels jobs; local VLMs are slow, so this stays at 1.</summary>
+    public int MlLabelLaneConcurrency { get; set; } = 1;
+
+    /// <summary>Hard wall-clock budget per labels job (local VLMs can take a while).</summary>
+    public int MlLabelJobTimeoutMinutes { get; set; } = 10;
+
+    /// <summary>Parallel lanes for reclustering jobs; keep at 1 — one pass per owner at a time.</summary>
+    public int MlClusterLaneConcurrency { get; set; } = 1;
+
+    /// <summary>Hard wall-clock budget per reclustering job (full owner face scan).</summary>
+    public int MlClusterJobTimeoutMinutes { get; set; } = 15;
+
+    /// <summary>Hours between backfill sweeps (startup recovery runs on every boot).</summary>
+    public double MlBackfillIntervalHours { get; set; } = 6;
+
+    /// <summary>Ready photos examined per backfill pass (per pipeline).</summary>
+    public int MlBackfillBatchSize { get; set; } = 500;
 }
 
 public sealed class OrphanSweepOptions

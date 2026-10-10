@@ -22,13 +22,6 @@ public sealed class ZipImportJob
     /// <summary>Video entries ingested by the import (subset of Imported).</summary>
     public int VideosImported { get; set; }
 
-    /// <summary>
-    /// Video entries skipped by the import. Legacy counter: video hosting is
-    /// supported since video ingest landed, so this stays 0 unless a container
-    /// type is added to the skip list again.
-    /// </summary>
-    public int VideosIgnored { get; set; }
-
     public int Ignored { get; set; }
     public int Failed { get; set; }
 

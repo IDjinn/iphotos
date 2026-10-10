@@ -24,6 +24,7 @@ public class PhotoServiceTests
         _photos, _variants, _jobs, _users, _blobs, _hasher, new FakeImageVariantGenerator(),
         new FakeExifExtractor(), _video,
         _uow, new StubDateTimeProvider(Now),
+        TestMlJobs.CreateEnqueuer(),
         Microsoft.Extensions.Options.Options.Create(uploadOptions ?? new UploadOptions()));
 
     private User NewUser(long quota = 1_000_000) =>

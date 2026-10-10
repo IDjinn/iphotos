@@ -1,7 +1,9 @@
 using iPhotos.Application;
 using iPhotos.Application.Abstractions;
 using iPhotos.Application.Services;
+using iPhotos.Domain;
 using iPhotos.Imaging;
+using iPhotos.Infrastructure.Ai;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -57,6 +59,48 @@ public static class DependencyInjection
         services.AddScoped<ZipImportHandler>();
         return services;
     }
+
+    /// <summary>
+    /// Registers the AI pipelines (doc 18): face inference via the self-hosted ml
+    /// container, scene labeling via an OpenAI-compatible vision endpoint, the three
+    /// ml_jobs workers and the startup/backfill sweeper. Used by the Worker host.
+    /// </summary>
+    public static IServiceCollection AddAiProcessing(this IServiceCollection services)
+    {
+        services.AddOptions<AiOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(AiOptions.SectionName).Bind(options));
+        services.AddOptions<MlOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(MlOptions.SectionName).Bind(options));
+        services.AddOptions<VisionOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(VisionOptions.SectionName).Bind(options));
+
+        services.AddHttpClient<IFaceInferenceProvider, HttpMlFaceProvider>((sp, client) =>
+        {
+            var ml = sp.GetRequiredService<IOptions<MlOptions>>().Value;
+            client.BaseAddress = new Uri(EnsureTrailingSlash(ml.BaseUrl), UriKind.Absolute);
+            client.Timeout = TimeSpan.FromSeconds(Math.Max(5, ml.TimeoutSeconds));
+        });
+        services.AddHttpClient<IVisionLabeler, OpenAiCompatibleVisionLabeler>((sp, client) =>
+        {
+            var vision = sp.GetRequiredService<IOptions<VisionOptions>>().Value;
+            // Label jobs carry their own generous budget; the HTTP timeout only bounds
+            // a hung VLM request.
+            client.BaseAddress = new Uri(EnsureTrailingSlash(vision.BaseUrl), UriKind.Absolute);
+            client.Timeout = TimeSpan.FromSeconds(Math.Max(10, vision.TimeoutSeconds));
+        });
+
+        services.AddSingleton<IFaceClusterer, ChineseWhispersClusterer>();
+        services.AddSingleton<IFaceCropper, ImageSharpFaceCropper>();
+        // The ML workers resolve the handler for a job's kind (doc 18 §6.2).
+        services.AddKeyedScoped<IMlJobHandler, FaceProcessingService>(MlJobKind.Faces);
+        services.AddKeyedScoped<IMlJobHandler, PersonClusterJobService>(MlJobKind.Cluster);
+        services.AddKeyedScoped<IMlJobHandler, LabelProcessingService>(MlJobKind.Labels);
+        services.AddScoped<MlJobEnqueuer>();
+        return services;
+    }
+
+    private static string EnsureTrailingSlash(string baseUrl) =>
+        string.IsNullOrWhiteSpace(baseUrl) ? "http://invalid/" : baseUrl.TrimEnd('/') + "/";
 
     /// <summary>
     /// Registers the billing expiry sweep (grace period handling + free-tier downgrade).

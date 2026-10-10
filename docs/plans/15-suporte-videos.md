@@ -46,7 +46,8 @@ segue os 200 MB do Kestrel; presigned e ZIP não têm teto além da quota.
   original e das variantes, nascendo `Ready` (mesma política das fotos).
 - **Import ZIP** — `ZipImportHandler` ingere vídeos pela mesma `PhotoService` (o
   seed de sidecar do Takeout já era agnóstico ao tipo). Contadores: `videosImported`
-  (novo, subconjunto de `imported`) e `videosIgnored` (legado, permanece em 0).
+  (novo, subconjunto de `imported`) e `videosIgnored` (legado na época; removido
+  em 2026-10-09).
   Vídeo com probe falho conta como `failed`, sem abortar o job.
 - **Presigned (`upload-ticket` → PUT → complete)** — ticket valida MIME de vídeo,
   `CompleteUploadAsync` enfileira `VariantJob`, e o `VariantProcessingHandler`
@@ -74,7 +75,7 @@ Migração `AddVideoSupport`:
 Contrato REST (docs 09):
 - `PhotoDto` ganha `mediaType` (string `Photo|Video`) e `durationSeconds`.
 - `GET /api/photos?mediaType=video|photo` (case-insensitive; valor inválido → 400).
-- `ZipImportJob` ganha `videosImported`; `videosIgnored` permanece (legado).
+- `ZipImportJob` ganha `videosImported`; `videosIgnored` permanece (legado; removido em 2026-10-09).
 - Serving `/api/photos/{id}/files/{kind}` inalterado — `original` de vídeo responde
   `video/*` com `Accept-Ranges: bytes` (seek funciona).
 

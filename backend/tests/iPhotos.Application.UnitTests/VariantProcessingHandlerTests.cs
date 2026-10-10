@@ -25,6 +25,7 @@ public class VariantProcessingHandlerTests
         new(_photos, _variants, _users, _blobs, new Sha256ContentHasher(), _generator, _exif, _video,
             imageCompressor ?? new FakeImageCompressor(), videoCompressor ?? new FakeVideoCompressor(),
             _uow, new StubDateTimeProvider(Now),
+            TestMlJobs.CreateEnqueuer(),
             Microsoft.Extensions.Options.Options.Create(uploadOptions ?? new UploadOptions()));
 
     private User Owner(

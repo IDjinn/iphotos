@@ -73,8 +73,8 @@ public sealed class ZipImportWorker(
                     job.Id, job.FileName, job.OwnerId, job.Attempts + 1, job.MaxAttempts);
                 await handler.ProcessJobAsync(job, stoppingToken);
                 logger.LogInformation(
-                    "Zip import job {JobId} finished in state {State} (imported {Imported}, duplicated {Duplicated}, ignored {Ignored}, videos skipped {VideosIgnored}, failed {Failed})",
-                    job.Id, job.State, job.Imported, job.Duplicated, job.Ignored, job.VideosIgnored, job.Failed);
+                    "Zip import job {JobId} finished in state {State} (imported {Imported}, duplicated {Duplicated}, ignored {Ignored}, failed {Failed})",
+                    job.Id, job.State, job.Imported, job.Duplicated, job.Ignored, job.Failed);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

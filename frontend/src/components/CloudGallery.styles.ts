@@ -45,7 +45,8 @@ export const StateBadge = styled.View`
   background-color: ${({ theme }) => theme.colors.background};
 `;
 
-export const VideoBadge = styled.View`
+/** Corner badge over grid media: play for videos, live rings for Live Photos. */
+export const MediaBadge = styled.View`
   position: absolute;
   top: ${({ theme }) => theme.space[1]}px;
   left: ${({ theme }) => theme.space[1]}px;

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Pgvector;
 using iPhotos.Infrastructure;
 
 #nullable disable
@@ -20,6 +21,7 @@ namespace iPhotos.Infrastructure.Persistence.Migrations
                 .HasAnnotation("ProductVersion", "10.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("iPhotos.Domain.BillingPurchase", b =>
@@ -86,6 +88,111 @@ namespace iPhotos.Infrastructure.Persistence.Migrations
                     b.ToTable("billing_purchases", (string)null);
                 });
 
+            modelBuilder.Entity("iPhotos.Domain.MlJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("last_error");
+
+                    b.Property<int>("MaxAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_attempts");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_id");
+
+                    b.Property<Guid?>("PhotoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("photo_id");
+
+                    b.Property<DateTimeOffset?>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("processed_at");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("state");
+
+                    b.HasKey("Id")
+                        .HasName("pk_ml_jobs");
+
+                    b.HasIndex("PhotoId")
+                        .HasDatabaseName("ix_ml_jobs_photo_id");
+
+                    b.HasIndex("State", "CreatedAt")
+                        .HasDatabaseName("ix_ml_jobs_state_created_at");
+
+                    b.ToTable("ml_jobs", (string)null);
+                });
+
+            modelBuilder.Entity("iPhotos.Domain.Person", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Vector>("Centroid")
+                        .HasColumnType("vector(512)")
+                        .HasColumnName("centroid");
+
+                    b.Property<Guid?>("CoverFaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cover_face_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("FaceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("face_count");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_persons");
+
+                    b.HasIndex("OwnerId", "FaceCount")
+                        .HasDatabaseName("ix_persons_owner_id_face_count");
+
+                    b.ToTable("persons", (string)null);
+                });
+
             modelBuilder.Entity("iPhotos.Domain.Photo", b =>
                 {
                     b.Property<Guid>("Id")
@@ -139,6 +246,10 @@ namespace iPhotos.Infrastructure.Persistence.Migrations
                     b.Property<int?>("Height")
                         .HasColumnType("integer")
                         .HasColumnName("height");
+
+                    b.Property<bool>("IsLive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_live");
 
                     b.Property<string>("LastError")
                         .HasMaxLength(2000)
@@ -217,6 +328,119 @@ namespace iPhotos.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_photos_owner_id_taken_at");
 
                     b.ToTable("photos", (string)null);
+                });
+
+            modelBuilder.Entity("iPhotos.Domain.PhotoFace", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<float>("BboxH")
+                        .HasColumnType("real")
+                        .HasColumnName("bbox_h");
+
+                    b.Property<float>("BboxW")
+                        .HasColumnType("real")
+                        .HasColumnName("bbox_w");
+
+                    b.Property<float>("BboxX")
+                        .HasColumnType("real")
+                        .HasColumnName("bbox_x");
+
+                    b.Property<float>("BboxY")
+                        .HasColumnType("real")
+                        .HasColumnName("bbox_y");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CropBlobPath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("crop_blob_path");
+
+                    b.Property<float>("DetScore")
+                        .HasColumnType("real")
+                        .HasColumnName("det_score");
+
+                    b.Property<Vector>("Embedding")
+                        .IsRequired()
+                        .HasColumnType("vector(512)")
+                        .HasColumnName("embedding");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("model");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_id");
+
+                    b.Property<Guid?>("PersonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("person_id");
+
+                    b.Property<Guid>("PhotoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("photo_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_photo_faces");
+
+                    b.HasIndex("PersonId")
+                        .HasDatabaseName("ix_photo_faces_person_id");
+
+                    b.HasIndex("PhotoId")
+                        .HasDatabaseName("ix_photo_faces_photo_id");
+
+                    b.HasIndex("OwnerId", "Model")
+                        .HasDatabaseName("ix_photo_faces_owner_id_model");
+
+                    b.ToTable("photo_faces", (string)null);
+                });
+
+            modelBuilder.Entity("iPhotos.Domain.PhotoLabel", b =>
+                {
+                    b.Property<Guid>("PhotoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("photo_id");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("label");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("model");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_id");
+
+                    b.Property<float>("Score")
+                        .HasColumnType("real")
+                        .HasColumnName("score");
+
+                    b.HasKey("PhotoId", "Label")
+                        .HasName("pk_photo_labels");
+
+                    b.HasIndex("OwnerId", "Label")
+                        .HasDatabaseName("ix_photo_labels_owner_id_label");
+
+                    b.ToTable("photo_labels", (string)null);
                 });
 
             modelBuilder.Entity("iPhotos.Domain.PhotoVariant", b =>
@@ -513,10 +737,6 @@ namespace iPhotos.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("total_entries");
 
-                    b.Property<int>("VideosIgnored")
-                        .HasColumnType("integer")
-                        .HasColumnName("videos_ignored");
-
                     b.Property<int>("VideosImported")
                         .HasColumnType("integer")
                         .HasColumnName("videos_imported");
@@ -543,6 +763,25 @@ namespace iPhotos.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_billing_purchases_users_user_id");
                 });
 
+            modelBuilder.Entity("iPhotos.Domain.MlJob", b =>
+                {
+                    b.HasOne("iPhotos.Domain.Photo", null)
+                        .WithMany()
+                        .HasForeignKey("PhotoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_ml_jobs_photos_photo_id");
+                });
+
+            modelBuilder.Entity("iPhotos.Domain.Person", b =>
+                {
+                    b.HasOne("iPhotos.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_persons_users_owner_id");
+                });
+
             modelBuilder.Entity("iPhotos.Domain.Photo", b =>
                 {
                     b.HasOne("iPhotos.Domain.User", null)
@@ -551,6 +790,32 @@ namespace iPhotos.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_photos_users_owner_id");
+                });
+
+            modelBuilder.Entity("iPhotos.Domain.PhotoFace", b =>
+                {
+                    b.HasOne("iPhotos.Domain.Person", null)
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_photo_faces_persons_person_id");
+
+                    b.HasOne("iPhotos.Domain.Photo", null)
+                        .WithMany()
+                        .HasForeignKey("PhotoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_photo_faces_photos_photo_id");
+                });
+
+            modelBuilder.Entity("iPhotos.Domain.PhotoLabel", b =>
+                {
+                    b.HasOne("iPhotos.Domain.Photo", null)
+                        .WithMany()
+                        .HasForeignKey("PhotoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_photo_labels_photos_photo_id");
                 });
 
             modelBuilder.Entity("iPhotos.Domain.PhotoVariant", b =>

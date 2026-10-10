@@ -19,6 +19,7 @@ public sealed record PhotoDto(
     string FileName,
     string MimeType,
     MediaType MediaType,
+    bool IsLive,
     long SizeBytes,
     int? Width,
     int? Height,
@@ -42,6 +43,7 @@ public sealed record PhotoDto(
         photo.FileName,
         photo.MimeType,
         photo.MediaType,
+        photo.IsLive,
         photo.SizeBytes,
         photo.Width,
         photo.Height,
@@ -90,6 +92,7 @@ public sealed record PhotoFilter(
     int Page = 1,
     int PageSize = 20,
     MediaType? MediaType = null,
+    bool? IsLive = null,
     string? SortBy = null,
     string? Order = null);
 
@@ -104,9 +107,9 @@ public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSi
 /// </summary>
 public sealed record PhotoMonthBucket(string Month, int Count);
 
-public sealed record UsageStats(long UsedBytes, int PhotoCount, int VariantCount);
+public sealed record UsageStats(long UsedBytes, int PhotoCount, int VariantCount, int LivePhotoCount);
 
-public sealed record UsageSummary(long UsedBytes, long QuotaBytes, int PhotoCount, int VariantCount);
+public sealed record UsageSummary(long UsedBytes, long QuotaBytes, int PhotoCount, int VariantCount, int LivePhotoCount);
 
 public sealed record ZipImportJobDto(
     Guid Id,
@@ -119,7 +122,6 @@ public sealed record ZipImportJobDto(
     int VideosImported,
     int Duplicated,
     int Ignored,
-    int VideosIgnored,
     int Failed,
     string? Error,
     DateTimeOffset CreatedAt,
@@ -136,7 +138,6 @@ public sealed record ZipImportJobDto(
         job.VideosImported,
         job.Duplicated,
         job.Ignored,
-        job.VideosIgnored,
         job.Failed,
         job.LastError,
         job.CreatedAt,
@@ -182,3 +183,13 @@ public sealed record UserPreferencesDto(
     long VideoCapBytes);
 
 public sealed record UpdateUserPreferencesRequest(string UploadQuality, bool ApplyToExisting = false);
+
+// ── People & labels (doc 18) ────────────────────────────────────────────────
+
+/// <summary>Person row for the People screen: name + cover + size. The crop is
+/// fetched via /api/faces/{coverFaceId}/crop (client builds the URL).</summary>
+public sealed record PersonDto(Guid Id, string? Name, int FaceCount, Guid? CoverFaceId);
+
+public sealed record LabelCount(string Label, int Count);
+
+public sealed record PhotoLabelDto(Guid PhotoId, string Label, float Score);

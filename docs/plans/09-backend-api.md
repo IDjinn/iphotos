@@ -86,12 +86,12 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
 | `POST /api/photos/{id}/complete` | Confirma o PUT presigned: verifica existência do blob, move `PendingUpload → PendingProcessing`, enfileira o processamento → **200** PhotoDto. **404** se os bytes ainda não chegaram (cliente pode reenviar e completar depois) |
 | `POST /api/photos/{id}/part-url` | Presigna UMA parte da sessão multipart direta: body `{ partNumber }` (1–10000) → **200** `{ url, partNumber, expiresAt }`. O cliente faz PUT presigned de cada parte direto ao storage. **501** quando o storage não presigna multipart |
 | `POST /api/photos/{id}/abort` | Cancela o upload direto: aborta a sessão multipart (partes descartadas no S3), remove blob parcial e a row → **204** |
-| `GET /api/photos` | Listagem paginada com filtros: `from`, `to`, `fileName` (contains, case-insensitive), `camera`, `mediaType` (`photo`\|`video`), `sortBy` (`takenAt`\|`createdAt`, default `takenAt`), `order` (`asc`\|`desc`, default `desc`), `page` (≥1), `pageSize` (1–100, default 20) |
-| `GET /api/photos/months` | Buckets mensais da timeline para fast-scroll (2026-10-09): `[{ "month": "2026-08", "count": 37 }]`, ordem desc; fotos sem `takenAt` vão por último sob `"month": ""` (espelha o sort nulls-last do listing). Query: `mediaType` (`photo`\|`video`), `sortBy` (`takenAt`\|`createdAt`, default `takenAt` — `createdAt` não gera bucket undated). Mesmos error codes do listing (`photos.invalid_media_type`, `photos.invalid_sort` → 400) |
+| `GET /api/photos` | Listagem paginada com filtros: `from`, `to`, `fileName` (contains, case-insensitive), `camera`, `mediaType` (`photo`\|`video`), `isLive` (bool, 2026-10-10 — fotos live do iPhone; `mediaType=photo` as inclui), `sortBy` (`takenAt`\|`createdAt`, default `takenAt`), `order` (`asc`\|`desc`, default `desc`), `page` (≥1), `pageSize` (1–100, default 20) |
+| `GET /api/photos/months` | Buckets mensais da timeline para fast-scroll (2026-10-09): `[{ "month": "2026-08", "count": 37 }]`, ordem desc; fotos sem `takenAt` vão por último sob `"month": ""` (espelha o sort nulls-last do listing). Query: `mediaType` (`photo`\|`video`), `isLive` (bool, 2026-10-10), `sortBy` (`takenAt`\|`createdAt`, default `takenAt` — `createdAt` não gera bucket undated). Mesmos error codes do listing (`photos.invalid_media_type`, `photos.invalid_sort` → 400) |
 | `GET /api/photos/{id}` | Metadados completos + `variants[]` |
 | `DELETE /api/photos/{id}` | **204** — hard delete v1 (tombstones/GC são futuro, doc 03 §8) |
 | `GET /api/photos/{id}/files/{kind}` | `kind` = `original` \| `preview` \| `thumbnail` → stream (variantes em JPEG; original com mime original). Suporta Range. **404 se a variante ainda não foi gerada**. Cacheável: `Cache-Control: private, max-age=31536000, immutable` + `ETag` (`{contentHash}-{kind}`) — `If-None-Match` correspondente responde **304** sem ler o blob (as blobs são imutáveis; grid/viewer não repetem o download) |
-| `GET /api/usage` | `{ usedBytes, quotaBytes, photoCount, variantCount }` — alimenta a barra de uso do doc 07 |
+| `GET /api/usage` | `{ usedBytes, quotaBytes, photoCount, variantCount, livePhotoCount }` — alimenta a barra de uso do doc 07; `livePhotoCount` (2026-10-10) gateda o chip de filtro "Live" na galeria |
 | `GET /health` | `{ status, utcNow }` — sem auth, para o app checar conectividade |
 
 ```jsonc
@@ -105,6 +105,7 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
   "fileName": "vacation.jpg",
   "mimeType": "image/jpeg",
   "mediaType": "Photo",          // Photo|Video (2026-10-05, doc 15)
+  "isLive": false,               // foto live do iPhone (2026-10-10): par com vídeo de mesmo nome; segue sendo Photo
   "sizeBytes": 2710,
   "width": 640,            // EXIF/ffprobe; null só no fluxo direto antes do worker processar
   "height": 200,
@@ -149,10 +150,18 @@ ticket); em modos "storage saver" o upload é aceito e o worker comprime depois 
 o teto real é a quota.
 
 **Listagem:** além dos filtros `from/to/fileName/camera`, `GET /api/photos` aceita
-`?mediaType=photo|video` (case-insensitive; valor inválido → 400) e os parâmetros de
-ordenação `?sortBy=takenAt|createdAt` (default `takenAt`) com `?order=asc|desc`
-(default `desc`) — valor inválido → 400. Com `sortBy=takenAt`, fotos sem `taken_at`
-vão para o fim no `desc` e para o começo no `asc`, com fallback `created_at`.
+`?mediaType=photo|video` (case-insensitive; valor inválido → 400), `?isLive=true`
+(2026-10-10 — fotos live do iPhone; continuam `mediaType=photo`, portanto o filtro
+`photo` as inclui) e os parâmetros de ordenação `?sortBy=takenAt|createdAt`
+(default `takenAt`) com `?order=asc|desc` (default `desc`) — valor inválido → 400.
+Com `sortBy=takenAt`, fotos sem `taken_at` vão para o fim no `desc` e para o começo
+no `asc`, com fallback `created_at`.
+
+**Fotos live (2026-10-10):** pares Apple (`IMG_1234.HEIC` + `IMG_1234.mov`, mesma
+pasta e stem — export iCloud/Takeout). Na importação ZIP o still entra como foto com
+`isLive: true` e o vídeo pareado **não** gera asset de vídeo (conta em `ignored`);
+se o still falhar ao decodificar, o `.mov` cai como vídeo normal. Reimportar o par
+sobre um still já importado promove a row para live (dedup por hash).
 
 ### 3.3 Formato de erros e convenções
 
@@ -218,15 +227,15 @@ Outro owner nunca aparece na lista (escopo por owner no repositório).
   "fileName": "takeout.zip", "sizeBytes": 123,
   "totalEntries": 300, "processedEntries": 180,
   "imported": 150, "videosImported": 40, "duplicated": 20, "ignored": 10,
-  "videosIgnored": 0, "failed": 0,
+  "failed": 0,
   "error": null, "createdAt": "…", "completedAt": null
 }
 ```
 
 - `totalEntries`/contadores preenchem conforme o worker processa; poll a cada ~3 s
   até `Done|Failed`. `videosImported` (2026-10-05) conta vídeos importados
-  (subconjunto de `imported`). `videosIgnored` (2026-10-04) é legado do período em
-  que video hosting não era suportado — desde 2026-10-05 permanece em 0.
+  (subconjunto de `imported`). O contador legado `videosIgnored` (2026-10-04,
+  do período sem suporte a vídeo) foi removido do contrato em 2026-10-09.
 - Mídia suportada no zip: fotos `jpg/jpeg/png/webp/heic/heif` (HEIC/HEIF é
   transcrito para JPEG no servidor, preservando EXIF) e **vídeos
   `mp4/m4v/mov/webm/avi/3gp`** (doc 15: poster + duração via ffmpeg). Sidecars
@@ -348,5 +357,8 @@ Outro owner nunca aparece na lista (escopo por owner no repositório).
 ## 7. Follow-ups do backend (não bloqueiam o front)
 
 - Reset/troca de senha (hoje sem recuperação — manter o aviso do doc 01 até existir).
-- Favoritos/álbuns sync, labels/classificação sync (05), tombstones/GC (03 §8),
-  HEIC server-side, S3/MinIO no lugar do filesystem, multi-device, galeria web.
+- Favoritos/álbuns sync, tombstones/GC (03 §8), HEIC server-side, S3/MinIO no lugar
+  do filesystem, multi-device, galeria web.
+- ~~labels/classificação sync (05)~~ → **coberto pelo doc 18 (2026-10-09)**: IA
+  server-side com endpoints próprios (`GET /api/labels`, `/api/labels/{label}/photos`,
+  `/api/photos/{id}/labels`, `/api/people*`, `/api/faces/{id}/crop` — ver doc 18 §9).

@@ -96,6 +96,7 @@ public static class PhotoEndpoints
             [FromQuery] string? fileName,
             [FromQuery] string? camera,
             [FromQuery] string? mediaType,
+            [FromQuery] bool? isLive,
             [FromQuery] string? sortBy,
             [FromQuery] string? order,
             [FromQuery] int page = 1,
@@ -144,7 +145,7 @@ public static class PhotoEndpoints
             }
 
             var filter = new PhotoFilter(
-                principal.GetUserId(), from, to, fileName, camera, page, pageSize, parsedMediaType, sortBy, order);
+                principal.GetUserId(), from, to, fileName, camera, page, pageSize, parsedMediaType, isLive, sortBy, order);
             return Results.Ok(await photos.ListAsync(principal.GetUserId(), filter, cancellationToken));
         });
 
@@ -154,6 +155,7 @@ public static class PhotoEndpoints
             ClaimsPrincipal principal,
             PhotoService photos,
             [FromQuery] string? mediaType,
+            [FromQuery] bool? isLive,
             [FromQuery] string? sortBy,
             CancellationToken cancellationToken) =>
         {
@@ -190,7 +192,7 @@ public static class PhotoEndpoints
             }
 
             return Results.Ok(
-                await photos.ListMonthBucketsAsync(principal.GetUserId(), sortBy, parsedMediaType, cancellationToken));
+                await photos.ListMonthBucketsAsync(principal.GetUserId(), sortBy, parsedMediaType, isLive, cancellationToken));
         });
 
         group.MapGet("/{id:guid}", async (

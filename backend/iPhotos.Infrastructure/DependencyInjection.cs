@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Pgvector.EntityFrameworkCore;
 
 namespace iPhotos.Infrastructure;
 
@@ -26,7 +27,10 @@ public static class DependencyInjection
             var connectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("Database")
                 ?? throw new InvalidOperationException("ConnectionStrings:Database is missing.");
             options.UseNpgsql(connectionString, npgsql =>
-                npgsql.MigrationsAssembly(typeof(PhotosDbContext).Assembly.FullName));
+            {
+                npgsql.MigrationsAssembly(typeof(PhotosDbContext).Assembly.FullName);
+                npgsql.UseVector(); // pgvector type mappings (face embeddings, D22)
+            });
             options.UseSnakeCaseNamingConvention();
         });
 
@@ -38,6 +42,10 @@ public static class DependencyInjection
         services.AddScoped<IVariantJobRepository, VariantJobRepository>();
         services.AddScoped<IZipImportRepository, ZipImportRepository>();
         services.AddScoped<IBillingPurchaseRepository, BillingPurchaseRepository>();
+        services.AddScoped<IPersonRepository, PersonRepository>();
+        services.AddScoped<IFaceRepository, FaceRepository>();
+        services.AddScoped<IPhotoLabelRepository, PhotoLabelRepository>();
+        services.AddScoped<IMlJobRepository, MlJobRepository>();
         // Blob storage backend is picked at resolution time (late binding keeps
         // WebApplicationFactory overrides effective): local filesystem by default,
         // or the standalone storage service when BlobStorage:Mode is 'Http'.

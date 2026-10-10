@@ -45,6 +45,10 @@ public static class ErrorCodes
     public const string UserNotFound = "users.not_found";
     public const string PrefsUnknownQuality = "prefs.unknown_quality";
 
+    // People & faces (doc 18)
+    public const string PeopleNotFound = "people.not_found";
+    public const string FacesNotFound = "faces.not_found";
+
     // Billing
     public const string BillingTokenRequired = "billing.token_required";
     public const string BillingUnknownProduct = "billing.unknown_product";

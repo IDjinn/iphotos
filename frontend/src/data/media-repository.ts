@@ -69,6 +69,8 @@ export function mapAsset(a: MediaLibrary.Asset): PhotoAsset {
     uri: a.uri,
     filename: a.filename ?? '',
     mediaType: type,
+    // Live Photo still: stays mediaType 'photo' — only the grid badge differs.
+    isLive: type === 'photo' && (a.mediaSubtypes?.includes('livePhoto') ?? false),
     width: a.width ?? 0,
     height: a.height ?? 0,
     creationTime: a.creationTime ?? 0,

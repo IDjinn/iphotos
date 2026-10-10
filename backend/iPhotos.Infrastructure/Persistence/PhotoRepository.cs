@@ -56,6 +56,11 @@ public sealed class PhotoRepository(PhotosDbContext db) : IPhotoRepository
             query = query.Where(p => p.MediaType == filter.MediaType);
         }
 
+        if (filter.IsLive is not null)
+        {
+            query = query.Where(p => p.IsLive == filter.IsLive);
+        }
+
         // Sort field/direction come validated from the endpoint; defaults keep the
         // historical newest-taken-first order. NULLS LAST on desc, NULLS FIRST on asc.
         var descending = filter.Order is null || filter.Order == "desc";
@@ -90,12 +95,17 @@ public sealed class PhotoRepository(PhotosDbContext db) : IPhotoRepository
     }
 
     public async Task<IReadOnlyList<PhotoMonthBucket>> ListMonthBucketsAsync(
-        Guid ownerId, string? sortBy, MediaType? mediaType, CancellationToken cancellationToken = default)
+        Guid ownerId, string? sortBy, MediaType? mediaType, bool? isLive = null, CancellationToken cancellationToken = default)
     {
         var query = db.Photos.AsNoTracking().Where(p => p.OwnerId == ownerId);
         if (mediaType is not null)
         {
             query = query.Where(p => p.MediaType == mediaType);
+        }
+
+        if (isLive is not null)
+        {
+            query = query.Where(p => p.IsLive == isLive);
         }
 
         if (sortBy == "createdAt")
@@ -155,8 +165,9 @@ public sealed class PhotoRepository(PhotosDbContext db) : IPhotoRepository
 
         var photoCount = await photos.CountAsync(cancellationToken);
         var variantCount = await ownedVariants.CountAsync(cancellationToken);
+        var livePhotoCount = await photos.CountAsync(p => p.IsLive, cancellationToken);
 
-        return new UsageStats(usedBytes, photoCount, variantCount);
+        return new UsageStats(usedBytes, photoCount, variantCount, livePhotoCount);
     }
 
     public async Task<IReadOnlyList<Guid>> ListQualityMismatchIdsAsync(

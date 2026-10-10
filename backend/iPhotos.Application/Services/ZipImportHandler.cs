@@ -85,59 +85,92 @@ public sealed class ZipImportHandler(
             Directory.CreateDirectory(workDir);
             var counterSavePoint = 0;
 
+            // Apple live-photo pairs (iCloud/Takeout exports): still + motion file share
+            // folder and stem ("IMG_1234.HEIC" + "IMG_1234.mov"). The still imports as a
+            // photo flagged live; the paired motion file is skipped instead of becoming a
+            // standalone video. Photos are processed before videos so the skip decision
+            // sees every photo outcome regardless of entry order inside the archive.
+            var photoStems = new HashSet<string>(StringComparer.Ordinal);
+            var videoStems = new HashSet<string>(StringComparer.Ordinal);
             foreach (var entry in entries)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 if (IsDirectory(entry))
                 {
                     continue;
                 }
 
-                try
+                var extension = Path.GetExtension(entry.FullName);
+                if (PhotoExtensions.Contains(extension) || HeifExtensions.Contains(extension))
                 {
-                    await ProcessEntryAsync(job, entry, sidecars, workDir, cancellationToken);
+                    photoStems.Add(PairKey(entry.FullName));
                 }
-                catch (QuotaExceededException)
+                else if (VideoExtensions.Contains(extension))
                 {
-                    throw new ZipImportAbortException(
-                        $"Storage quota exceeded — {job.Imported} items imported before stopping.");
-                }
-                catch (InvalidDataException ex) when (IsEncryptedEntry(ex))
-                {
-                    throw new ZipImportAbortException("Protected/encrypted ZIPs are not supported.");
-                }
-                catch (NotSupportedException ex) when (IsEncryptedEntry(ex))
-                {
-                    throw new ZipImportAbortException("Protected/encrypted ZIPs are not supported.");
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (InvalidImageException ex)
-                {
-                    job.Failed++;
-                    logger.LogWarning(ex, "Zip import {JobId}: entry '{Entry}' is not a decodable image",
-                        job.Id, entry.FullName);
-                }
-                catch (Exception ex)
-                {
-                    job.Failed++;
-                    logger.LogWarning(ex, "Zip import {JobId}: entry '{Entry}' failed", job.Id, entry.FullName);
-                }
-                finally
-                {
-                    job.ProcessedEntries++;
-                }
-
-                // PhotoService persists on every ingest; flush the ignore/failure
-                // counters (and quota/encrypted-abort progress) periodically.
-                if (++counterSavePoint >= 10)
-                {
-                    counterSavePoint = 0;
-                    await unitOfWork.SaveChangesAsync(cancellationToken);
+                    videoStems.Add(PairKey(entry.FullName));
                 }
             }
+
+            var importedPhotoStems = new HashSet<string>(StringComparer.Ordinal);
+
+            async Task ProcessPassAsync(IEnumerable<ZipArchiveEntry> passEntries)
+            {
+                foreach (var entry in passEntries)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (IsDirectory(entry))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        await ProcessEntryAsync(job, entry, sidecars, workDir, videoStems, importedPhotoStems, cancellationToken);
+                    }
+                    catch (QuotaExceededException)
+                    {
+                        throw new ZipImportAbortException(
+                            $"Storage quota exceeded — {job.Imported} items imported before stopping.");
+                    }
+                    catch (InvalidDataException ex) when (IsEncryptedEntry(ex))
+                    {
+                        throw new ZipImportAbortException("Protected/encrypted ZIPs are not supported.");
+                    }
+                    catch (NotSupportedException ex) when (IsEncryptedEntry(ex))
+                    {
+                        throw new ZipImportAbortException("Protected/encrypted ZIPs are not supported.");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (InvalidImageException ex)
+                    {
+                        job.Failed++;
+                        logger.LogWarning(ex, "Zip import {JobId}: entry '{Entry}' is not a decodable image",
+                            job.Id, entry.FullName);
+                    }
+                    catch (Exception ex)
+                    {
+                        job.Failed++;
+                        logger.LogWarning(ex, "Zip import {JobId}: entry '{Entry}' failed", job.Id, entry.FullName);
+                    }
+                    finally
+                    {
+                        job.ProcessedEntries++;
+                    }
+
+                    // PhotoService persists on every ingest; flush the ignore/failure
+                    // counters (and quota/encrypted-abort progress) periodically.
+                    if (++counterSavePoint >= 10)
+                    {
+                        counterSavePoint = 0;
+                        await unitOfWork.SaveChangesAsync(cancellationToken);
+                    }
+                }
+            }
+
+            await ProcessPassAsync(entries.Where(IsPhotoEntry));
+            await ProcessPassAsync(entries.Where(entry => !IsPhotoEntry(entry)));
 
             job.Complete(dateTime.UtcNow);
             await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -166,6 +199,8 @@ public sealed class ZipImportHandler(
         ZipArchiveEntry entry,
         Dictionary<string, ZipArchiveEntry> sidecars,
         string workDir,
+        HashSet<string> videoStems,
+        HashSet<string> importedPhotoStems,
         CancellationToken cancellationToken)
     {
         var fileName = Path.GetFileName(entry.FullName.Replace('\\', '/'));
@@ -186,13 +221,17 @@ public sealed class ZipImportHandler(
 
         var isHeif = HeifExtensions.Contains(extension);
         var isVideo = VideoExtensions.Contains(extension);
-        if (!isHeif && !isVideo && !PhotoExtensions.Contains(extension))
+        var isPhoto = !isVideo && (isHeif || PhotoExtensions.Contains(extension));
+        if (!isPhoto && !isVideo)
         {
             job.Ignored++;
             return;
         }
 
         var seed = TakeoutMetadata.ResolveSeed(entry.FullName, sidecars);
+        var pairKey = PairKey(entry.FullName);
+        // A still whose stem has a same-folder motion file is an Apple live photo.
+        var isLivePair = isPhoto && videoStems.Contains(pairKey);
 
         // GUID-named temp file: no zip-slip, no name collisions, by design.
         var tempPath = Path.Combine(workDir, $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}");
@@ -215,14 +254,28 @@ public sealed class ZipImportHandler(
                     "image/jpeg",
                     convertedStream,
                     seed,
+                    isLive: isLivePair,
                     cancellationToken);
+                importedPhotoStems.Add(pairKey);
                 CountResult(job, result.Duplicated);
+                return;
+            }
+
+            if (isVideo && importedPhotoStems.Contains(pairKey))
+            {
+                // Apple live-photo motion component: its still was imported (or already
+                // existed) as a live photo, so this file never becomes a standalone video.
+                job.Ignored++;
                 return;
             }
 
             await using var mediaStream = File.OpenRead(tempPath);
             var upload = await photoService.UploadAsync(
-                job.OwnerId, fileName, MimeFor(extension), mediaStream, seed, cancellationToken);
+                job.OwnerId, fileName, MimeFor(extension), mediaStream, seed, isLive: isLivePair, cancellationToken);
+            if (isPhoto)
+            {
+                importedPhotoStems.Add(pairKey);
+            }
             CountResult(job, upload.Duplicated, isVideo);
         }
         finally
@@ -263,6 +316,24 @@ public sealed class ZipImportHandler(
 
     private static bool IsDirectory(ZipArchiveEntry entry) =>
         entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\') || entry.Name.Length == 0;
+
+    private static bool IsPhotoEntry(ZipArchiveEntry entry)
+    {
+        var extension = Path.GetExtension(entry.FullName);
+        return PhotoExtensions.Contains(extension) || HeifExtensions.Contains(extension);
+    }
+
+    /// <summary>
+    /// Case-insensitive live-photo pair key: full entry path (forward slashes) without
+    /// its extension — Apple pairs share folder and stem ("IMG_1234.HEIC"/"IMG_1234.mov").
+    /// </summary>
+    private static string PairKey(string fullName)
+    {
+        var normalized = fullName.Replace('\\', '/').ToLowerInvariant();
+        var slash = normalized.LastIndexOf('/');
+        var dot = normalized.LastIndexOf('.');
+        return dot > slash ? normalized[..dot] : normalized;
+    }
 
     private static bool IsHiddenOrJunk(string fullName, string fileName)
     {

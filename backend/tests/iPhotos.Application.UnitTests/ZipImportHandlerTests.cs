@@ -46,6 +46,7 @@ public class ZipImportHandlerTests
             new FakeExifExtractor { Metadata = new PhotoMetadata(0, 0, null, null, null, null, null) },
             _video,
             _uow, new StubDateTimeProvider(Now),
+            TestMlJobs.CreateEnqueuer(),
             Microsoft.Extensions.Options.Options.Create(new UploadOptions()));
 
     private ZipImportJob NewJob(byte[] zipBytes)
@@ -96,6 +97,102 @@ public class ZipImportHandlerTests
     }
 
     [Fact]
+    public async Task Process_LivePhotoPair_FlagsPhotoLiveAndSkipsMotionFile()
+    {
+        // Motion file listed BEFORE the still: pairing must not depend on zip order.
+        var zip = BuildZip(
+            ("Takeout/Google Photos/2024/IMG_1234.mov", Bytes("motion")),
+            ("Takeout/Google Photos/2024/IMG_1234.HEIC", Bytes("heic-still")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        job.Imported.ShouldBe(1);
+        job.VideosImported.ShouldBe(0);
+        job.Ignored.ShouldBe(1);
+        job.Failed.ShouldBe(0);
+
+        var still = _photos.Photos.Single();
+        still.FileName.ShouldBe("IMG_1234.jpg");
+        still.MediaType.ShouldBe(MediaType.Photo);
+        still.IsLive.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Process_SameStemVideoWithoutPhotoSibling_ImportsAsStandaloneVideo()
+    {
+        var zip = BuildZip(
+            ("Takeout/Google Photos/2024/clip.mov", Bytes("video")),
+            ("Takeout/Google Photos/2024/other.jpg", Bytes("jpeg")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        job.Imported.ShouldBe(2);
+        job.VideosImported.ShouldBe(1);
+        job.Ignored.ShouldBe(0);
+
+        var video = _photos.Photos.Single(p => p.MediaType == MediaType.Video);
+        video.FileName.ShouldBe("clip.mov");
+        video.IsLive.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Process_SameStemInDifferentFolders_DoNotPair()
+    {
+        var zip = BuildZip(
+            ("Album A/IMG_1.jpg", Bytes("jpeg-a")),
+            ("Album B/IMG_1.mov", Bytes("video-b")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        job.Imported.ShouldBe(2);
+        job.VideosImported.ShouldBe(1);
+        _photos.Photos.Single(p => p.MediaType == MediaType.Photo).IsLive.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Process_LivePairStillFailsToDecode_MotionImportsAsVideo()
+    {
+        _heif.ThrowOnConvert = new InvalidDataException("not a decodable image");
+        var zip = BuildZip(
+            ("IMG_9.heic", Bytes("broken-heic")),
+            ("IMG_9.mov", Bytes("motion")));
+        var job = NewJob(zip);
+
+        await NewHandler().ProcessJobAsync(job);
+
+        job.State.ShouldBe(JobState.Done);
+        job.Failed.ShouldBe(1);
+        job.Imported.ShouldBe(1);
+        job.VideosImported.ShouldBe(1);
+        _photos.Photos.Single().MediaType.ShouldBe(MediaType.Video);
+    }
+
+    [Fact]
+    public async Task Process_LivePairOverPreviouslyImportedStill_UpgradeRowToLive()
+    {
+        var stillZip = NewJob(BuildZip(("IMG_55.jpg", Bytes("jpeg-55"))));
+        await NewHandler().ProcessJobAsync(stillZip);
+        _photos.Photos.Single().IsLive.ShouldBeFalse();
+
+        var pairZip = NewJob(BuildZip(
+            ("IMG_55.jpg", Bytes("jpeg-55")),
+            ("IMG_55.mov", Bytes("motion"))));
+        await NewHandler().ProcessJobAsync(pairZip);
+
+        pairZip.Duplicated.ShouldBe(1);
+        pairZip.Imported.ShouldBe(0);
+        pairZip.Ignored.ShouldBe(1);
+        var photo = _photos.Photos.Single();
+        photo.IsLive.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Process_MixedTakeoutZip_ImportsPhotosAndCountsTheRest()
     {
         var zip = BuildZip(
@@ -119,7 +216,6 @@ public class ZipImportHandlerTests
         job.TotalEntries.ShouldBe(12);
         job.Imported.ShouldBe(4);
         job.VideosImported.ShouldBe(1);
-        job.VideosIgnored.ShouldBe(0);
         job.Ignored.ShouldBe(8);
         job.Duplicated.ShouldBe(0);
         job.Failed.ShouldBe(0);

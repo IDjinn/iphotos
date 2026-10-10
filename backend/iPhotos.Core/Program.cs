@@ -38,6 +38,10 @@ builder.Services.AddOptions<BillingOptions>().Configure<IConfiguration>((o, c) =
 builder.Services.AddOptions<TestBillingOptions>().Configure<IConfiguration>((o, c) => c.GetSection(TestBillingOptions.SectionName).Bind(o));
 builder.Services.AddOptions<CorsSettings>().Configure<IConfiguration>((o, c) => c.GetSection(CorsSettings.SectionName).Bind(o));
 builder.Services.AddOptions<UploadOptions>().Configure<IConfiguration>((o, c) => c.GetSection(UploadOptions.SectionName).Bind(o));
+// AI pipelines (doc 18): the API enqueues ml jobs for photos that become Ready
+// synchronously (multipart/zip) and serves people/labels reads.
+builder.Services.AddOptions<AiOptions>().Configure<IConfiguration>((o, c) => c.GetSection(AiOptions.SectionName).Bind(o));
+builder.Services.AddOptions<VisionOptions>().Configure<IConfiguration>((o, c) => c.GetSection(VisionOptions.SectionName).Bind(o));
 
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<JwtOptions>>().Value);
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<Argon2HasherOptions>>().Value);
@@ -101,6 +105,11 @@ builder.Services.AddScoped<PhotoService>();
 builder.Services.AddScoped<UserPreferencesService>();
 builder.Services.AddScoped<ZipImportHandler>();
 builder.Services.AddScoped<BillingService>();
+// People & labels (doc 18): reads served by the API; the enqueuer feeds the worker.
+builder.Services.AddSingleton<IFaceClusterer, ChineseWhispersClusterer>();
+builder.Services.AddScoped<MlJobEnqueuer>();
+builder.Services.AddScoped<PersonService>();
+builder.Services.AddScoped<LabelService>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -152,6 +161,8 @@ app.MapPhotoEndpoints();
 app.MapImportEndpoints();
 app.MapBillingEndpoints();
 app.MapUserPreferenceEndpoints();
+app.MapPeopleEndpoints();
+app.MapLabelEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", utcNow = DateTimeOffset.UtcNow }));
 
 await app.Services.MigrateDatabaseAsync();

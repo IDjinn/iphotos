@@ -79,6 +79,7 @@ public sealed class PhotoService(
     IVideoProcessor videoProcessor,
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime,
+    MlJobEnqueuer mlJobs,
     Microsoft.Extensions.Options.IOptions<UploadOptions> uploadOptions)
 {
     /// <summary>Floor for presigned PUT expiries handed out by upload tickets.</summary>
@@ -346,6 +347,7 @@ public sealed class PhotoService(
         string contentType,
         Stream content,
         PhotoImportSeed? seed = null,
+        bool isLive = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(fileName))
@@ -377,6 +379,14 @@ public sealed class PhotoService(
         var existing = await photos.FindByContentHashAsync(ownerId, hash, cancellationToken);
         if (existing is not null)
         {
+            // A re-import that now carries the paired motion file upgrades the
+            // still-only row (e.g. the same Takeout archive imported in two parts).
+            if (isLive && !existing.IsLive)
+            {
+                existing.IsLive = true;
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
             return new PhotoUploadResult(ToDto(existing, []), Duplicated: true);
         }
 
@@ -388,6 +398,9 @@ public sealed class PhotoService(
 
         var photo = Photo.Create(ownerId, hash, fileName, contentType, storedLength, dateTime.UtcNow);
         photo.OriginalBlobPath = BlobPaths.Original(ownerId, photo.Id, fileName);
+        // Live-photo pairs (Apple convention) arrive from the zip importer with the
+        // still first; the paired motion file is skipped by the importer itself.
+        photo.IsLive = isLive;
         if (seed is { HasAny: true })
         {
             photo.SeedImportMetadata(seed.TakenAt, seed.GpsLatitude, seed.GpsLongitude, seed.Title, seed.Description);
@@ -437,6 +450,9 @@ public sealed class PhotoService(
 
         photo.MarkReady(metadata, dateTime.UtcNow);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // The photo is Ready with a stored preview — enter the AI pipelines (doc 18 §6.1).
+        await mlJobs.EnqueueForReadyPhotoAsync(photo, cancellationToken);
 
         return new PhotoUploadResult(ToDto(photo, variantRows.Select(ToVariantDto).ToList()), Duplicated: false);
     }
@@ -569,8 +585,8 @@ public sealed class PhotoService(
     }
 
     public Task<IReadOnlyList<PhotoMonthBucket>> ListMonthBucketsAsync(
-        Guid ownerId, string? sortBy, MediaType? mediaType, CancellationToken cancellationToken = default) =>
-        photos.ListMonthBucketsAsync(ownerId, sortBy, mediaType, cancellationToken);
+        Guid ownerId, string? sortBy, MediaType? mediaType, bool? isLive = null, CancellationToken cancellationToken = default) =>
+        photos.ListMonthBucketsAsync(ownerId, sortBy, mediaType, isLive, cancellationToken);
 
     public async Task DeleteAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
     {
@@ -600,7 +616,7 @@ public sealed class PhotoService(
             ?? throw new NotFoundException($"User '{ownerId}' was not found.", ErrorCodes.UserNotFound);
 
         var stats = await photos.GetUsageAsync(ownerId, cancellationToken);
-        return new UsageSummary(stats.UsedBytes, user.StorageQuotaBytes, stats.PhotoCount, stats.VariantCount);
+        return new UsageSummary(stats.UsedBytes, user.StorageQuotaBytes, stats.PhotoCount, stats.VariantCount, stats.LivePhotoCount);
     }
 
     public async Task<VariantFile> GetVariantFileAsync(

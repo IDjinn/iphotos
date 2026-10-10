@@ -182,3 +182,78 @@ public sealed class TestBillingOptions
     /// <summary>Subscription length granted for a valid test token.</summary>
     public int DurationDays { get; set; } = 30;
 }
+
+/// <summary>Master switch for the AI pipelines (doc 18): false prevents any
+/// ml_jobs from being enqueued; jobs already queued still run.</summary>
+public sealed class AiOptions
+{
+    public const string SectionName = "Ai";
+
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// Backfill of photos that became Ready before the pipeline existed. Off by
+    /// default on purpose: every backfilled photo re-downloads its preview from
+    /// blob storage (S3 GETs). Turn on to index the existing library.
+    /// </summary>
+    public bool BackfillEnabled { get; set; }
+}
+
+/// <summary>Face inference service connection + clustering thresholds (doc 18 §6.3).</summary>
+public sealed class MlOptions
+{
+    public const string SectionName = "Ml";
+
+    public string BaseUrl { get; set; } = string.Empty;
+
+    public string ApiKey { get; set; } = string.Empty;
+
+    public int TimeoutSeconds { get; set; } = 60;
+
+    /// <summary>Detections below this confidence are discarded.</summary>
+    public float MinDetScore { get; set; } = 0.5f;
+
+    /// <summary>Minimum face bbox width in preview pixels (junk/rejects tiny backs-of-heads).</summary>
+    public float MinFaceSizePx { get; set; } = 40;
+
+    /// <summary>Cosine similarity to a person centroid for incremental assignment.</summary>
+    public float MatchThreshold { get; set; } = 0.55f;
+
+    /// <summary>Cosine similarity edge weight for full reclustering (Chinese Whispers).</summary>
+    public float ClusterThreshold { get; set; } = 0.55f;
+
+    /// <summary>Minimum faces for a new auto-created person; singletons stay unassigned.</summary>
+    public int MinClusterFaces { get; set; } = 2;
+}
+
+/// <summary>
+/// Scene-label vision endpoint (doc 18 §8, D21): any OpenAI-compatible
+/// chat/completions server — Ollama, LM Studio, OpenAI, Gemini-compatible, etc.
+/// Unset BaseUrl disables the labeling pipeline.
+/// </summary>
+public sealed class VisionOptions
+{
+    public const string SectionName = "Vision";
+
+    public string BaseUrl { get; set; } = string.Empty;
+
+    public string ApiKey { get; set; } = string.Empty;
+
+    public string Model { get; set; } = string.Empty;
+
+    /// <summary>System prompt; {maxLabels} is interpolated. Override to steer the tag set.</summary>
+    public string Prompt { get; set; } =
+        "You label photos for a photo library. Look at the image and return the most relevant scene tags. "
+        + "Rules: lowercase English, singular nouns, 1-3 words each, no duplicates, no people names, "
+        + "no subjective adjectives. Return at most {maxLabels} tags with a confidence score between 0 and 1. "
+        + "Reply with JSON only: {\"labels\":[{\"name\":\"...\",\"score\":0.0}]}";
+
+    public int MaxLabels { get; set; } = 8;
+
+    /// <summary>Labels below this confidence are discarded.</summary>
+    public float MinScore { get; set; } = 0.4f;
+
+    public int TimeoutSeconds { get; set; } = 90;
+
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(BaseUrl) && !string.IsNullOrWhiteSpace(Model);
+}

@@ -16,6 +16,10 @@ public static class BlobPaths
 
     public static string Preview(Guid ownerId, Guid photoId) => $"{ownerId}/{photoId}/preview.jpg";
 
+    /// <summary>Square face crop (doc 18 §5.1) backing person covers and merge UI chips.</summary>
+    public static string FaceCrop(Guid ownerId, Guid photoId, Guid faceId) =>
+        $"{ownerId}/{photoId}/faces/{faceId}.jpg";
+
     public static string FolderOf(string blobPath)
     {
         var idx = blobPath.LastIndexOf('/');

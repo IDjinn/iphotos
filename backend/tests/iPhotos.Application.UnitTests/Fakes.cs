@@ -1,5 +1,7 @@
+using iPhotos.Application;
 using iPhotos.Application.Abstractions;
 using iPhotos.Application.Common;
+using iPhotos.Application.Services;
 using iPhotos.Domain;
 using System.Text;
 
@@ -139,7 +141,8 @@ public sealed class InMemoryPhotoRepository : IPhotoRepository
     public Task<UsageStats> GetUsageAsync(Guid ownerId, CancellationToken cancellationToken = default)
     {
         var owned = Photos.Where(p => p.OwnerId == ownerId).ToList();
-        return Task.FromResult(new UsageStats(owned.Sum(p => p.SizeBytes), owned.Count, 0));
+        return Task.FromResult(new UsageStats(
+            owned.Sum(p => p.SizeBytes), owned.Count, 0, owned.Count(p => p.IsLive)));
     }
 
     public Task<IReadOnlyList<Guid>> ListQualityMismatchIdsAsync(
@@ -166,12 +169,17 @@ public sealed class InMemoryPhotoRepository : IPhotoRepository
     }
 
     public Task<IReadOnlyList<PhotoMonthBucket>> ListMonthBucketsAsync(
-        Guid ownerId, string? sortBy, MediaType? mediaType, CancellationToken cancellationToken = default)
+        Guid ownerId, string? sortBy, MediaType? mediaType, bool? isLive = null, CancellationToken cancellationToken = default)
     {
         var query = Photos.Where(p => p.OwnerId == ownerId);
         if (mediaType is not null)
         {
             query = query.Where(p => p.MediaType == mediaType);
+        }
+
+        if (isLive is not null)
+        {
+            query = query.Where(p => p.IsLive == isLive);
         }
 
         var owned = query.ToList();
@@ -563,4 +571,52 @@ public sealed class FakeVideoCompressor(Func<Stream, long, int, Stream>? impl = 
         video.Position = 0;
         return Task.FromResult(impl?.Invoke(video, maxBytes, maxHeight) ?? video);
     }
+}
+
+// ── doc 18: ML queue fakes ──────────────────────────────────────────────────
+
+public sealed class InMemoryMlJobRepository : IMlJobRepository
+{
+    public List<MlJob> Jobs { get; } = [];
+
+    public Task<MlJob> EnqueueAsync(Guid ownerId, Guid? photoId, MlJobKind kind, CancellationToken cancellationToken = default)
+    {
+        var job = MlJob.Create(ownerId, photoId, kind, DateTimeOffset.UtcNow);
+        Jobs.Add(job);
+        return Task.FromResult(job);
+    }
+
+    public Task<bool> HasPendingAsync(Guid ownerId, MlJobKind kind, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Jobs.Any(j => j.OwnerId == ownerId && j.Kind == kind && j.State is MlJobState.Queued or MlJobState.Processing));
+
+    public Task<MlJob?> DequeueNextAsync(MlJobKind kind, CancellationToken cancellationToken = default)
+    {
+        var job = Jobs.Where(j => j.Kind == kind && j.State == MlJobState.Queued)
+            .OrderBy(j => j.CreatedAt)
+            .FirstOrDefault();
+        job?.Start();
+        return Task.FromResult(job);
+    }
+
+    public Task SaveAsync(MlJob job, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task<int> RequeueStuckAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
+
+    public Task<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>> ListReadyPhotosWithoutFacesAsync(int limit, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>>([]);
+
+    public Task<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>> ListReadyPhotosWithoutLabelsAsync(int limit, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>>([]);
+}
+
+/// <summary>MlJobEnqueuer factory for service tests: disabled by default (no jobs
+/// enqueued), or enabled against an in-memory queue the test can inspect.</summary>
+public static class TestMlJobs
+{
+    public static MlJobEnqueuer CreateEnqueuer(InMemoryMlJobRepository? repository = null, bool enabled = false) =>
+        new(
+            repository ?? new InMemoryMlJobRepository(),
+            Microsoft.Extensions.Options.Options.Create(new AiOptions { Enabled = enabled }),
+            Microsoft.Extensions.Options.Options.Create(new VisionOptions()),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MlJobEnqueuer>.Instance);
 }

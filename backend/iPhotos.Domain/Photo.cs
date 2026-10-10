@@ -42,6 +42,11 @@ public sealed class Photo
     public string FileName { get; set; } = string.Empty;
     public string MimeType { get; set; } = string.Empty;
     public MediaType MediaType { get; set; } = MediaType.Photo;
+
+    /// <summary>iPhone Live Photo: the still was imported together with its paired
+    /// motion file (same folder, same file stem); the motion file itself is not
+    /// ingested as a video. Always a photo — counted under the photo filters.</summary>
+    public bool IsLive { get; set; }
     public long SizeBytes { get; set; }
     public int? Width { get; set; }
     public int? Height { get; set; }

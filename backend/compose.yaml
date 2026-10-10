@@ -1,6 +1,9 @@
 services:
+  # pgvector build of Postgres 17 (doc 18, D22): drop-in replacement for
+  # postgres:17-alpine — same data volume, adds the `vector` extension used by
+  # face embeddings (and future semantic search).
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: iphotos
       POSTGRES_PASSWORD: iphotos
@@ -99,6 +102,15 @@ services:
       Upload__UploadUrlMaxExpiryHours: ${IPHOTOS_UPLOAD__MAX_URL_EXPIRY_HOURS:-24}
       # Direct uploads at or above this size use presigned multipart (S3 caps one PUT at 5 GB).
       Upload__DirectMultipartThresholdBytes: ${IPHOTOS_UPLOAD__MULTIPART_THRESHOLD_BYTES:-5368709120}
+      # AI pipelines (doc 18): face service + scene-label vision endpoint.
+      Ai__Enabled: ${IPHOTOS_AI_ENABLED:-true}
+      # Point at the in-compose CPU service by default; set IPHOTOS_ML_BASE_URL
+      # (e.g. http://host.docker.internal:5207) to use a GPU-backed host service.
+      Ml__BaseUrl: ${IPHOTOS_ML_BASE_URL:-http://ml:8080}
+      Ml__ApiKey: ${IPHOTOS_ML_API_KEY:-change-me-ml-api-key}
+      Vision__BaseUrl: ${IPHOTOS_VISION_BASE_URL:-}
+      Vision__ApiKey: ${IPHOTOS_VISION_API_KEY:-}
+      Vision__Model: ${IPHOTOS_VISION_MODEL:-}
     # No volume: blobs live in the storage service.
     # Reachable on the LAN (large zip imports bypass the Cloudflare 100 MB body
     # cap via the LAN address); remote traffic keeps flowing through the
@@ -143,7 +155,42 @@ services:
       Worker__VideoLaneConcurrency: ${IPHOTOS_WORKER__VIDEO_LANES:-2}
       Worker__PhotoJobTimeoutMinutes: ${IPHOTOS_WORKER__PHOTO_JOB_TIMEOUT_MINUTES:-10}
       Worker__VideoJobTimeoutMinutes: ${IPHOTOS_WORKER__VIDEO_JOB_TIMEOUT_MINUTES:-60}
+      # AI pipelines (doc 18): face jobs, clustering and scene labels.
+      Ai__Enabled: ${IPHOTOS_AI_ENABLED:-true}
+      # Library backfill stays OFF by default: it would re-download every existing
+      # photo's preview from S3. Flip IPHOTOS_AI_BACKFILL_ENABLED=true to index
+      # the pre-existing library.
+      Ai__BackfillEnabled: ${IPHOTOS_AI_BACKFILL_ENABLED:-false}
+      Ml__BaseUrl: ${IPHOTOS_ML_BASE_URL:-http://ml:8080}
+      Ml__ApiKey: ${IPHOTOS_ML_API_KEY:-change-me-ml-api-key}
+      Vision__BaseUrl: ${IPHOTOS_VISION_BASE_URL:-}
+      Vision__ApiKey: ${IPHOTOS_VISION_API_KEY:-}
+      Vision__Model: ${IPHOTOS_VISION_MODEL:-}
+      Worker__MlFaceLaneConcurrency: ${IPHOTOS_WORKER__ML_FACE_LANES:-2}
+      Worker__MlLabelLaneConcurrency: ${IPHOTOS_WORKER__ML_LABEL_LANES:-1}
+      Worker__MlBackfillIntervalHours: ${IPHOTOS_WORKER__ML_BACKFILL_HOURS:-6}
     # No volume: blobs live in the storage service.
+
+  # Face detection + embeddings (doc 18 §4): insightface buffalo_l baked in,
+  # stateless, internal-only. Unset IPHOTOS_AI_ENABLED=false to disable the
+  # whole AI pipeline without rebuilding.
+  ml:
+    image: iphotos.ml
+    build:
+      context: ../ml
+      dockerfile: Dockerfile
+    environment:
+      ML_API_KEY: ${IPHOTOS_ML_API_KEY:-change-me-ml-api-key}
+      ML_EXECUTION_PROVIDER: ${IPHOTOS_ML_EXECUTION_PROVIDER:-auto}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    # Loopback-only debug port; api/worker reach it over the compose network.
+    ports:
+      - "127.0.0.1:5207:8080"
 
   # Named Cloudflare tunnel: stable public hostname api.lucas-romero.com -> api:8080.
   # Ingress rules live in ./cloudflared/config.yml; the tunnel credentials JSON stays

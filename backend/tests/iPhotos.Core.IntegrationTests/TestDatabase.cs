@@ -12,7 +12,7 @@ public static class TestDatabase
         await fixture.CreateDatabaseAsync(databaseName);
 
         var options = new DbContextOptionsBuilder<PhotosDbContext>()
-            .UseNpgsql(fixture.ConnectionStringFor(databaseName))
+            .UseNpgsql(fixture.ConnectionStringFor(databaseName), npgsql => npgsql.UseVector())
             .UseSnakeCaseNamingConvention()
             .Options;
 

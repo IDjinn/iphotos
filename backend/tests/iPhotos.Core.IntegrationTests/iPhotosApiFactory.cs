@@ -18,8 +18,8 @@ namespace iPhotos.Core.IntegrationTests;
 /// </summary>
 public sealed class iPhotosApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
-        
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("pgvector/pgvector:pg17")
+
         .Build();
 
     private string DatabaseName { get; } = "iphotos_api_" + Guid.NewGuid().ToString("N");

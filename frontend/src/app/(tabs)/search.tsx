@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Icon } from '@/components/Icon';
@@ -18,12 +18,22 @@ import {
   ChipRow,
   Header,
   Input,
+  LabelChip,
+  LabelChipRow,
+  LabelChipText,
+  PersonChip,
+  PersonChipCircle,
+  PersonChipImage,
+  PersonChipName,
+  PeopleRow,
   RecentChip,
   Screen,
   SearchBar,
   Suggestions,
 } from '@/screens/(tabs)/search.styles';
 import { listAlbums } from '@/data/albums-repository';
+import { listTopLabels, type LabelCount } from '@/data/cloud-labels-repository';
+import { faceCropSource, listPeople, type Person } from '@/data/people-repository';
 import { queryAssets } from '@/data/media-repository';
 import { parseQuery } from '@/data/search-providers';
 import { addRecentSearch, clearRecentSearches, listRecentSearches, removeRecentSearch } from '@/data/search-repository';
@@ -51,6 +61,8 @@ export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [albums, setAlbums] = useState<AlbumRecord[]>([]);
   const [recents, setRecents] = useState<string[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [labels, setLabels] = useState<LabelCount[]>([]);
   const [results, setResults] = useState<PhotoAsset[] | null>(null);
   const [searching, setSearching] = useState(false);
 
@@ -58,6 +70,21 @@ export default function SearchScreen() {
     setAlbums(listAlbums());
     setRecents(listRecentSearches());
   }, []);
+
+  // Backend groupings (people/labels, doc 18) load per focus: the AI worker
+  // fills them in the background, so the rows grow between visits.
+  useFocusEffect(
+    useCallback(() => {
+      void listPeople().then(
+        (rows) => setPeople(rows),
+        () => setPeople([]),
+      );
+      void listTopLabels(20).then(
+        (rows) => setLabels(rows),
+        () => setLabels([]),
+      );
+    }, []),
+  );
 
   const parsed = useMemo(() => parseQuery(query), [query]);
 
@@ -133,6 +160,46 @@ export default function SearchScreen() {
 
       {!showResults ? (
         <Suggestions>
+          {people.length > 0 ? (
+            <>
+              <ChipHeader>
+                <ThemedText variant="label">{t('search.people')}</ThemedText>
+                <Pressable hitSlop={8} onPress={() => router.push('/people')}>
+                  <ThemedText variant="bodySmall" color="accent">
+                    {t('people.seeAll')}
+                  </ThemedText>
+                </Pressable>
+              </ChipHeader>
+              <PeopleRow>
+                {people.slice(0, 12).map((person) => {
+                  const cover = person.coverFaceId ? faceCropSource(person.coverFaceId) : null;
+                  return (
+                    <PersonChip
+                      key={person.id}
+                      onPress={() => {
+                        haptic('light');
+                        router.push(`/person/${person.id}`);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={person.name ?? t('people.unnamed')}
+                    >
+                      <PersonChipCircle>
+                        {cover ? (
+                          <PersonChipImage source={cover} contentFit="cover" recyclingKey={person.id} />
+                        ) : (
+                          <Icon name="person" size={24} color={colors.textSecondary} />
+                        )}
+                      </PersonChipCircle>
+                      <PersonChipName numberOfLines={1}>
+                        {person.name ?? t('people.unnamed')}
+                      </PersonChipName>
+                    </PersonChip>
+                  );
+                })}
+              </PeopleRow>
+            </>
+          ) : null}
+
           {recents.length > 0 ? (
             <Animated.View entering={FadeInDown.duration(180)}>
               <ChipHeader>
@@ -194,6 +261,27 @@ export default function SearchScreen() {
               </Chip>
             ))}
           </ChipRow>
+
+          {labels.length > 0 ? (
+            <>
+              <ChipLabel variant="label">{t('search.labels')}</ChipLabel>
+              <LabelChipRow>
+                {labels.map((entry) => (
+                  <LabelChip
+                    key={entry.label}
+                    onPress={() => {
+                      haptic('light');
+                      router.push(`/label/${entry.label}`);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={entry.label}
+                  >
+                    <LabelChipText variant="bodySmall">{entry.label}</LabelChipText>
+                  </LabelChip>
+                ))}
+              </LabelChipRow>
+            </>
+          ) : null}
         </Suggestions>
       ) : searching ? (
         <Center>

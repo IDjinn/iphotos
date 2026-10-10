@@ -12,6 +12,11 @@ export interface PhotoAsset {
   /** Duration in seconds — videos only. */
   duration?: number;
   /**
+   * iPhone Live Photo still (media store `livePhoto` subtype). Still a photo
+   * for every filter — the flag only drives the live badge in grids.
+   */
+  isLive?: boolean;
+  /**
    * Present on Locked Folder vault assets: id of the encrypted file set.
    * `uri` points at the decrypted file (grid: photo/poster); videos resolve
    * their playable file lazily through `resolveVaultPlayback(vaultId)`.

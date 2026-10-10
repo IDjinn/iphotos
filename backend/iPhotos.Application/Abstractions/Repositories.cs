@@ -40,7 +40,7 @@ public interface IPhotoRepository
     /// so clients can map timeline positions to months.
     /// </summary>
     Task<IReadOnlyList<PhotoMonthBucket>> ListMonthBucketsAsync(
-        Guid ownerId, string? sortBy, MediaType? mediaType, CancellationToken cancellationToken = default);
+        Guid ownerId, string? sortBy, MediaType? mediaType, bool? isLive = null, CancellationToken cancellationToken = default);
 
     Task DeleteAsync(Photo photo, CancellationToken cancellationToken = default);
 
@@ -148,4 +148,81 @@ public interface IBillingPurchaseRepository
 
     /// <summary>Active purchases whose grace period ended before <paramref name="cutoff"/>.</summary>
     Task<IReadOnlyList<BillingPurchase>> ListLapsedActiveAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default);
+}
+
+public interface IPersonRepository
+{
+    Task AddAsync(Person person, CancellationToken cancellationToken = default);
+
+    Task<Person?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default);
+
+    /// <summary>All the owner's persons, biggest cluster first.</summary>
+    Task<IReadOnlyList<Person>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(Person person, CancellationToken cancellationToken = default);
+}
+
+public interface IFaceRepository
+{
+    /// <summary>Persists a batch of detected faces in one transaction.</summary>
+    Task AddRangeAsync(IReadOnlyList<PhotoFace> faces, CancellationToken cancellationToken = default);
+
+    Task<PhotoFace?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PhotoFace>> ListByPhotoAsync(Guid photoId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// All of the owner's faces with clustering-relevant data (assignment, embedding
+    /// and cover ranking). Personal-scale full scan feeding the reclustering job.
+    /// </summary>
+    Task<IReadOnlyList<PhotoFace>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default);
+
+    /// <summary>Reassigns every face of one person to another (merge); null unassigns.</summary>
+    Task ReassignAsync(Guid fromPersonId, Guid? toPersonId, CancellationToken cancellationToken = default);
+
+    /// <summary>Paged photos containing the person's faces, newest TakenAt first (listing order).</summary>
+    Task<PagedResult<Photo>> ListPhotosForPersonAsync(
+        Guid ownerId, Guid personId, int page, int pageSize, CancellationToken cancellationToken = default);
+}
+
+public interface IPhotoLabelRepository
+{
+    /// <summary>Replaces the photo's label set in one transaction.</summary>
+    Task ReplaceForPhotoAsync(Photo photo, IReadOnlyList<PhotoLabel> labels, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PhotoLabel>> ListByPhotoAsync(Guid photoId, CancellationToken cancellationToken = default);
+
+    /// <summary>The owner's most used labels (label + photo count), count descending.</summary>
+    Task<IReadOnlyList<LabelCount>> ListTopForOwnerAsync(Guid ownerId, int limit, CancellationToken cancellationToken = default);
+
+    /// <summary>Paged photos carrying the label, newest TakenAt first (listing order).</summary>
+    Task<PagedResult<Photo>> ListPhotosForLabelAsync(
+        Guid ownerId, string label, int page, int pageSize, CancellationToken cancellationToken = default);
+}
+
+public interface IMlJobRepository
+{
+    Task<MlJob> EnqueueAsync(Guid ownerId, Guid? photoId, MlJobKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>True when the owner already has a queued/processing job of the kind
+    /// (debounces cluster re-enqueue while previous passes are still pending).</summary>
+    Task<bool> HasPendingAsync(Guid ownerId, MlJobKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims the oldest queued job of the kind (FOR UPDATE SKIP LOCKED
+    /// in PostgreSQL), moving it to Processing. Returns null when the queue is empty.
+    /// </summary>
+    Task<MlJob?> DequeueNextAsync(MlJobKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>Persists mutations made to a job (state transitions, retry counters).</summary>
+    Task SaveAsync(MlJob job, CancellationToken cancellationToken = default);
+
+    /// <summary>Moves jobs stranded in Processing (worker crash) back to Queued. Startup recovery.</summary>
+    Task<int> RequeueStuckAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Batch of Ready photos (oldest first) without face rows yet — backfill sweep.</summary>
+    Task<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>> ListReadyPhotosWithoutFacesAsync(int limit, CancellationToken cancellationToken = default);
+
+    /// <summary>Batch of Ready photos (oldest first) without labels yet — backfill sweep.</summary>
+    Task<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>> ListReadyPhotosWithoutLabelsAsync(int limit, CancellationToken cancellationToken = default);
 }

@@ -19,13 +19,15 @@ import {
   RetryButton,
   SortSpacer,
   StateBadge,
-  VideoBadge,
+  MediaBadge,
 } from '@/components/CloudGallery.styles';
 import { prefetchRecentPreviews, getCachedCloudFileUri } from '@/data/cloud-media-cache';
 import {
   fileUrl,
+  getUsage,
   listPhotoMonths,
   listPhotos,
+  type CloudMediaType,
   type CloudPhoto,
   type PhotoMonthBucket,
 } from '@/data/cloud-photos-repository';
@@ -41,7 +43,7 @@ import { formatDuration } from '@/utils/format';
 
 const PAGE_SIZE = 60;
 
-type MediaTypeFilter = 'All' | 'Photo' | 'Video';
+type MediaTypeFilter = 'All' | 'Photo' | 'Video' | 'Live';
 type SortOrder = 'desc' | 'asc';
 
 const MEDIA_FILTERS: { value: MediaTypeFilter; label: string }[] = [
@@ -49,6 +51,15 @@ const MEDIA_FILTERS: { value: MediaTypeFilter; label: string }[] = [
   { value: 'Photo', label: 'Photos' },
   { value: 'Video', label: 'Videos' },
 ];
+
+/** Live photos are photos — the Live chip narrows by the isLive flag, not mediaType. */
+function filterParams(filter: MediaTypeFilter): { mediaType?: CloudMediaType; isLive?: boolean } {
+  if (filter === 'Live') return { isLive: true };
+  return filter === 'All' ? {} : { mediaType: filter };
+}
+
+/** The Live chip only pays for itself once the library has more than one live photo. */
+const LIVE_FILTER_MIN_COUNT = 2;
 
 type ListState =
   | { status: 'loading' }
@@ -121,13 +132,17 @@ function CloudPhotoCell({ item, isReadyVideo, onPress }: { item: CloudPhoto; isR
       ) : null}
       {isReadyVideo ? (
         <>
-          <VideoBadge pointerEvents="none">
+          <MediaBadge pointerEvents="none">
             <Icon name="play" size={13} color={colors.textInverse} />
-          </VideoBadge>
+          </MediaBadge>
           {item.durationSeconds ? (
             <Duration>{formatDuration(item.durationSeconds)}</Duration>
           ) : null}
         </>
+      ) : item.state === 'Ready' && item.isLive ? (
+        <MediaBadge pointerEvents="none">
+          <Icon name="radio-button-on" size={13} color={colors.textInverse} />
+        </MediaBadge>
       ) : null}
     </Cell>
   );
@@ -148,13 +163,23 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
   const [months, setMonths] = useState<PhotoMonthBucket[] | null>(null);
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [headerHeight, setHeaderHeight] = useState(0);
+  const [livePhotoCount, setLivePhotoCount] = useState(0);
   const listRef = useRef<FlatList<CloudPhoto>>(null);
   const fastScrollRef = useRef<FastScrollHandle>(null);
   const scrollOffset = useSharedValue(0);
 
+  /** Live total from the usage endpoint — gates the Live chip (best-effort). */
+  const refreshLiveCount = useCallback(() => {
+    getUsage()
+      .then((usage) => setLivePhotoCount(usage.livePhotoCount))
+      .catch(() => setLivePhotoCount(0));
+  }, []);
+
+  useEffect(refreshLiveCount, [refreshLiveCount]);
+
   /** Month buckets for the fast-scroll jump targets — display order follows `order`. */
   const fetchMonths = useCallback((activeMedia: MediaTypeFilter, activeOrder: SortOrder) => {
-    listPhotoMonths({ mediaType: activeMedia === 'All' ? undefined : activeMedia })
+    listPhotoMonths({ ...filterParams(activeMedia) })
       .then((buckets) => setMonths(activeOrder === 'desc' ? buckets : [...buckets].reverse()))
       .catch(() => setMonths(null));
   }, []);
@@ -165,7 +190,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
         const result = await listPhotos({
           page,
           pageSize: PAGE_SIZE,
-          mediaType: activeMedia === 'All' ? undefined : activeMedia,
+          ...filterParams(activeMedia),
           order: activeOrder,
         });
         setState((current) => {
@@ -191,7 +216,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     listPhotos({
       page: 1,
       pageSize: PAGE_SIZE,
-      mediaType: mediaFilter === 'All' ? undefined : mediaFilter,
+      ...filterParams(mediaFilter),
       order,
     })
       .then((result) => {
@@ -223,12 +248,14 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     if (closedAt === 0 || closedAt === lastSeenClose.current) return;
     lastSeenClose.current = closedAt;
     if (useViewerStore.getState().context !== 'cloud') return;
+    refreshLiveCount();
     fetchMonths(mediaFilter, order);
     void load(1, mediaFilter, order);
-  }, [closedAt, load, fetchMonths, mediaFilter, order]);
+  }, [closedAt, load, fetchMonths, refreshLiveCount, mediaFilter, order]);
 
   const onRefresh = async () => {
     setRefreshing(true);
+    refreshLiveCount();
     fetchMonths(mediaFilter, order);
     await load(1, mediaFilter, order);
     setRefreshing(false);
@@ -250,7 +277,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
       const result = await listPhotos({
         page: 1,
         pageSize: PAGE_SIZE,
-        mediaType: mediaFilter === 'All' ? undefined : mediaFilter,
+        ...filterParams(mediaFilter),
         order,
         ...range,
       });
@@ -372,6 +399,13 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
           onPress={() => setFilter(option.value)}
         />
       ))}
+      {livePhotoCount >= LIVE_FILTER_MIN_COUNT ? (
+        <FilterChip
+          label="Live"
+          selected={mediaFilter === 'Live'}
+          onPress={() => setFilter('Live')}
+        />
+      ) : null}
       <SortSpacer />
       <FilterChip
         label={order === 'desc' ? 'Newest' : 'Oldest'}
@@ -418,7 +452,9 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
         ? 'No photos in the cloud yet.'
         : mediaFilter === 'Video'
           ? 'No videos in the cloud yet.'
-          : undefined;
+          : mediaFilter === 'Live'
+            ? 'No live photos in the cloud yet.'
+            : undefined;
     return (
       <Center>
         {filterHeader}

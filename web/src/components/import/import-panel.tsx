@@ -193,7 +193,9 @@ export function ImportPanel() {
   );
 
   // The import queue lives server-side, so a reload never loses it: seed the
-  // view from recent jobs and resume polling the ones still in flight. The
+  // view from recent jobs and resume polling the ones still in flight. Jobs
+  // that already finished stay in the server history but are not restored —
+  // the list only carries results produced during the current session. The
   // request is memoized in a ref (not a done-flag) so StrictMode's double
   // mount reuses the same fetch instead of discarding it as cancelled.
   const restorePromiseRef = useRef<Promise<ZipImportJob[]> | null>(null);
@@ -213,6 +215,7 @@ export function ImportPanel() {
           );
           const fresh = jobs
             .filter((job) => !knownKeys.has(job.id) && !knownJobs.has(job.id))
+            .filter((job) => job.state !== "Done" && job.state !== "Failed")
             .map(jobToItem);
           return fresh.length > 0 ? [...current, ...fresh] : current;
         });
@@ -506,10 +509,9 @@ export function ImportPanel() {
                   videosImported: acc.videosImported + (item.job?.videosImported ?? 0),
                   duplicated: acc.duplicated + (item.job?.duplicated ?? 0),
                   ignored: acc.ignored + (item.job?.ignored ?? 0),
-                  videosIgnored: acc.videosIgnored + (item.job?.videosIgnored ?? 0),
                   failed: acc.failed + (item.job?.failed ?? 0),
                 }),
-                { imported: 0, videosImported: 0, duplicated: 0, ignored: 0, videosIgnored: 0, failed: 0 },
+                { imported: 0, videosImported: 0, duplicated: 0, ignored: 0, failed: 0 },
               );
               return (
                 <>
@@ -531,13 +533,8 @@ export function ImportPanel() {
                     <div>
                       <strong>{totals.ignored}</strong>
                       <span>Ignored</span>
+                      <small>Files that aren't valid for upload</small>
                     </div>
-                    {totals.videosIgnored > 0 ? (
-                      <div>
-                        <strong>{totals.videosIgnored}</strong>
-                        <span>Videos skipped</span>
-                      </div>
-                    ) : null}
                     <div>
                       <strong>{totals.failed}</strong>
                       <span>Failed</span>
