@@ -26,8 +26,20 @@ public sealed class PersonService(
     {
         var people = await persons.ListForOwnerAsync(ownerId, cancellationToken);
         return people
+            // Named people first, unnamed auto-groups after — the grids the
+            // clients render from this never interleave the two (doc 18 §10).
+            .OrderByDescending(p => p.Name is not null)
+            .ThenByDescending(p => p.FaceCount)
             .Select(p => new PersonDto(p.Id, p.Name, p.FaceCount, p.CoverFaceId))
             .ToList();
+    }
+
+    public async Task<PersonDetailDto> GetAsync(Guid ownerId, Guid personId, CancellationToken cancellationToken = default)
+    {
+        var person = await GetPersonOrThrowAsync(ownerId, personId, cancellationToken);
+        return new PersonDetailDto(
+            person.Id, person.Name, person.FaceCount, person.CoverFaceId,
+            await ConfidenceAsync(ownerId, person, cancellationToken));
     }
 
     public async Task<PagedResult<PhotoDto>> ListPhotosAsync(
@@ -131,50 +143,120 @@ public sealed class PersonService(
     public const int MaxSuggestionFaces = 200;
 
     /// <summary>
-    /// Groups unassigned faces into "same person?" review candidates (doc 18 §7.4):
-    /// Chinese Whispers at Ml:SuggestThreshold over the owner's faces without a
-    /// person; clusters of ≥ 2 faces surface as suggestions, biggest first. Purely
-    /// derived (nothing persisted), so a dismissed group can reappear until its
-    /// faces are assigned or its members change — clients keep the dismissal list
-    /// keyed by the stable suggestion id.
+    /// The "same person?" review queue (doc 18 §7.4), split by destination like
+    /// Google Photos: unassigned faces whose best centroid similarity reaches
+    /// SuggestThreshold become per-person <see cref="MergeSuggestionDto"/> groups
+    /// ("is this the same person as X?"); the leftovers cluster via Chinese
+    /// Whispers into <see cref="PersonSuggestionDto"/> candidates for a new
+    /// person. Purely derived (nothing persisted), so a dismissed group can
+    /// reappear until its faces are assigned or its members change — clients
+    /// keep the dismissal list keyed by the stable suggestion id.
     /// </summary>
-    public async Task<IReadOnlyList<PersonSuggestionDto>> SuggestAsync(
+    public async Task<PersonSuggestionsDto> SuggestAsync(
         Guid ownerId, CancellationToken cancellationToken = default)
     {
-        var all = await faces.ListForOwnerAsync(ownerId, cancellationToken);
-        var unassigned = all.Where(f => f.PersonId is null).ToList();
-        if (unassigned.Count < 2)
+        var people = await persons.ListForOwnerAsync(ownerId, cancellationToken);
+        var unassigned = (await faces.ListForOwnerAsync(ownerId, cancellationToken))
+            .Where(f => f.PersonId is null)
+            .ToList();
+        if (unassigned.Count == 0)
         {
-            return [];
+            return new PersonSuggestionsDto([], []);
         }
 
         // Never suggest above the auto-match threshold — those faces belong to a
         // person on the next clustering pass anyway.
         var threshold = Math.Min(options.Value.SuggestThreshold, options.Value.MatchThreshold);
-        var assignments = clusterer.Cluster(unassigned.Select(f => f.Embedding).ToList(), threshold);
 
-        var groups = new Dictionary<int, List<PhotoFace>>();
-        for (var i = 0; i < unassigned.Count; i++)
+        // 1) Merge candidates: each unassigned face joins the existing person it
+        //    is closest to, when that similarity clears the threshold. A face
+        //    enters at most one group (its best match), so the two queues below
+        //    never share members.
+        var withCentroid = people.Where(p => p.Centroid is not null).ToList();
+        var mergeGroups = new Dictionary<Guid, (Person Person, List<(PhotoFace Face, float Score)> Members)>();
+        var claimed = new HashSet<Guid>();
+        if (withCentroid.Count > 0)
         {
-            if (!groups.TryGetValue(assignments[i], out var members))
+            foreach (var face in unassigned)
             {
-                groups[assignments[i]] = members = [];
-            }
+                Person? best = null;
+                var bestScore = threshold;
+                foreach (var person in withCentroid)
+                {
+                    var score = TensorPrimitives.CosineSimilarity(face.Embedding, person.Centroid!);
+                    if (score >= bestScore)
+                    {
+                        bestScore = score;
+                        best = person;
+                    }
+                }
 
-            members.Add(unassigned[i]);
+                if (best is null)
+                {
+                    continue;
+                }
+
+                claimed.Add(face.Id);
+                if (!mergeGroups.TryGetValue(best.Id, out var group))
+                {
+                    mergeGroups[best.Id] = group = (best, []);
+                }
+
+                group.Members.Add((face, bestScore));
+            }
         }
 
-        return groups.Values
-            .Where(members => members.Count >= 2)
-            .OrderByDescending(members => members.Count)
+        var merges = mergeGroups.Values
+            .OrderByDescending(g => g.Members.Count)
             .Take(MaxSuggestions)
-            .Select(members => new PersonSuggestionDto(
-                SuggestionId(members),
-                members.Count,
-                members.MaxBy(f => f.CoverScore)!.Id,
-                members.Select(f => f.Id).Take(MaxSuggestionFaces).ToList(),
-                members.Select(f => f.PhotoId).Distinct().Take(SamplePhotoLimit).ToList()))
+            .Select(g =>
+            {
+                var members = g.Members.Take(MaxSuggestionFaces).ToList();
+                var faceIds = members.Select(m => m.Face.Id).ToList();
+                return new MergeSuggestionDto(
+                    SuggestionId(g.Person.Id, members.Select(m => m.Face).ToList()),
+                    g.Person.Id,
+                    g.Person.Name,
+                    g.Person.CoverFaceId,
+                    g.Members.Count,
+                    members.MaxBy(m => m.Face.CoverScore)!.Face.Id,
+                    faceIds,
+                    members.Select(m => m.Face.PhotoId).Distinct().Take(SamplePhotoLimit).ToList(),
+                    members.Average(m => m.Score));
+            })
             .ToList();
+
+        // 2) New-person candidates from whatever no existing person claims.
+        var newPeople = new List<PersonSuggestionDto>();
+        var rest = unassigned.Where(f => !claimed.Contains(f.Id)).ToList();
+        if (rest.Count >= 2)
+        {
+            var assignments = clusterer.Cluster(rest.Select(f => f.Embedding).ToList(), threshold);
+            var groups = new Dictionary<int, List<PhotoFace>>();
+            for (var i = 0; i < rest.Count; i++)
+            {
+                if (!groups.TryGetValue(assignments[i], out var members))
+                {
+                    groups[assignments[i]] = members = [];
+                }
+
+                members.Add(rest[i]);
+            }
+
+            newPeople = groups.Values
+                .Where(members => members.Count >= 2)
+                .OrderByDescending(members => members.Count)
+                .Take(MaxSuggestions)
+                .Select(members => new PersonSuggestionDto(
+                    SuggestionId(members),
+                    members.Count,
+                    members.MaxBy(f => f.CoverScore)!.Id,
+                    members.Select(f => f.Id).Take(MaxSuggestionFaces).ToList(),
+                    members.Select(f => f.PhotoId).Distinct().Take(SamplePhotoLimit).ToList()))
+                .ToList();
+        }
+
+        return new PersonSuggestionsDto(newPeople, merges);
     }
 
     /// <summary>Creates one person from a reviewed suggestion group (doc 18 §7.4).
@@ -225,12 +307,84 @@ public sealed class PersonService(
         return new PersonDto(person.Id, person.Name, person.FaceCount, person.CoverFaceId);
     }
 
+    /// <summary>Assigns reviewed faces into an existing person (the merge half of
+    /// the "same person?" review, doc 18 §7.4). Same face rules as accepting a new
+    /// person: owner-checked, already-assigned faces skipped.</summary>
+    public async Task AcceptMergeSuggestionAsync(
+        Guid ownerId, Guid personId, IReadOnlyList<Guid> faceIds, CancellationToken cancellationToken = default)
+    {
+        if (faceIds.Count == 0 || faceIds.Count > MaxSuggestionFaces)
+        {
+            throw new ValidationException(
+                $"A suggestion accepts between 1 and {MaxSuggestionFaces} faces.", ErrorCodes.Validation);
+        }
+
+        var person = await GetPersonOrThrowAsync(ownerId, personId, cancellationToken);
+        var assigned = 0;
+        foreach (var faceId in faceIds.Distinct())
+        {
+            var face = await faces.GetByIdAsync(faceId, cancellationToken);
+            if (face is null || face.OwnerId != ownerId)
+            {
+                // Owner check first — someone else's face is 404, never leaked.
+                throw new NotFoundException($"Face '{faceId}' was not found.", ErrorCodes.FacesNotFound);
+            }
+
+            if (face.PersonId is null)
+            {
+                face.PersonId = person.Id;
+                assigned++;
+            }
+        }
+
+        if (assigned > 0)
+        {
+            await RecomputeAsync(ownerId, person, cancellationToken);
+        }
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation(
+            "Merge suggestion accepted: {Count} face(s) into person {Person} (owner {Owner})",
+            assigned, person.Id, ownerId);
+    }
+
     /// <summary>Stable id for a suggestion group (hash of the sorted member face ids) —
     /// the key clients use to remember dismissed suggestions.</summary>
     private static string SuggestionId(IReadOnlyList<PhotoFace> members) =>
         Convert.ToHexString(SHA256.HashData(
             members.Select(f => f.Id).OrderBy(id => id).SelectMany(id => id.ToByteArray()).ToArray()))[..16]
             .ToLowerInvariant();
+
+    /// <summary>Person-scoped variant: the hash mixes the target person in, so the
+    /// same face set suggested into two people (or later into another person)
+    /// gets distinct dismissal keys.</summary>
+    private static string SuggestionId(Guid personId, IReadOnlyList<PhotoFace> members) =>
+        Convert.ToHexString(SHA256.HashData(
+            personId.ToByteArray()
+                .Concat(members.Select(f => f.Id).OrderBy(id => id).SelectMany(id => id.ToByteArray()))
+                .ToArray()))[..16]
+            .ToLowerInvariant();
+
+    /// <summary>Group coherence for the person header (doc 18 §10): mean cosine
+    /// similarity of the member faces to the exact centroid. 1 = identical
+    /// embeddings; ~0.7+ reads as a tight person. Null when there is nothing to
+    /// measure (no members or no centroid yet).</summary>
+    private async Task<float?> ConfidenceAsync(Guid ownerId, Person person, CancellationToken cancellationToken)
+    {
+        if (person.Centroid is null || person.FaceCount == 0)
+        {
+            return null;
+        }
+
+        var members = await faces.ListForPersonAsync(ownerId, person.Id, cancellationToken);
+        if (members.Count == 0)
+        {
+            return null;
+        }
+
+        return members.Average(f => TensorPrimitives.CosineSimilarity(f.Embedding, person.Centroid));
+    }
 
     /// <summary>Owner-checked crop blob path for the face-crop endpoint.</summary>
     public async Task<string> GetFaceCropAsync(

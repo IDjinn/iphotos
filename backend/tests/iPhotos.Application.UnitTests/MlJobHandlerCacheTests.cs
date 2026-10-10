@@ -159,6 +159,10 @@ public class MlJobHandlerCacheTests
         public Task<IReadOnlyList<PhotoFace>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<PhotoFace>>(Faces.Where(f => f.OwnerId == ownerId).ToList());
 
+        public Task<IReadOnlyList<PhotoFace>> ListForPersonAsync(
+            Guid ownerId, Guid personId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<PhotoFace>>(Faces.Where(f => f.OwnerId == ownerId && f.PersonId == personId).ToList());
+
         public Task ReassignAsync(Guid fromPersonId, Guid? toPersonId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 

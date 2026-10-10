@@ -20,6 +20,14 @@ public static class PeopleEndpoints
             Results.Ok(await people.ListAsync(principal.GetUserId(), cancellationToken)))
         .WithName("ListPeople");
 
+        group.MapGet("/{id:guid}", async (
+            Guid id,
+            ClaimsPrincipal principal,
+            PersonService people,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await people.GetAsync(principal.GetUserId(), id, cancellationToken)))
+        .WithName("GetPerson");
+
         group.MapGet("/{id:guid}/photos", async (
             Guid id,
             ClaimsPrincipal principal,
@@ -53,9 +61,9 @@ public static class PeopleEndpoints
         })
         .WithName("MergePeople");
 
-        // "Same person?" review (doc 18 §7.4): clusters of unassigned faces above
-        // the suggestion threshold, biggest first. Dismissal is client-side, keyed
-        // by the stable suggestion id.
+        // "Same person?" review (doc 18 §7.4), split by destination: merges into
+        // existing people and candidates for a new person. Dismissal is
+        // client-side, keyed by the stable suggestion id.
         group.MapGet("/suggestions", async (
             ClaimsPrincipal principal,
             PersonService people,
@@ -70,6 +78,18 @@ public static class PeopleEndpoints
             CancellationToken cancellationToken) =>
             Results.Ok(await people.AcceptSuggestionAsync(principal.GetUserId(), request.FaceIds, cancellationToken)))
         .WithName("AcceptSuggestion");
+
+        group.MapPost("/suggestions/merge", async (
+            ClaimsPrincipal principal,
+            AcceptMergeSuggestionRequest request,
+            PersonService people,
+            CancellationToken cancellationToken) =>
+        {
+            await people.AcceptMergeSuggestionAsync(
+                principal.GetUserId(), request.PersonId, request.FaceIds, cancellationToken);
+            return Results.NoContent();
+        })
+        .WithName("AcceptMergeSuggestion");
 
         // targetPersonId null = start a new person with the moved face (split).
         group.MapPost("/{id:guid}/faces", async (
@@ -127,4 +147,6 @@ public static class PeopleEndpoints
     public sealed record MoveFaceRequest(Guid FaceId, Guid? TargetPersonId);
 
     public sealed record AcceptSuggestionRequest(IReadOnlyList<Guid> FaceIds);
+
+    public sealed record AcceptMergeSuggestionRequest(Guid PersonId, IReadOnlyList<Guid> FaceIds);
 }

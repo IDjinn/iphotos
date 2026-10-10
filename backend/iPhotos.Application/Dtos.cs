@@ -190,12 +190,38 @@ public sealed record UpdateUserPreferencesRequest(string UploadQuality, bool App
 /// fetched via /api/faces/{coverFaceId}/crop (client builds the URL).</summary>
 public sealed record PersonDto(Guid Id, string? Name, int FaceCount, Guid? CoverFaceId);
 
+/// <summary>Person with the group-coherence metric: mean cosine similarity of the
+/// member faces to the person's centroid (0..1, null when it can't be computed).</summary>
+public sealed record PersonDetailDto(Guid Id, string? Name, int FaceCount, Guid? CoverFaceId, float? Confidence);
+
 /// <summary>"Same person?" review candidate (doc 18 §7.4): a cluster of unassigned
 /// faces above the suggestion threshold. The id is a stable hash of the member face
 /// ids, so clients can persist dismissals across reloads; FaceIds drives the
 /// accept call (capped at PersonService.MaxSuggestionFaces).</summary>
 public sealed record PersonSuggestionDto(
     string Id, int FaceCount, Guid? CoverFaceId, IReadOnlyList<Guid> FaceIds, IReadOnlyList<Guid> SamplePhotoIds);
+
+/// <summary>"Same person?" review candidate tied to an existing person (doc 18
+/// §7.4): unassigned faces whose best centroid similarity reaches the suggestion
+/// threshold. Accepting assigns FaceIds into PersonId; Similarity is the group's
+/// mean centroid similarity — the review confidence shown next to the question.</summary>
+public sealed record MergeSuggestionDto(
+    string Id,
+    Guid PersonId,
+    string? PersonName,
+    Guid? PersonCoverFaceId,
+    int FaceCount,
+    Guid? CoverFaceId,
+    IReadOnlyList<Guid> FaceIds,
+    IReadOnlyList<Guid> SamplePhotoIds,
+    float Similarity);
+
+/// <summary>The review queue split by destination (doc 18 §7.4): faces that look
+/// like an existing person (Merges, grouped per person) vs faces that would form
+/// a new person (NewPeople).</summary>
+public sealed record PersonSuggestionsDto(
+    IReadOnlyList<PersonSuggestionDto> NewPeople,
+    IReadOnlyList<MergeSuggestionDto> Merges);
 
 public sealed record LabelCount(string Label, int Count);
 

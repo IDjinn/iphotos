@@ -184,6 +184,11 @@ public interface IFaceRepository
     /// </summary>
     Task<IReadOnlyList<PhotoFace>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default);
 
+    /// <summary>All the faces assigned to one person (embeddings included) —
+    /// feeds the person-detail confidence metric and single-person recomputes.</summary>
+    Task<IReadOnlyList<PhotoFace>> ListForPersonAsync(
+        Guid ownerId, Guid personId, CancellationToken cancellationToken = default);
+
     /// <summary>Reassigns every face of one person to another (merge); null unassigns.</summary>
     Task ReassignAsync(Guid fromPersonId, Guid? toPersonId, CancellationToken cancellationToken = default);
 

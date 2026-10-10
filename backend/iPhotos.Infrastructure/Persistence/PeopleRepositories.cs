@@ -52,6 +52,12 @@ public sealed class FaceRepository(PhotosDbContext db) : IFaceRepository
     public async Task<IReadOnlyList<PhotoFace>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default) =>
         await db.PhotoFaces.Where(f => f.OwnerId == ownerId).ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<PhotoFace>> ListForPersonAsync(
+        Guid ownerId, Guid personId, CancellationToken cancellationToken = default) =>
+        await db.PhotoFaces
+            .Where(f => f.OwnerId == ownerId && f.PersonId == personId)
+            .ToListAsync(cancellationToken);
+
     public async Task ReassignAsync(Guid fromPersonId, Guid? toPersonId, CancellationToken cancellationToken = default)
     {
         await db.PhotoFaces
@@ -97,15 +103,21 @@ public sealed class PhotoLabelRepository(PhotosDbContext db) : IPhotoLabelReposi
             .OrderByDescending(l => l.Score)
             .ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<LabelCount>> ListTopForOwnerAsync(Guid ownerId, int limit, CancellationToken cancellationToken = default) =>
-        await db.PhotoLabels
+    public async Task<IReadOnlyList<LabelCount>> ListTopForOwnerAsync(Guid ownerId, int limit, CancellationToken cancellationToken = default)
+    {
+        // Distinct (Label, PhotoId) pairs before grouping: COUNT(DISTINCT ...) inside a
+        // GroupBy projection is not translatable in EF Core and throws at runtime.
+        return await db.PhotoLabels
             .Where(l => l.OwnerId == ownerId)
+            .Select(l => new { l.Label, l.PhotoId })
+            .Distinct()
             .GroupBy(l => l.Label)
-            .Select(group => new LabelCount(group.Key, group.Select(l => l.PhotoId).Distinct().Count()))
+            .Select(group => new LabelCount(group.Key, group.Count()))
             .OrderByDescending(c => c.Count)
             .ThenBy(c => c.Label)
             .Take(limit)
             .ToListAsync(cancellationToken);
+    }
 
     public async Task<PagedResult<Photo>> ListPhotosForLabelAsync(
         Guid ownerId, string label, int page, int pageSize, CancellationToken cancellationToken = default)
