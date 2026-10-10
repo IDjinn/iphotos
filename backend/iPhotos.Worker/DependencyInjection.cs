@@ -52,11 +52,14 @@ public static class DependencyInjection
         services.AddOptions<ZipImportOptions>().Configure<IConfiguration>(
             (options, configuration) => configuration.GetSection(ZipImportOptions.SectionName).Bind(options));
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<ZipImportOptions>>().Value);
+        services.AddOptions<ZipImportCleanupOptions>().Configure<IConfiguration>(
+            (options, configuration) => configuration.GetSection(ZipImportCleanupOptions.SectionName).Bind(options));
 
         services.AddSingleton<IHeifConverter, MagickHeifConverter>();
         services.AddSingleton<IContentHasher, Sha256ContentHasher>();
         services.AddScoped<PhotoService>();
         services.AddScoped<ZipImportHandler>();
+        services.AddScoped<ZipImportCleanupService>();
         return services;
     }
 

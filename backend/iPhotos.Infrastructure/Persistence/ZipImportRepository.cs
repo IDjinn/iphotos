@@ -81,4 +81,10 @@ public sealed class ZipImportRepository(PhotosDbContext db) : IZipImportReposito
             WHERE state = 'Uploading' AND created_at < {cutoff}
             """, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<ZipImportJob>> ListWithStagedBlobAsync(CancellationToken cancellationToken = default)
+        => await db.ZipImportJobs
+            .AsNoTracking()
+            .Where(j => (j.State == JobState.Failed || j.State == JobState.Done) && j.BlobDeletedAt == null)
+            .ToListAsync(cancellationToken);
 }

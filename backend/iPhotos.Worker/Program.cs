@@ -14,6 +14,7 @@ builder.Services.AddBillingMaintenance();
 builder.Services.AddAiProcessing();
 builder.Services.AddHostedService<VariantProcessingWorker>();
 builder.Services.AddHostedService<ZipImportWorker>();
+builder.Services.AddHostedService<ZipImportCleanupWorker>();
 builder.Services.AddHostedService<OrphanUploadSweeper>();
 builder.Services.AddHostedService<BillingExpiryWorker>();
 builder.Services.AddSingleton<PostgresQueueListener>();

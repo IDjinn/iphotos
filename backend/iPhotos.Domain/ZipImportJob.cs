@@ -28,6 +28,13 @@ public sealed class ZipImportJob
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? ProcessedAt { get; set; }
 
+    /// <summary>
+    /// When the staged archive blob was removed by the cleanup sweep. Null means the
+    /// blob may still exist (active job, or cleanup has not reached it yet); sweeps
+    /// filter on this to avoid re-scanning old terminal jobs forever.
+    /// </summary>
+    public DateTimeOffset? BlobDeletedAt { get; set; }
+
     public static ZipImportJob Create(
         Guid ownerId, string fileName, long sizeBytes, string blobPath, DateTimeOffset now) => new()
     {
@@ -58,6 +65,14 @@ public sealed class ZipImportJob
         MaxAttempts = DefaultMaxAttempts,
         CreatedAt = now,
     };
+
+    /// <summary>
+    /// The cleanup sweep removed the staged archive (or confirmed it was already gone).
+    /// </summary>
+    public void MarkBlobDeleted(DateTimeOffset now)
+    {
+        BlobDeletedAt = now;
+    }
 
     /// <summary>The archive finished staging; the worker may pick it up.</summary>
     public void MarkQueued(long sizeBytes, DateTimeOffset now)

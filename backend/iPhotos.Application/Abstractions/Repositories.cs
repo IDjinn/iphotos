@@ -130,9 +130,16 @@ public interface IZipImportRepository
     /// <summary>
     /// Permanently fails Uploading jobs older than <paramref name="maxAge"/> —
     /// their HTTP upload died with a previous API process, so the bytes are gone.
-    /// Runs at worker startup. Returns the number of jobs failed.
+    /// Runs at worker startup and on cleanup sweeps. Returns the number of jobs failed.
     /// </summary>
     Task<int> FailStaleUploadsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists terminal jobs (Failed/Done) whose staged archive blob has not been
+    /// confirmed deleted yet (<c>BlobDeletedAt</c> is null). Backs the cleanup
+    /// sweep that removes leftover archives from staging.
+    /// </summary>
+    Task<IReadOnlyList<ZipImportJob>> ListWithStagedBlobAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IBillingPurchaseRepository

@@ -75,6 +75,23 @@
 > (retrocompatível). Web: após 100% dos bytes a UI mostra "Storing archive on
 > server…" e um watchdog de 15 min converte travamento do servidor em erro claro.
 
+> **Revisão 2026-10-10 — cleanup de blobs de staging (orphan sweep).** Encontrados
+> ~16 GB de zips órfãos no staging: quando a API morre no meio do upload (restart
+> do Docker, deploy), ninguém marca o job `Uploading` nem apaga o blob parcial — o
+> sweep antigo só rodava no startup do worker e **nunca removia o arquivo** (o
+> handler só apaga no caminho feliz). Agora o `ZipImportCleanupWorker` roda no
+> startup **e a cada 15 min** (`ZipImportCleanup:IntervalMinutes`), em duas etapas
+> (`ZipImportCleanupService`):
+> 1. **Falha uploads abandonados**: passe de startup usa 30 min
+>    (`StartupStaleUploadMinutes`, semântica do sweep antigo, que foi movido para
+>    cá); passes periódicos usam 24 h (`StaleUploadHours`) — um upload legítimo
+>    pode streamar por horas, então só idade grande prova que morreu.
+> 2. **Apaga o arquivo staged** de todo job terminal (`Failed`/`Done`) ainda não
+>    limpo, marcando `blob_deleted_at` (coluna nova, migration
+>    `AddZipImportBlobDeletedAt`) para não reescanear histórico antigo para sempre.
+>    Delete é idempotente (arquivo já ido ⇒ sucesso) e falha só loga — a próxima
+>    passada tenta de novo.
+
 ## 1. Contexto atual
 
 - Library tab (`src/app/(tabs)/library.tsx`) já tem o padrão de "utility cards"

@@ -128,6 +128,32 @@ public sealed class ZipImportOptions
     public string WorkDir { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// Tuning for the zip-import cleanup sweep: fails abandoned Uploading jobs and
+/// deletes the archive blobs they left in staging (worker restarts and crashed
+/// uploads would otherwise leave multi-GB orphans on the staging disk forever).
+/// </summary>
+public sealed class ZipImportCleanupOptions
+{
+    public const string SectionName = "ZipImportCleanup";
+
+    /// <summary>Minutes between cleanup passes (the first pass runs at startup).</summary>
+    public int IntervalMinutes { get; set; } = 15;
+
+    /// <summary>
+    /// Upload age for the startup pass only: right after a (re)start any Uploading
+    /// job this old is dead — its bytes died with the previous API process.
+    /// </summary>
+    public int StartupStaleUploadMinutes { get; set; } = 30;
+
+    /// <summary>
+    /// Upload age for the periodic passes. Deliberately large: a legitimate upload
+    /// may stream for hours (100 GiB over a slow link), so only sweeps long after
+    /// the last byte was written can safely presume the upload is dead.
+    /// </summary>
+    public int StaleUploadHours { get; set; } = 24;
+}
+
 public sealed class BillingProductOptions
 {
     public string DisplayName { get; set; } = string.Empty;

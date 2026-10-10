@@ -333,6 +333,11 @@ public sealed class InMemoryZipImportRepository : IZipImportRepository
 
         return Task.FromResult(count);
     }
+
+    public Task<IReadOnlyList<ZipImportJob>> ListWithStagedBlobAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<ZipImportJob>>(
+            Jobs.Where(j => (j.State == JobState.Failed || j.State == JobState.Done) && j.BlobDeletedAt == null)
+                .ToList());
 }
 
 public sealed class InMemoryBillingPurchaseRepository : IBillingPurchaseRepository
