@@ -127,6 +127,97 @@ export const Video = styled.video`
   }
 `;
 
+/** Live Photo motion surface — swaps in for the still while playing/scrubbing. */
+export const LiveVideo = styled.video`
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  animation: viewer-fade-in var(--duration-fast) ease;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+`;
+
+/** "LIVE" marker pill (iOS Photos): click toggles the motion playback. */
+export const LivePill = styled.button<{ $playing: boolean }>`
+  position: absolute;
+  top: 0.75rem;
+  left: 1rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: ${({ $playing }) => ($playing ? "var(--primary-foreground)" : "white")};
+  background: ${({ $playing }) =>
+    $playing ? "var(--primary)" : "color-mix(in oklab, var(--background) 60%, transparent)"};
+  backdrop-filter: blur(4px);
+  transition:
+    background-color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-out);
+
+  span[aria-hidden] {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+`;
+
+/** Bottom-left stage tool (frames strip trigger) — mirrors StageButton placement. */
+export const StageTool = styled.button`
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  z-index: 5;
+  width: 2.75rem;
+  height: 2.75rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  color: white;
+  background: rgb(255 255 255 / 0.12);
+  backdrop-filter: blur(4px);
+  transition: background-color var(--duration-fast) ease;
+
+  &[aria-pressed="true"] {
+    background: rgb(255 255 255 / 0.22);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      background: rgb(255 255 255 / 0.22);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+`;
+
 export const StageButton = styled.button<{ $side: "left" | "right" }>`
   position: absolute;
   top: 50%;

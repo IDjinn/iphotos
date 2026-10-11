@@ -17,6 +17,7 @@ import type { PhotoAsset } from '@/data/types';
 import { Springs } from '@/theme/tokens';
 
 import { VideoPage } from './VideoPage';
+import { LivePhotoPlayer } from './LivePhotoPlayer';
 import {
   useZoomController,
   ZoomableImage,
@@ -128,6 +129,15 @@ function PagerPage({
           muted={videoMuted}
           chromeVisible={chromeVisible}
           pagerPan={pagerPan}
+          onTap={onTap}
+        />
+      ) : asset.motionUri ? (
+        <LivePhotoPlayer
+          asset={asset}
+          active={active}
+          pagerPan={pagerPan}
+          controller={controller}
+          dismiss={dismiss}
           onTap={onTap}
         />
       ) : (

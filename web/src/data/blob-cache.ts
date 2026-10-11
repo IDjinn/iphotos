@@ -56,6 +56,16 @@ export class BlobUrlCache {
     }
     return inFlight;
   }
+
+  /** Drops every entry of one photo (its bytes changed server-side). */
+  removePhoto(photoId: string): void {
+    for (const [key, url] of [...this.entries]) {
+      if (key.startsWith(`${photoId}:`)) {
+        this.entries.delete(key);
+        URL.revokeObjectURL(url);
+      }
+    }
+  }
 }
 
 const thumbnailCache = new BlobUrlCache(600);
@@ -81,6 +91,16 @@ export function useAuthFileUrl(photoId: string, kind: VariantKind, enabled = tru
 }
 
 const faceCropCache = new BlobUrlCache(400);
+
+/**
+ * Drops the cached object URLs of one photo's variants — call after a server-side
+ * byte change (e.g. Live Photo "Set as Key Photo") so the next `useAuthFileUrl`
+ * fetch downloads fresh bytes instead of replaying the stale object URL.
+ */
+export function invalidateAuthFileUrls(photoId: string): void {
+  thumbnailCache.removePhoto(photoId);
+  previewCache.removePhoto(photoId);
+}
 
 /**
  * Resolves an authenticated, cached object URL for a face crop (person covers,

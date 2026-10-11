@@ -11,6 +11,10 @@ public static class BlobPaths
 
     public static string Thumbnail(Guid ownerId, Guid photoId) => $"{ownerId}/{photoId}/thumb.jpg";
 
+    /// <summary>Paired Live Photo motion clip (VariantKind.Motion).</summary>
+    public static string Motion(Guid ownerId, Guid photoId, string fileName) =>
+        $"{ownerId}/{photoId}/motion{ExtensionOf(fileName)}";
+
     /// <summary>Staging blob for a zip import job; deleted once the worker finishes with it.</summary>
     public static string Import(Guid ownerId, Guid jobId) => $"{ownerId}/imports/{jobId}.zip";
 

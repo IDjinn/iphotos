@@ -194,6 +194,35 @@ public class ZipImportHandlerTests
     }
 
     [Fact]
+    public async Task Process_LivePairOverLegacyImportedVideo_ConvertsVideoRowToMotion()
+    {
+        // Older builds imported the motion file as a standalone video and left the
+        // still unflagged — exactly the state a pre-pairing library has on disk.
+        var service = NewPhotoService();
+        await service.UploadAsync(_owner.Id, "IMG_56.jpg", "image/jpeg", new MemoryStream(Bytes("jpeg-56")));
+        await service.UploadAsync(_owner.Id, "IMG_56.mov", "video/quicktime", new MemoryStream(Bytes("legacy-motion")));
+        _photos.Photos.Count.ShouldBe(2);
+        _photos.Photos.Single(p => p.MediaType == MediaType.Photo).IsLive.ShouldBeFalse();
+
+        var pairZip = NewJob(BuildZip(
+            ("IMG_56.jpg", Bytes("jpeg-56")),
+            ("IMG_56.mov", Bytes("paired-motion"))));
+        await NewHandler().ProcessJobAsync(pairZip);
+
+        // The zip pass promotes the still and attaches its motion file; the
+        // post-pass adoption sweep then removes the leftover legacy video row.
+        pairZip.Duplicated.ShouldBe(1);
+        pairZip.Ignored.ShouldBe(1);
+        _photos.Photos.Count.ShouldBe(1);
+        var photo = _photos.Photos.Single();
+        photo.MediaType.ShouldBe(MediaType.Photo);
+        photo.IsLive.ShouldBeTrue();
+        var motion = _variants.Variants.Single(v => v.Kind == VariantKind.Motion);
+        motion.PhotoId.ShouldBe(photo.Id);
+        _blobs.Blobs[motion.BlobPath].ShouldBe(Encoding.UTF8.GetBytes("paired-motion"));
+    }
+
+    [Fact]
     public async Task Process_MixedTakeoutZip_ImportsPhotosAndCountsTheRest()
     {
         var zip = BuildZip(

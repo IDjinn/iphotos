@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { CheckIcon, CircleIcon, PlayIcon } from "lucide-react";
+import { CheckIcon, CircleIcon, Disc2Icon, PlayIcon } from "lucide-react";
 import type { CloudPhoto } from "@/data/cloud-photos-repository";
 import { formatDuration } from "@/lib/format";
 import { AuthImage } from "@/components/media/auth-image";
-import { CellBadge, CellButton, CellWrap, SelectButton, VideoBadge } from "./gallery.styles";
+import { CellBadge, CellButton, CellWrap, LiveBadge, SelectButton, VideoBadge } from "./gallery.styles";
 
 interface PhotoCellProps {
   photo: CloudPhoto;
@@ -60,6 +60,10 @@ export function PhotoCell({ photo, size, selected, onOpen, onToggleSelect }: Pho
           <PlayIcon aria-hidden fill="currentColor" />
           {photo.durationSeconds ? formatDuration(photo.durationSeconds) : null}
         </VideoBadge>
+      ) : photo.isLive ? (
+        <LiveBadge aria-label="Live Photo">
+          <Disc2Icon aria-hidden />
+        </LiveBadge>
       ) : null}
     </CellWrap>
   );

@@ -83,6 +83,26 @@ public sealed class PersonServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_pages_the_ordered_list()
+    {
+        var unnamedBig = NewPerson(null);
+        unnamedBig.FaceCount = 5;
+        var namedSmall = NewPerson("Bea");
+        namedSmall.FaceCount = 2;
+        var namedBig = NewPerson("Al");
+        namedBig.FaceCount = 9;
+        var unnamedSmall = NewPerson(null);
+        unnamedSmall.FaceCount = 1;
+
+        var page = await service.ListAsync(Owner, page: 2, pageSize: 3);
+
+        Assert.Equal(4, page.TotalCount);
+        Assert.Equal(2, page.Page);
+        Assert.Equal(3, page.PageSize);
+        Assert.Equal([unnamedSmall.Id], page.Items.Select(p => p.Id).ToList());
+    }
+
+    [Fact]
     public async Task GetAsync_confidence_is_mean_member_similarity_to_centroid()
     {
         var person = NewPerson("Alice", UnitVector(1, 0, 0));

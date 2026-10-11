@@ -134,6 +134,14 @@ public sealed class InMemoryPhotoRepository : IPhotoRepository
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<Photo>> ListLiveForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Photo>>(
+            Photos.Where(p => p.OwnerId == ownerId && p.IsLive).OrderBy(p => p.CreatedAt).ToList());
+
+    public Task<IReadOnlyList<Photo>> ListVideosForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Photo>>(
+            Photos.Where(p => p.OwnerId == ownerId && p.MediaType == MediaType.Video).OrderBy(p => p.CreatedAt).ToList());
+
     public Task<IReadOnlyList<Photo>> ListStalePendingUploadsAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<Photo>>(
             Photos.Where(p => p.State == PhotoState.PendingUpload && p.CreatedAt <= cutoff).ToList());
@@ -223,6 +231,9 @@ public sealed class InMemoryVariantRepository : IVariantRepository
 
     public Task<IReadOnlyList<PhotoVariant>> ListByPhotoAsync(Guid photoId, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<PhotoVariant>>(Variants.Where(v => v.PhotoId == photoId).ToList());
+
+    public Task<PhotoVariant?> FindByKindAsync(Guid photoId, VariantKind kind, CancellationToken cancellationToken = default)
+        => Task.FromResult(Variants.FirstOrDefault(v => v.PhotoId == photoId && v.Kind == kind));
 
     public Task DeleteByPhotoAsync(Guid photoId, CancellationToken cancellationToken = default)
     {
@@ -553,7 +564,31 @@ public sealed class FakeVideoProcessor : IVideoProcessor
 {
     public Exception? ThrowOnProcess { get; set; }
 
+    /// <summary>Thrown by <see cref="ProbeAsync"/> (motion attach) when set.</summary>
+    public Exception? ThrowOnProbe { get; set; }
+
+    /// <summary>Thrown by <see cref="ExtractFrameAsync"/> (key photo) when set.</summary>
+    public Exception? ThrowOnExtract { get; set; }
+
     public VideoInfo Info { get; set; } = new(1920, 1080, 12.5, null);
+
+    /// <summary>Duration reported by <see cref="ProbeAsync"/> (defaults to Info's).</summary>
+    public double? ProbeDuration { get; set; }
+
+    public int ProbeCalls { get; private set; }
+
+    public List<double> ExtractOffsets { get; } = [];
+
+    public Task<VideoInfo> ProbeAsync(Stream video, CancellationToken cancellationToken = default)
+    {
+        ProbeCalls++;
+        if (ThrowOnProbe is not null)
+        {
+            throw ThrowOnProbe;
+        }
+
+        return Task.FromResult(Info with { DurationSeconds = ProbeDuration ?? Info.DurationSeconds });
+    }
 
     public Task<VideoProcessingResult> ProcessAsync(Stream video, CancellationToken cancellationToken = default)
     {
@@ -567,6 +602,19 @@ public sealed class FakeVideoProcessor : IVideoProcessor
         return Task.FromResult(new VideoProcessingResult(
             Info,
             new VideoPoster(new MemoryStream(bytes), Info.Width, Info.Height, bytes.Length)));
+    }
+
+    public Task<VideoFrame> ExtractFrameAsync(Stream video, double offsetSeconds, CancellationToken cancellationToken = default)
+    {
+        if (ThrowOnExtract is not null)
+        {
+            throw ThrowOnExtract;
+        }
+
+        ExtractOffsets.Add(offsetSeconds);
+        // Deterministic per offset — dedup tests rely on matching hashes.
+        var bytes = Encoding.UTF8.GetBytes($"fake-frame-{offsetSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        return Task.FromResult(new VideoFrame(new MemoryStream(bytes), Info.Width, Info.Height, bytes.Length));
     }
 }
 

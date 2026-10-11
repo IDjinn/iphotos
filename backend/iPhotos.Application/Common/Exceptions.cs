@@ -40,6 +40,8 @@ public static class ErrorCodes
     public const string PhotosInvalidOrder = "photos.invalid_order";
     public const string PhotosInvalidVariant = "photos.invalid_variant";
     public const string PhotosInvalidImage = "photos.invalid_image";
+    public const string PhotosNotLive = "photos.not_live";
+    public const string PhotosKeyFrameConflict = "photos.keyframe_conflict";
 
     // Users & preferences
     public const string UserNotFound = "users.not_found";

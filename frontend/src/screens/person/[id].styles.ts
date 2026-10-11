@@ -54,11 +54,49 @@ export const GridArea = styled.View`
   flex: 1;
 `;
 
-export const ActionsRow = styled.View`
+/** Column holding the review banners between the header and the photo grid. */
+export const BannerStack = styled.View`
+  flex-shrink: 0;
+`;
+
+// ── Match confidence (doc 18 §7.3, getPerson().confidence) ─────────────────
+
+export const ConfidenceBar = styled.View`
+  flex-direction: row;
+  align-items: center;
+  gap: ${({ theme }) => theme.space[3]}px;
+  padding-horizontal: ${({ theme }) => theme.space[4]}px;
+  padding-vertical: ${({ theme }) => theme.space[2]}px;
+`;
+
+export const ConfidenceLabel = styled(ThemedText)``;
+
+export const ConfidenceTrack = styled.View`
+  flex: 1;
+  height: ${({ theme }) => theme.ms(6)}px;
+  border-radius: ${({ theme }) => theme.radius.full}px;
+  background-color: ${({ theme }) => theme.colors.placeholder};
+  overflow: hidden;
+`;
+
+/** Origin left so the fill reads from 0; static — data display, not motion. */
+export const ConfidenceFill = styled.View<{ $value: number }>`
+  width: 100%;
+  height: 100%;
+  border-radius: ${({ theme }) => theme.radius.full}px;
+  background-color: ${({ theme }) => theme.colors.accent};
+  transform-origin: left center;
+  transform: scaleX(${({ $value }) => Math.max(0.001, Math.min(1, $value))});
+`;
+
+export const ConfidenceValue = styled(ThemedText)``;
+
+export const ActionsRow = styled.View<{ $insetBottom?: number }>`
   flex-direction: row;
   border-top-width: ${({ theme }) => theme.border.width}px;
   border-top-color: ${({ theme }) => theme.colors.outline};
   background-color: ${({ theme }) => theme.colors.background};
+  padding-bottom: ${({ $insetBottom }) => $insetBottom ?? 0}px;
 `;
 
 export const ActionButton = styled(Pressable)`
@@ -77,7 +115,8 @@ export const MergeHeading = styled(ThemedText)`
   padding-bottom: ${({ theme }) => theme.space[3]}px;
 `;
 
-export const MergeList = styled.ScrollView`
+/** Bounds the paged target list inside the sheet. */
+export const MergeListContainer = styled.View`
   max-height: ${({ theme }) => theme.ms(360)}px;
 `;
 

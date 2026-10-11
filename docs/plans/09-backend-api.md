@@ -90,7 +90,9 @@ CORS). O compose define `http://localhost:3000` (web dev) e `http://127.0.0.1:32
 | `GET /api/photos/months` | Buckets mensais da timeline para fast-scroll (2026-10-09): `[{ "month": "2026-08", "count": 37 }]`, ordem desc; fotos sem `takenAt` vão por último sob `"month": ""` (espelha o sort nulls-last do listing). Query: `mediaType` (`photo`\|`video`), `isLive` (bool, 2026-10-10), `sortBy` (`takenAt`\|`createdAt`, default `takenAt` — `createdAt` não gera bucket undated). Mesmos error codes do listing (`photos.invalid_media_type`, `photos.invalid_sort` → 400) |
 | `GET /api/photos/{id}` | Metadados completos + `variants[]` |
 | `DELETE /api/photos/{id}` | **204** — hard delete v1 (tombstones/GC são futuro, doc 03 §8) |
-| `GET /api/photos/{id}/files/{kind}` | `kind` = `original` \| `preview` \| `thumbnail` → stream (variantes em JPEG; original com mime original). Suporta Range. **404 se a variante ainda não foi gerada**. Cacheável: `Cache-Control: private, max-age=31536000, immutable` + `ETag` (`{contentHash}-{kind}`) — `If-None-Match` correspondente responde **304** sem ler o blob (as blobs são imutáveis; grid/viewer não repetem o download) |
+| `GET /api/photos/{id}/files/{kind}` | `kind` = `original` \| `preview` \| `thumbnail` \| `motion` (2026-10-11 — clip de Live Photo) → stream (variantes em JPEG; original com mime original). Suporta Range. **404 se a variante ainda não foi gerada**. Cacheável: `Cache-Control: private, max-age=31536000, immutable` + `ETag` (`{contentHash}-{kind}`) — `If-None-Match` correspondente responde **304** sem ler o blob (as blobs são imutáveis; grid/viewer não repetem o download) |
+| `POST /api/photos/{id}/key-photo` | **Live Photo — "definir como foto principal"** (2026-10-11): body `{ offsetSeconds }` → extrai o frame do clip `motion` nesse offset (ffmpeg), substitui o still (novo hash/dim/mime jpeg, nome renomeado para `.jpg` quando preciso), regenera preview+thumbnail e atualiza o ML input cache; o clip continua. Labels/faces NÃO são re-enfileirados no v1. **400** fora de formato/não-live/offset além da duração; **409**-like `photos.keyframe_conflict` quando o frame já existe como outra foto (dedup) |
+| `POST /api/photos/maintenance/adopt-live-motions` | **Conserto pontual de bibliotecas antigas** (2026-10-11): converte rows de vídeo cujo stem casa com uma foto live do dono (`IMG_1234.mov` ↔ `IMG_1234.*`) no clip `motion` da still e apaga a row de vídeo (blobs inclusos). Idempotente; `{ adopted: n }`. Também roda ao fim de todo import de ZIP (self-heal; still que já tem clip só tem a row órfã removida) |
 | `GET /api/usage` | `{ usedBytes, quotaBytes, photoCount, variantCount, livePhotoCount }` — alimenta a barra de uso do doc 07; `livePhotoCount` (2026-10-10) gateda o chip de filtro "Live" na galeria |
 | `GET /health` | `{ status, utcNow }` — sem auth, para o app checar conectividade |
 
@@ -157,11 +159,19 @@ o teto real é a quota.
 Com `sortBy=takenAt`, fotos sem `taken_at` vão para o fim no `desc` e para o começo
 no `asc`, com fallback `created_at`.
 
-**Fotos live (2026-10-10):** pares Apple (`IMG_1234.HEIC` + `IMG_1234.mov`, mesma
-pasta e stem — export iCloud/Takeout). Na importação ZIP o still entra como foto com
-`isLive: true` e o vídeo pareado **não** gera asset de vídeo (conta em `ignored`);
-se o still falhar ao decodificar, o `.mov` cai como vídeo normal. Reimportar o par
-sobre um still já importado promove a row para live (dedup por hash).
+**Fotos live (2026-10-10, playback 2026-10-11):** pares Apple (`IMG_1234.HEIC` +
+`IMG_1234.mov`, mesma pasta e stem — export iCloud/Takeout). Na importação ZIP o
+still entra como foto com `isLive: true` e o `.mov` pareado é anexado como a
+**variante `Motion`** da still (conta em `ignored`; nunca vira asset de vídeo) —
+`GET /api/photos/{id}/files/motion` serve o clip (Range/ETag como as demais
+variantes) e `duration_seconds` da foto passa a guardar a duração do clip. Se o
+still falhar ao decodificar, o `.mov` cai como vídeo normal; se o anexo falhar
+(undecodable/storage), o par cai como vídeo — bytes nunca se perdem. Reimportar o
+par sobre um still já importado promove a row para live (dedup por hash). Vídeos
+`.mov` importados por builds anteriores ao pareamento são convertidos no sweep de
+adoção (fim de cada import; endpoint de manutenção acima). No app: badge live
+(anéis concêntricos) nas grids web e mobile; viewer reproduz o clip (segurar/trocar
+via pill "LIVE"), com filmstrip de frames e "definir como foto principal" na web.
 
 ### 3.3 Formato de erros e convenções
 

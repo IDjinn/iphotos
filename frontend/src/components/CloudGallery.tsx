@@ -401,6 +401,9 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     height: photo.height ?? 0,
     creationTime: new Date(photo.takenAt ?? photo.createdAt).getTime(),
     modificationTime: new Date(photo.createdAt).getTime(),
+    // Live playback: the paired motion clip plays on hold in the viewer.
+    isLive: photo.isLive,
+    motionUri: photo.variants.some((v) => v.kind === 'Motion') ? fileUrl(photo.id, 'motion') : undefined,
     // Harmless on cached local files, required on the authenticated remote fallback.
     sourceHeaders: authHeaders(),
   });

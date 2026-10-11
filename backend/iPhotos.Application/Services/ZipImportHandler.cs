@@ -87,9 +87,9 @@ public sealed class ZipImportHandler(
 
             // Apple live-photo pairs (iCloud/Takeout exports): still + motion file share
             // folder and stem ("IMG_1234.HEIC" + "IMG_1234.mov"). The still imports as a
-            // photo flagged live; the paired motion file is skipped instead of becoming a
-            // standalone video. Photos are processed before videos so the skip decision
-            // sees every photo outcome regardless of entry order inside the archive.
+            // photo flagged live and the paired motion file becomes its Motion variant —
+            // never a standalone video. Photos are processed before videos so the pair
+            // decision sees every photo outcome regardless of entry order in the archive.
             var photoStems = new HashSet<string>(StringComparer.Ordinal);
             var videoStems = new HashSet<string>(StringComparer.Ordinal);
             foreach (var entry in entries)
@@ -110,7 +110,7 @@ public sealed class ZipImportHandler(
                 }
             }
 
-            var importedPhotoStems = new HashSet<string>(StringComparer.Ordinal);
+            var importedPhotoStems = new Dictionary<string, Guid>(StringComparer.Ordinal);
 
             async Task ProcessPassAsync(IEnumerable<ZipArchiveEntry> passEntries)
             {
@@ -172,6 +172,18 @@ public sealed class ZipImportHandler(
             await ProcessPassAsync(entries.Where(IsPhotoEntry));
             await ProcessPassAsync(entries.Where(entry => !IsPhotoEntry(entry)));
 
+            // Self-heal older imports, now that this import's pair promotions have run:
+            // motion files stored as standalone videos before pairing existed become
+            // Motion variants of their live stills (the video rows go away).
+            try
+            {
+                await photoService.AdoptPairedMotionVideosAsync(job.OwnerId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Zip import {JobId}: motion adoption sweep failed — continuing", job.Id);
+            }
+
             job.Complete(dateTime.UtcNow);
             await unitOfWork.SaveChangesAsync(cancellationToken);
             await blobStorage.DeleteAsync(job.BlobPath, cancellationToken);
@@ -200,7 +212,7 @@ public sealed class ZipImportHandler(
         Dictionary<string, ZipArchiveEntry> sidecars,
         string workDir,
         HashSet<string> videoStems,
-        HashSet<string> importedPhotoStems,
+        Dictionary<string, Guid> importedPhotoStems,
         CancellationToken cancellationToken)
     {
         var fileName = Path.GetFileName(entry.FullName.Replace('\\', '/'));
@@ -256,17 +268,40 @@ public sealed class ZipImportHandler(
                     seed,
                     isLive: isLivePair,
                     cancellationToken);
-                importedPhotoStems.Add(pairKey);
+                importedPhotoStems[pairKey] = result.Photo.Id;
                 CountResult(job, result.Duplicated);
                 return;
             }
 
-            if (isVideo && importedPhotoStems.Contains(pairKey))
+            if (isVideo && importedPhotoStems.TryGetValue(pairKey, out var stillPhotoId))
             {
-                // Apple live-photo motion component: its still was imported (or already
-                // existed) as a live photo, so this file never becomes a standalone video.
-                job.Ignored++;
-                return;
+                // Apple live-photo motion component: attach the clip to its still
+                // instead of importing a standalone video. Quota failures abort the
+                // import; anything else falls back to the standalone-video path so
+                // the bytes are never lost.
+                try
+                {
+                    await using var motionStream = File.OpenRead(tempPath);
+                    await photoService.AttachMotionAsync(
+                        job.OwnerId, stillPhotoId, fileName, MimeFor(extension), motionStream, cancellationToken);
+                    job.Ignored++;
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (QuotaExceededException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "Zip import {JobId}: motion file '{Entry}' could not be attached — importing as video",
+                        job.Id, entry.FullName);
+                }
             }
 
             await using var mediaStream = File.OpenRead(tempPath);
@@ -274,7 +309,7 @@ public sealed class ZipImportHandler(
                 job.OwnerId, fileName, MimeFor(extension), mediaStream, seed, isLive: isLivePair, cancellationToken);
             if (isPhoto)
             {
-                importedPhotoStems.Add(pairKey);
+                importedPhotoStems[pairKey] = upload.Photo.Id;
             }
             CountResult(job, upload.Duplicated, isVideo);
         }

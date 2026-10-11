@@ -6,12 +6,12 @@ import { API_URL, ApiError, apiJson, authHeaders, getAccessToken } from '@/data/
  */
 
 export type PhotoState = 'PendingUpload' | 'PendingProcessing' | 'Processing' | 'Ready' | 'Failed';
-export type VariantKind = 'original' | 'preview' | 'thumbnail';
+export type VariantKind = 'original' | 'preview' | 'thumbnail' | 'motion';
 /** What the backend indexed the asset as — videos get a poster frame as their variants. */
 export type CloudMediaType = 'Photo' | 'Video';
 
 export interface CloudVariant {
-  kind: 'Original' | 'Preview' | 'Thumbnail';
+  kind: 'Original' | 'Preview' | 'Thumbnail' | 'Motion';
   width: number;
   height: number;
   sizeBytes: number;

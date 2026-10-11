@@ -208,6 +208,9 @@ export const VideoBadge = styled.span`
   }
 `;
 
+/** iPhone Live Photo marker (concentric rings), mirroring the mobile grid badge. */
+export const LiveBadge = styled(VideoBadge)``;
+
 export const SkeletonGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));

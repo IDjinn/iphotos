@@ -16,8 +16,19 @@ public static class PeopleEndpoints
         group.MapGet("/", async (
             ClaimsPrincipal principal,
             PersonService people,
-            CancellationToken cancellationToken) =>
-            Results.Ok(await people.ListAsync(principal.GetUserId(), cancellationToken)))
+            [FromQuery] int page = 0,
+            [FromQuery] int pageSize = 0,
+            CancellationToken cancellationToken = default) =>
+        {
+            // Paged when asked (doc 18 §9); the full array stays the default so
+            // unpaged clients keep their contract.
+            if (page > 0 && pageSize > 0)
+            {
+                return Results.Ok(await people.ListAsync(principal.GetUserId(), page, pageSize, cancellationToken));
+            }
+
+            return Results.Ok(await people.ListAsync(principal.GetUserId(), cancellationToken));
+        })
         .WithName("ListPeople");
 
         group.MapGet("/{id:guid}", async (

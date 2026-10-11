@@ -19,14 +19,9 @@ public sealed class FfmpegVideoProcessor(IOptions<VideoProcessorOptions> options
 {
     public async Task<VideoProcessingResult> ProcessAsync(Stream video, CancellationToken cancellationToken = default)
     {
-        var tempPath = Path.Combine(Path.GetTempPath(), $"iphotos-video-{Guid.NewGuid():N}.bin");
+        var tempPath = await MaterializeAsync(video, cancellationToken);
         try
         {
-            await using (var target = File.Create(tempPath))
-            {
-                await video.CopyToAsync(target, cancellationToken);
-            }
-
             var info = await ProbeAsync(tempPath, cancellationToken);
             var poster = await ExtractPosterAsync(tempPath, info, cancellationToken);
             return new VideoProcessingResult(info, poster);
@@ -35,6 +30,60 @@ public sealed class FfmpegVideoProcessor(IOptions<VideoProcessorOptions> options
         {
             File.Delete(tempPath);
         }
+    }
+
+    public async Task<VideoInfo> ProbeAsync(Stream video, CancellationToken cancellationToken = default)
+    {
+        var tempPath = await MaterializeAsync(video, cancellationToken);
+        try
+        {
+            return await ProbeAsync(tempPath, cancellationToken);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    public async Task<VideoFrame> ExtractFrameAsync(Stream video, double offsetSeconds, CancellationToken cancellationToken = default)
+    {
+        var tempPath = await MaterializeAsync(video, cancellationToken);
+        try
+        {
+            var seek = double.IsFinite(offsetSeconds) && offsetSeconds > 0 ? offsetSeconds : 0;
+            var bytes = await ExtractFrameBytesAsync(tempPath, seek, cancellationToken, allowEmptyOutput: true);
+
+            // Keyframes are sparse: a seek past the last one can decode to nothing —
+            // retry once from the very first frame before giving up.
+            if (bytes.Length == 0 && seek > 0)
+            {
+                bytes = await ExtractFrameBytesAsync(tempPath, 0, cancellationToken, allowEmptyOutput: true);
+            }
+
+            if (bytes.Length == 0)
+            {
+                throw new InvalidImageException("The video has no decodable frame at that position.");
+            }
+
+            var (width, height) = PosterDimensions(bytes, new VideoInfo(0, 0, null, null));
+            return new VideoFrame(new MemoryStream(bytes), width, height, bytes.Length);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    /// <summary>MP4 containers need a seekable input, so streams land in a temp file first.</summary>
+    private static async Task<string> MaterializeAsync(Stream video, CancellationToken cancellationToken)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), $"iphotos-video-{Guid.NewGuid():N}.bin");
+        await using (var target = File.Create(tempPath))
+        {
+            await video.CopyToAsync(target, cancellationToken);
+        }
+
+        return tempPath;
     }
 
     private async Task<VideoInfo> ProbeAsync(string path, CancellationToken cancellationToken)
@@ -142,38 +191,14 @@ public sealed class FfmpegVideoProcessor(IOptions<VideoProcessorOptions> options
 
     private async Task<VideoPoster> ExtractPosterAsync(string path, VideoInfo info, CancellationToken cancellationToken)
     {
-        var options = optionsAccessor.Value;
-
         // Seek a little into the clip so the poster is not a black/lead-in frame;
         // shorter than the seek point → retry from the very first frame.
         var seek = info.DurationSeconds is { } duration ? Math.Min(1.0, duration / 4) : 1.0;
-        var bytes = await RunBinaryAsync(
-            options.FfmpegPath,
-            args => args
-                .Add("-nostdin")
-                .Add("-v").Add("error")
-                .Add("-ss").Add(seek.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
-                .Add("-i").Add(path)
-                .Add("-frames:v").Add("1")
-                .Add("-f").Add("image2pipe")
-                .Add("-vcodec").Add("mjpeg")
-                .Add("pipe:1"),
-            cancellationToken,
-            allowEmptyOutput: true);
+        var bytes = await ExtractFrameBytesAsync(path, seek, cancellationToken, allowEmptyOutput: true);
 
         if (bytes.Length == 0)
         {
-            bytes = await RunBinaryAsync(
-                options.FfmpegPath,
-                args => args
-                    .Add("-nostdin")
-                    .Add("-v").Add("error")
-                    .Add("-i").Add(path)
-                    .Add("-frames:v").Add("1")
-                    .Add("-f").Add("image2pipe")
-                    .Add("-vcodec").Add("mjpeg")
-                    .Add("pipe:1"),
-                cancellationToken);
+            bytes = await ExtractFrameBytesAsync(path, 0, cancellationToken);
         }
 
         if (bytes.Length == 0)
@@ -184,6 +209,22 @@ public sealed class FfmpegVideoProcessor(IOptions<VideoProcessorOptions> options
         var (width, height) = PosterDimensions(bytes, info);
         return new VideoPoster(new MemoryStream(bytes), width, height, bytes.Length);
     }
+
+    private Task<byte[]> ExtractFrameBytesAsync(
+        string path, double seek, CancellationToken cancellationToken, bool allowEmptyOutput = false) =>
+        RunBinaryAsync(
+            optionsAccessor.Value.FfmpegPath,
+            args => args
+                .Add("-nostdin")
+                .Add("-v").Add("error")
+                .Add("-ss").Add(seek.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
+                .Add("-i").Add(path)
+                .Add("-frames:v").Add("1")
+                .Add("-f").Add("image2pipe")
+                .Add("-vcodec").Add("mjpeg")
+                .Add("pipe:1"),
+            cancellationToken,
+            allowEmptyOutput);
 
     /// <summary>Exact poster dimensions from the JPEG header; probe dims as fallback.</summary>
     private static (int Width, int Height) PosterDimensions(byte[] jpeg, VideoInfo fallback)

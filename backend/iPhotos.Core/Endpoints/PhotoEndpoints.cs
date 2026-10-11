@@ -195,6 +195,28 @@ public static class PhotoEndpoints
                 await photos.ListMonthBucketsAsync(principal.GetUserId(), sortBy, parsedMediaType, isLive, cancellationToken));
         });
 
+        group.MapPost("/{id:guid}/key-photo", async (
+            Guid id,
+            ClaimsPrincipal principal,
+            PhotoService photos,
+            SetKeyPhotoRequest? request,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await photos.SetKeyPhotoAsync(
+                principal.GetUserId(), id, request?.OffsetSeconds ?? 0, cancellationToken)))
+        .DisableAntiforgery()
+        .WithName("SetKeyPhoto");
+
+        // One-shot repair: video rows imported as standalone videos by builds before
+        // Live Photo pairing existed become Motion variants of their stills.
+        group.MapPost("/maintenance/adopt-live-motions", async (
+            ClaimsPrincipal principal,
+            PhotoService photos,
+            CancellationToken cancellationToken) =>
+            Results.Ok(new LiveMotionAdoption(
+                await photos.AdoptPairedMotionVideosAsync(principal.GetUserId(), cancellationToken))))
+        .DisableAntiforgery()
+        .WithName("AdoptLiveMotionVideos");
+
         group.MapGet("/{id:guid}", async (
             Guid id,
             ClaimsPrincipal principal,
@@ -226,7 +248,7 @@ public static class PhotoEndpoints
             {
                 return Results.BadRequest(new
                 {
-                    error = $"Unknown variant '{kind}'. Use original, preview or thumbnail.",
+                    error = $"Unknown variant '{kind}'. Use original, preview, thumbnail or motion.",
                     code = ErrorCodes.PhotosInvalidVariant,
                 });
             }

@@ -64,6 +64,14 @@ public sealed record PhotoDto(
 
 public sealed record PhotoUploadResult(PhotoDto Photo, bool Duplicated);
 
+/// <summary>Live Photo "Set as Key Photo": the motion frame at this offset (seconds
+/// from clip start) replaces the still.</summary>
+public sealed record SetKeyPhotoRequest(double OffsetSeconds);
+
+/// <summary>Result of the motion-adoption sweep: how many video rows imported by
+/// older builds were converted into Live Photo motion clips (the video row is gone).</summary>
+public sealed record LiveMotionAdoption(int Adopted);
+
 public sealed record UploadTicketRequest(string FileName, string ContentType, long SizeBytes, string ContentHash);
 
 /// <summary>Direct-upload ticket: reserve dedup/quota, then PUT the bytes straight to storage.

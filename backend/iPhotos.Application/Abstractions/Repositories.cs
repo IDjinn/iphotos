@@ -44,6 +44,14 @@ public interface IPhotoRepository
 
     Task DeleteAsync(Photo photo, CancellationToken cancellationToken = default);
 
+    /// <summary>All the owner's Live Photo stills (any state) — pairs with
+    /// <see cref="ListVideosForOwnerAsync"/> for the motion-adoption sweep.</summary>
+    Task<IReadOnlyList<Photo>> ListLiveForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default);
+
+    /// <summary>All the owner's video rows (any state) — candidates whose bytes may
+    /// actually be a Live Photo's paired motion file imported by an older build.</summary>
+    Task<IReadOnlyList<Photo>> ListVideosForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default);
+
     /// <summary>Photos with an upload ticket older than <paramref name="cutoff"/> that never completed.</summary>
     Task<IReadOnlyList<Photo>> ListStalePendingUploadsAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default);
 
@@ -64,6 +72,9 @@ public interface IVariantRepository
     Task AddAsync(PhotoVariant variant, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PhotoVariant>> ListByPhotoAsync(Guid photoId, CancellationToken cancellationToken = default);
+
+    /// <summary>Tracked lookup of one variant kind (upserts mutate the row).</summary>
+    Task<PhotoVariant?> FindByKindAsync(Guid photoId, VariantKind kind, CancellationToken cancellationToken = default);
 
     Task DeleteByPhotoAsync(Guid photoId, CancellationToken cancellationToken = default);
 }

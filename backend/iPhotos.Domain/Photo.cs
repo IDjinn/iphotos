@@ -16,6 +16,10 @@ public enum VariantKind
     Original,
     Preview,
     Thumbnail,
+
+    /// <summary>iPhone Live Photo paired motion clip (short .mov); playback-only,
+    /// never listed as a video asset. Served through the variant file endpoint.</summary>
+    Motion,
 }
 
 public enum MediaType
@@ -202,6 +206,34 @@ public sealed class Photo
     public void MarkSaverStored(DateTimeOffset now)
     {
         StoredQuality = UploadQualities.StorageSaver;
+        Touch(now);
+    }
+
+    /// <summary>
+    /// Attaches the paired motion clip (Live Photo import/adoption): flags the row
+    /// live and records the clip length for the viewer scrubber. Still dimensions,
+    /// taken-at and EXIF fields are untouched.
+    /// </summary>
+    public void AttachMotion(double? durationSeconds, DateTimeOffset now)
+    {
+        IsLive = true;
+        DurationSeconds = durationSeconds;
+        Touch(now);
+    }
+
+    /// <summary>
+    /// Replaces the stored still with a new key frame ("Set as Key Photo"): hash,
+    /// size, mime and file name follow the new bytes, which are original-quality
+    /// again until a storage-saver pass rewrites them.
+    /// </summary>
+    public void ReplaceOriginalBytes(
+        string contentHash, string fileName, string mimeType, long sizeBytes, DateTimeOffset now)
+    {
+        ContentHash = contentHash;
+        FileName = fileName;
+        MimeType = mimeType;
+        SizeBytes = sizeBytes;
+        StoredQuality = UploadQualities.Original;
         Touch(now);
     }
 

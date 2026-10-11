@@ -7,6 +7,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowLeftIcon,
   CircleHelpIcon,
+  Disc2Icon,
   ImageOffIcon,
   ImagesIcon,
   MergeIcon,
@@ -944,6 +945,13 @@ function PersonCell({ photo, size, onOpen }: { photo: CloudPhoto; size: number; 
           >
             <PlayIcon className="size-3" fill="currentColor" />
             {photo.durationSeconds ? formatDuration(photo.durationSeconds) : null}
+          </span>
+        ) : photo.isLive ? (
+          <span
+            aria-label="Live Photo"
+            className="absolute bottom-1 left-1 flex items-center rounded-[var(--radius-sm)] bg-black/70 px-1.5 py-0.5 text-xs text-white"
+          >
+            <Disc2Icon className="size-3" aria-hidden />
           </span>
         ) : null}
       </button>

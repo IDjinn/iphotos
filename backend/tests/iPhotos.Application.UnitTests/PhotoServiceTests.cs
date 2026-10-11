@@ -685,4 +685,201 @@ public class PhotoServiceTests
         _inputCache.Entries.ShouldContainKey((photo.Id, MlInputKind.Preview));
         _inputCache.Entries.ShouldContainKey((photo.Id, MlInputKind.Thumbnail));
     }
+
+    // ── Live Photo motion clips (doc 09 §3.2) ───────────────────────────────
+
+    [Fact]
+    public async Task AttachMotion_StoresClipVariantFlagsLiveAndRecordsDuration()
+    {
+        var owner = NewUser();
+        var photo = await UploadAsync(owner);
+
+        var dto = await NewService().AttachMotionAsync(
+            owner.Id, photo.Id, "IMG_1.mov", "video/quicktime", Bytes("clip-motion"));
+
+        dto.IsLive.ShouldBeTrue();
+        var stored = _photos.Photos.Single(p => p.Id == photo.Id);
+        stored.IsLive.ShouldBeTrue();
+        stored.DurationSeconds.ShouldBe(_video.Info.DurationSeconds);
+
+        var motion = _variants.Variants.Single(v => v.Kind == VariantKind.Motion);
+        motion.PhotoId.ShouldBe(photo.Id);
+        motion.BlobPath.ShouldBe($"{owner.Id}/{photo.Id}/motion.mov");
+        motion.Format.ShouldBe("mov");
+        _blobs.Blobs.Keys.ShouldContain(motion.BlobPath);
+        _video.ProbeCalls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task AttachMotion_ReplacesPreviousClip()
+    {
+        var owner = NewUser();
+        var photo = await UploadAsync(owner);
+        var service = NewService();
+        await service.AttachMotionAsync(owner.Id, photo.Id, "IMG_1.mov", "video/quicktime", Bytes("clip-v1"));
+
+        await service.AttachMotionAsync(owner.Id, photo.Id, "IMG_1.mp4", "video/mp4", Bytes("clip-v2-longer".PadRight(32)));
+
+        _variants.Variants.Count(v => v.Kind == VariantKind.Motion).ShouldBe(1);
+        _variants.Variants.Single(v => v.Kind == VariantKind.Motion).Format.ShouldBe("mp4");
+        _blobs.Blobs.Keys.ShouldNotContain($"{owner.Id}/{photo.Id}/motion.mov");
+    }
+
+    [Fact]
+    public async Task AttachMotion_RejectsVideoRowsAndImageClips()
+    {
+        var owner = NewUser(quota: 10L * 1024 * 1024 * 1024);
+        var photo = await UploadAsync(owner);
+        await NewService().UploadAsync(owner.Id, "clip.mp4", "video/mp4", Bytes("video"));
+
+        var videoId = _photos.Photos.Single(p => p.MediaType == MediaType.Video).Id;
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().AttachMotionAsync(owner.Id, videoId, "m.mov", "video/quicktime", Bytes("clip")));
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().AttachMotionAsync(owner.Id, photo.Id, "m.jpg", "image/jpeg", Bytes("not-a-clip")));
+    }
+
+    [Fact]
+    public async Task AttachMotion_OverQuota_ThrowsQuotaExceeded()
+    {
+        var owner = NewUser(quota: 200);
+        var photo = await UploadAsync(owner);
+
+        await Should.ThrowAsync<QuotaExceededException>(
+            () => NewService().AttachMotionAsync(
+                owner.Id, photo.Id, "IMG_1.mov", "video/quicktime", Bytes("motion-clip".PadRight(150))));
+    }
+
+    [Fact]
+    public async Task SetKeyPhoto_ReplacesStillWithExtractedFrame()
+    {
+        var owner = NewUser();
+        var photo = await UploadAsync(owner);
+        await NewService().AttachMotionAsync(owner.Id, photo.Id, "IMG_1.mov", "video/quicktime", Bytes("clip"));
+        var originalPath = photo.OriginalBlobPath;
+        var oldBytes = _blobs.Blobs[originalPath];
+
+        var dto = await NewService().SetKeyPhotoAsync(owner.Id, photo.Id, 2.5);
+
+        _video.ExtractOffsets.ShouldContain(2.5);
+        var stored = _photos.Photos.Single(p => p.Id == photo.Id);
+        stored.ContentHash.ShouldBe(Sha256Of(Encoding.UTF8.GetBytes("fake-frame-2.5")));
+        stored.MimeType.ShouldBe("image/jpeg");
+        stored.SizeBytes.ShouldBe(Encoding.UTF8.GetByteCount("fake-frame-2.5"));
+        dto.IsLive.ShouldBeTrue();
+
+        // Same .jpg name keeps the blob path; the bytes are the new frame.
+        stored.OriginalBlobPath.ShouldBe(originalPath);
+        _blobs.Blobs[originalPath].ShouldNotBe(oldBytes);
+        _blobs.Blobs.Keys.ShouldContain($"{owner.Id}/{photo.Id}/preview.jpg");
+        _blobs.Blobs.Keys.ShouldContain($"{owner.Id}/{photo.Id}/thumb.jpg");
+
+        // Motion variant survives the swap.
+        _variants.Variants.ShouldContain(v => v.Kind == VariantKind.Motion);
+        _inputCache.Entries.ShouldContainKey((photo.Id, MlInputKind.Preview));
+    }
+
+    [Fact]
+    public async Task SetKeyPhoto_NonJpegStill_RenamesFileAndSwapsBlob()
+    {
+        var owner = NewUser();
+        var photo = await UploadAsync(owner, fileName: "still.png", contentType: "image/png");
+        await NewService().AttachMotionAsync(owner.Id, photo.Id, "IMG_1.mov", "video/quicktime", Bytes("clip"));
+        var oldPath = photo.OriginalBlobPath;
+
+        await NewService().SetKeyPhotoAsync(owner.Id, photo.Id, 0);
+
+        var stored = _photos.Photos.Single(p => p.Id == photo.Id);
+        stored.FileName.ShouldBe("still.jpg");
+        stored.OriginalBlobPath.ShouldBe($"{owner.Id}/{photo.Id}/original.jpg");
+        _blobs.Blobs.Keys.ShouldContain(stored.OriginalBlobPath);
+        _blobs.Blobs.Keys.ShouldNotContain(oldPath);
+    }
+
+    [Fact]
+    public async Task SetKeyPhoto_RejectsNonLiveAndBeyondDuration()
+    {
+        var owner = NewUser();
+        var plainPhoto = await UploadAsync(owner);
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().SetKeyPhotoAsync(owner.Id, plainPhoto.Id, 0));
+
+        var livePhoto = await UploadAsync(owner, content: Bytes("another-still"), fileName: "two.jpg");
+        await NewService().AttachMotionAsync(owner.Id, livePhoto.Id, "IMG_2.mov", "video/quicktime", Bytes("clip"));
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().SetKeyPhotoAsync(owner.Id, livePhoto.Id, 99));
+    }
+
+    [Fact]
+    public async Task SetKeyPhoto_FrameMatchesAnotherPhoto_ThrowsConflict()
+    {
+        var owner = NewUser();
+        var photo = await UploadAsync(owner);
+        await UploadAsync(owner, content: Bytes("fake-frame-1.5"), fileName: "twin.jpg");
+        await NewService().AttachMotionAsync(owner.Id, photo.Id, "IMG_1.mov", "video/quicktime", Bytes("clip"));
+
+        await Should.ThrowAsync<ValidationException>(
+            () => NewService().SetKeyPhotoAsync(owner.Id, photo.Id, 1.5));
+    }
+
+    [Fact]
+    public async Task AdoptPairedMotionVideos_ConvertsLeftoverVideoAndDeletesRow()
+    {
+        var owner = NewUser(quota: 10L * 1024 * 1024 * 1024);
+        await UploadAsync(owner, fileName: "IMG_10.jpg");
+
+        // A legacy build stored the motion file as a standalone video row while
+        // a later pair import flagged the still live.
+        _photos.Photos.Single(p => p.MediaType == MediaType.Photo).IsLive = true;
+        await NewService().UploadAsync(owner.Id, "IMG_10.mov", "video/quicktime", Bytes("legacy-motion"));
+        var videoBlobPath = _photos.Photos.Single(p => p.MediaType == MediaType.Video).OriginalBlobPath;
+
+        var adopted = await NewService().AdoptPairedMotionVideosAsync(owner.Id);
+
+        adopted.ShouldBe(1);
+        _photos.Photos.ShouldHaveSingleItem();
+        var stillRow = _photos.Photos.Single();
+        stillRow.MediaType.ShouldBe(MediaType.Photo);
+        stillRow.DurationSeconds.ShouldBe(_video.Info.DurationSeconds);
+        var motion = _variants.Variants.Single(v => v.Kind == VariantKind.Motion);
+        motion.PhotoId.ShouldBe(stillRow.Id);
+        motion.BlobPath.ShouldBe($"{owner.Id}/{stillRow.Id}/motion.mov");
+        _blobs.Blobs[motion.BlobPath].ShouldBe(Encoding.UTF8.GetBytes("legacy-motion"));
+        _blobs.Blobs.Keys.ShouldNotContain(videoBlobPath);
+    }
+
+    [Fact]
+    public async Task AdoptPairedMotionVideos_IsIdempotentAndLeavesUnrelatedVideos()
+    {
+        var owner = NewUser(quota: 10L * 1024 * 1024 * 1024);
+        await UploadAsync(owner, fileName: "IMG_11.jpg");
+        _photos.Photos.Single().IsLive = true;
+        await NewService().UploadAsync(owner.Id, "IMG_11.mov", "video/quicktime", Bytes("motion-11"));
+        await NewService().UploadAsync(owner.Id, "holiday.mp4", "video/mp4", Bytes("real-video"));
+
+        (await NewService().AdoptPairedMotionVideosAsync(owner.Id)).ShouldBe(1);
+        (await NewService().AdoptPairedMotionVideosAsync(owner.Id)).ShouldBe(0);
+
+        _photos.Photos.Count.ShouldBe(2); // live still + unrelated video
+        _photos.Photos.ShouldContain(p => p.FileName == "holiday.mp4");
+    }
+
+    [Fact]
+    public async Task AdoptPairedMotionVideos_UndecodableClip_IsLeftAsVideo()
+    {
+        var owner = NewUser(quota: 10L * 1024 * 1024 * 1024);
+        await UploadAsync(owner, fileName: "IMG_12.jpg");
+        _photos.Photos.Single().IsLive = true;
+        await NewService().UploadAsync(owner.Id, "IMG_12.mov", "video/quicktime", Bytes("junk"));
+        var service = NewService();
+        _video.ThrowOnProbe = new InvalidImageException("not a clip");
+
+        (await service.AdoptPairedMotionVideosAsync(owner.Id)).ShouldBe(0);
+
+        _photos.Photos.Count(p => p.MediaType == MediaType.Video).ShouldBe(1);
+        _variants.Variants.ShouldNotContain(v => v.Kind == VariantKind.Motion);
+    }
+
+    private static MemoryStream Bytes(string content) =>
+        new(Encoding.UTF8.GetBytes(content), writable: false);
 }

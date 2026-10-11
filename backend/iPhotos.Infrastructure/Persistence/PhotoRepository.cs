@@ -147,6 +147,19 @@ public sealed class PhotoRepository(PhotosDbContext db) : IPhotoRepository
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public Task<IReadOnlyList<Photo>> ListLiveForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default) =>
+        ListAsync(db.Photos.Where(p => p.OwnerId == ownerId && p.IsLive), cancellationToken);
+
+    public Task<IReadOnlyList<Photo>> ListVideosForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default) =>
+        ListAsync(db.Photos.Where(p => p.OwnerId == ownerId && p.MediaType == MediaType.Video), cancellationToken);
+
+    private static async Task<IReadOnlyList<Photo>> ListAsync(
+        IQueryable<Photo> query, CancellationToken cancellationToken)
+    {
+        var items = await query.OrderBy(p => p.CreatedAt).ToListAsync(cancellationToken);
+        return items;
+    }
+
     public async Task<IReadOnlyList<Photo>> ListStalePendingUploadsAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default) =>
         await db.Photos
             .Where(p => p.State == PhotoState.PendingUpload && p.CreatedAt <= cutoff)
@@ -206,6 +219,9 @@ public sealed class VariantRepository(PhotosDbContext db) : IVariantRepository
             .Where(v => v.PhotoId == photoId)
             .OrderBy(v => v.CreatedAt)
             .ToListAsync(cancellationToken);
+
+    public Task<PhotoVariant?> FindByKindAsync(Guid photoId, VariantKind kind, CancellationToken cancellationToken = default) =>
+        db.PhotoVariants.FirstOrDefaultAsync(v => v.PhotoId == photoId && v.Kind == kind, cancellationToken);
 
     public async Task DeleteByPhotoAsync(Guid photoId, CancellationToken cancellationToken = default)
     {

@@ -17,6 +17,12 @@ export interface PhotoAsset {
    */
   isLive?: boolean;
   /**
+   * Cloud Live Photos: authenticated URL of the paired motion clip (the
+   * `motion` file variant). Present only when the clip is stored server-side;
+   * `sourceHeaders` authorizes the request.
+   */
+  motionUri?: string;
+  /**
    * Present on Locked Folder vault assets: id of the encrypted file set.
    * `uri` points at the decrypted file (grid: photo/poster); videos resolve
    * their playable file lazily through `resolveVaultPlayback(vaultId)`.

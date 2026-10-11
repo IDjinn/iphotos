@@ -33,7 +33,7 @@ import {
 } from '@/screens/(tabs)/search.styles';
 import { listAlbums } from '@/data/albums-repository';
 import { listTopLabels, type LabelCount } from '@/data/cloud-labels-repository';
-import { listPeople, type Person } from '@/data/people-repository';
+import { listPeoplePage, type Person } from '@/data/people-repository';
 import { queryAssets } from '@/data/media-repository';
 import { parseQuery } from '@/data/search-providers';
 import { addRecentSearch, clearRecentSearches, listRecentSearches, removeRecentSearch } from '@/data/search-repository';
@@ -76,8 +76,9 @@ export default function SearchScreen() {
   // fills them in the background, so the rows grow between visits.
   useFocusEffect(
     useCallback(() => {
-      void listPeople().then(
-        (rows) => setPeople(rows),
+      // One page covers the row — the strip shows at most 12 chips.
+      void listPeoplePage(1, 12).then(
+        (page) => setPeople(page.items),
         () => setPeople([]),
       );
       void listTopLabels(20).then(

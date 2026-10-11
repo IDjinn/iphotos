@@ -105,6 +105,24 @@
 > implícita do grid e a imagem abria no tamanho natural). Testes:
 > `PersonServiceTests` (21), `PersonClusterJobServiceTests` (6, novo).
 >
+> **Round 8 (2026-10-10)** — **paridade mobile da fila de revisão (§7.4)** +
+> paginação de pessoas: `GET /api/people` aceita `page`/`pageSize` opcionais
+> (presentes → `PagedResult<PersonDto>`; ausentes → mantém o array completo, web
+> inalterada) com tiebreak por id para janelas estáveis. Mobile: `/people` vira
+> grade **paginada de cards** (FlatList 3/5/7 colunas, pull-to-refresh, skeleton)
+> com ponto de revisão pendente e linha "+N groups · review" no alvo, seção
+> **"New faces"** (criar pessoa do card) e chips da Search paginados;
+> `/person/[id]` ganha os **banners de revisão** (rostos órfãos; "mesma pessoa?"
+> nas variantes alvo e membro), o **stepper um a um** em BottomSheet (faces:
+> aceitar/recusar/"não sei"; grupos: mesclar/pular — fechar descarta, como na
+> web), **barra de confiança** (`GET /api/people/{id}`) e o sheet de merge
+> manual **paginado** (o `listPeople()` integral era o hang do "ver todas" e do
+> merge). Dismissals por id de sugestão persistidos em SQLite (zustand persist,
+> mesma semântica do localStorage da web). Desvio consciente: o hub mobile
+> **não colapsa** membros de grupo pendentes (paginação server-side não filtra
+> pós-janela) — badges + banners cobrem a entrada da revisão. Testes:
+> `PersonServiceTests` (22).
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e
@@ -510,7 +528,7 @@ diferentes. O uso correto é como **peso de grafo**, não regra dura:
 
 | Endpoint | Descrição |
 |---|---|
-| `GET /api/people` | `[{ id, name, faceCount, coverFaceId }]` — nomeadas primeiro, depois Unnamed (faceCount desc) |
+| `GET /api/people` | `[{ id, name, faceCount, coverFaceId }]` — nomeadas primeiro, depois Unnamed (faceCount desc); com `?page=&pageSize=` devolve `PagedResult` (mobile pagina — Round 8) |
 | `GET /api/people/{id}` | detalhe: `PersonDetailDto` com `Confidence` (similaridade média membro→centroide, 0..1; null sem centróide) |
 | `GET /api/people/{id}/photos` | fotos da pessoa (paged, mesmo formato de `GET /api/photos`) |
 | `PATCH /api/people/{id}` | `{ name: string \| null }` |
@@ -539,11 +557,14 @@ Erros no formato `{ error }` existente; 404 cross-owner. Documentar no doc 09 §
   com crop de rosto + nome/`n photos`, "See all" → `/people`) e retorno dos chips de
   labels (agora de `GET /api/labels`) — espelhando o Google Fotos.
 - **Rotas novas** (estilos em `src/screens/**` espelhando, regra D17):
-  `/people` (grade de cards de pessoa) e `/person/[id]` — polimórfica como
-  `album/[id]`: carrega ids de fotos da pessoa → `PhotoGrid` compartilhada, nome
-  editável no header, ações por action sheet (rename/merge/delete; mover rosto fica
-  para a v2 — a UI de "same person?" por pessoa já existe na **web**, doc 14 stage
-  14F; o mobile consome o mesmo contrato quando entrar).
+  `/people` (grade paginada de cards de pessoa — Round 8) e `/person/[id]` —
+  polimórfica como `album/[id]`: carrega ids de fotos da pessoa → `PhotoGrid`
+  compartilhada, nome editável no header, ações por action sheet
+  (rename/merge/delete; mover rosto fica para a v2). **Round 8**: o mobile
+  consome o mesmo contrato de revisão da web (doc 14 stage 14F) — banners de
+  "same person?" (alvo/membro) e rostos órfãos sobre o grid, stepper um a um em
+  BottomSheet, seção "New faces" no hub, confiança da pessoa e dismissals
+  persistidos; o sheet de merge manual também pagina (`GET /api/people?page=`).
 - **`/label/[label]`** volta, orientada ao backend (mesma UX removida em 2026-10-09).
 - Sync local de labels: manter opcional — v1 lê direto da API como a galeria cloud;
   a tabela `asset_labels` (`source='cloud'`) permanece como cache futuro, sem UI
@@ -588,7 +609,7 @@ Erros no formato `{ error }` existente; 404 cross-owner. Documentar no doc 09 §
 
 ### Fase E — Frontend pessoas
 - [x] E.1 `people-repository.ts` + seção "People" na Search + `/people`
-- [x] E.2 `/person/[id]` (`CloudPhotoGrid` reuso do viewer cloud, rename, merge via BottomSheet, delete com ConfirmDialog)
+- [x] E.2 `/person/[id]` (`CloudPhotoGrid` reuso do viewer cloud, rename, merge via BottomSheet, delete com ConfirmDialog) — Round 8: banners de revisão + stepper um a um + confiança + merge sheet paginado (§7.4)
 
 ### Fase F — Labels backend
 - [x] F.1 `OpenAiCompatibleVisionLabeler` + options `Vision` + worker de labels + endpoints (`GET /api/labels`, `/api/labels/{label}/photos`, `/api/photos/{id}/labels`)

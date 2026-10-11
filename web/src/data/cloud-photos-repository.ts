@@ -7,12 +7,12 @@ import type { UploadByteProgress } from "@/data/api-client";
  */
 
 export type PhotoState = "PendingUpload" | "PendingProcessing" | "Processing" | "Ready" | "Failed";
-export type VariantKind = "original" | "preview" | "thumbnail";
+export type VariantKind = "original" | "preview" | "thumbnail" | "motion";
 /** What the backend indexed the asset as — videos get a poster frame as their variants. */
 export type CloudMediaType = "Photo" | "Video";
 
 export interface CloudVariant {
-  kind: "Original" | "Preview" | "Thumbnail";
+  kind: "Original" | "Preview" | "Thumbnail" | "Motion";
   width: number;
   height: number;
   sizeBytes: number;
@@ -28,7 +28,7 @@ export interface CloudPhoto {
   sizeBytes: number;
   width?: number;
   height?: number;
-  /** Playback length in seconds; videos only. */
+  /** Playback length in seconds; videos, and Live Photo motion clips. */
   durationSeconds?: number;
   takenAt?: string;
   cameraMake?: string;
@@ -37,6 +37,8 @@ export interface CloudPhoto {
   title?: string;
   /** Catalog description/caption seeded by imports (Google Takeout sidecars). */
   description?: string;
+  /** iPhone Live Photo: carries its paired motion clip as a `motion` variant. */
+  isLive: boolean;
   state: PhotoState;
   lastError?: string;
   contentHash: string;
@@ -49,6 +51,8 @@ export interface CloudUsage {
   quotaBytes: number;
   photoCount: number;
   variantCount: number;
+  /** Live photos in the library — gates the gallery's Live filter chip. */
+  livePhotoCount: number;
 }
 
 export interface PagedResult<T> {
@@ -129,6 +133,26 @@ export async function deletePhoto(photoId: string): Promise<void> {
   } catch (error) {
     if (!(error instanceof ApiError && error.status === 404)) throw error;
   }
+}
+
+/** Live Photo "Set as Key Photo": the motion frame at this offset replaces the still. */
+export async function setKeyPhoto(photoId: string, offsetSeconds: number): Promise<CloudPhoto> {
+  return apiJson<CloudPhoto>(`/api/photos/${photoId}/key-photo`, {
+    method: "POST",
+    body: { offsetSeconds },
+  });
+}
+
+export interface LiveMotionAdoption {
+  adopted: number;
+}
+
+/**
+ * One-shot repair: video rows imported as standalone videos by builds before
+ * Live Photo pairing existed become motion clips of their stills.
+ */
+export async function adoptLiveMotionVideos(): Promise<LiveMotionAdoption> {
+  return apiJson<LiveMotionAdoption>("/api/photos/maintenance/adopt-live-motions", { method: "POST" });
 }
 
 export async function getUsage(): Promise<CloudUsage> {

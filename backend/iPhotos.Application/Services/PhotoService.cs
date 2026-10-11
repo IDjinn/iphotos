@@ -566,6 +566,264 @@ public sealed class PhotoService(
         }
     }
 
+    /// <summary>
+    /// Attaches a Live Photo motion clip (the iPhone paired .mov) to a photo:
+    /// stores it as the <see cref="VariantKind.Motion"/> variant, flags the row
+    /// live and records the clip length. The still's bytes and metadata are
+    /// untouched; a previously attached clip is replaced.
+    /// </summary>
+    public async Task<PhotoDto> AttachMotionAsync(
+        Guid ownerId,
+        Guid photoId,
+        string fileName,
+        string contentType,
+        Stream content,
+        CancellationToken cancellationToken = default)
+    {
+        var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.", ErrorCodes.PhotosNotFound);
+
+        if (photo.MediaType != MediaType.Photo)
+        {
+            throw new ValidationException($"Photo '{photoId}' is a video and cannot take a motion clip.", ErrorCodes.PhotosNotLive);
+        }
+
+        SupportedMediaTypes.EnsureSupported(contentType);
+        if (!SupportedVideoTypes.MimeTypes.Contains(contentType))
+        {
+            throw new ValidationException(
+                $"A Live Photo motion file must be a video — got '{contentType}'.", ErrorCodes.PhotosUnsupportedContentType);
+        }
+
+        var seekable = EnsureSeekable(content);
+        var user = await users.GetByIdAsync(ownerId, cancellationToken)
+            ?? throw new NotFoundException($"User '{ownerId}' was not found.", ErrorCodes.UserNotFound);
+        var usage = await photos.GetUsageAsync(ownerId, cancellationToken);
+        if (usage.UsedBytes + seekable.Length > user.StorageQuotaBytes)
+        {
+            throw QuotaExceeded(usage.UsedBytes + seekable.Length, user.StorageQuotaBytes);
+        }
+
+        await AttachMotionCoreAsync(photo, fileName, contentType, seekable, cancellationToken);
+        return ToDto(photo, []);
+    }
+
+    /// <summary>
+    /// Live Photo "Set as Key Photo": extracts the motion frame at the given offset
+    /// and replaces the still with it — new original bytes, regenerated preview and
+    /// thumbnail, refreshed ML inputs. The motion clip itself is kept.
+    /// </summary>
+    public async Task<PhotoDto> SetKeyPhotoAsync(
+        Guid ownerId,
+        Guid photoId,
+        double offsetSeconds,
+        CancellationToken cancellationToken = default)
+    {
+        if (!double.IsFinite(offsetSeconds) || offsetSeconds < 0)
+        {
+            throw new ValidationException("Frame offset must be zero or a positive number of seconds.");
+        }
+
+        var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
+            ?? throw new NotFoundException($"Photo '{photoId}' was not found.", ErrorCodes.PhotosNotFound);
+
+        if (photo.MediaType != MediaType.Photo || !photo.IsLive)
+        {
+            throw new ValidationException($"Photo '{photoId}' is not a Live Photo.", ErrorCodes.PhotosNotLive);
+        }
+
+        if (photo.State != PhotoState.Ready)
+        {
+            throw new ValidationException($"Photo '{photoId}' is still processing — try again once it is Ready.");
+        }
+
+        if (photo.DurationSeconds is { } duration && offsetSeconds > duration)
+        {
+            throw new ValidationException(
+                $"Frame offset {offsetSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}s " +
+                $"is beyond the {duration.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}s motion clip.");
+        }
+
+        var motion = await variants.FindByKindAsync(photoId, VariantKind.Motion, cancellationToken)
+            ?? throw new NotFoundException(
+                $"Motion clip for photo '{photoId}' is not available.", ErrorCodes.PhotosVariantNotReady)
+            {
+                Params = new Dictionary<string, string> { ["kind"] = "motion" },
+            };
+
+        await using var motionStream = await blobStorage.OpenReadAsync(motion.BlobPath, cancellationToken);
+        var frame = await videoProcessor.ExtractFrameAsync(motionStream, offsetSeconds, cancellationToken);
+
+        // The extracted frame becomes the stored still — hash dedup still applies.
+        frame.Content.Position = 0;
+        var hash = contentHasher.ComputeHash(frame.Content);
+        var clash = await photos.FindByContentHashAsync(ownerId, hash, cancellationToken);
+        if (clash is not null && clash.Id != photo.Id)
+        {
+            throw new ValidationException(
+                "That frame matches another photo already in your library.", ErrorCodes.PhotosKeyFrameConflict);
+        }
+
+        // The original blob path bakes in the file extension: extracted frames are
+        // JPEG, so anything not named .jpg/.jpeg is renamed to keep path and bytes
+        // consistent (the old path's blob is removed after the new one lands).
+        var oldPath = photo.OriginalBlobPath;
+        var oldExtension = Path.GetExtension(photo.FileName);
+        var newFileName = oldExtension is ".jpg" or ".jpeg"
+            ? photo.FileName
+            : Path.ChangeExtension(photo.FileName, ".jpg");
+        var newPath = BlobPaths.Original(ownerId, photoId, newFileName);
+        var newMime = "image/jpeg";
+
+        frame.Content.Position = 0;
+        var preview = await variantGenerator.GenerateAsync(frame.Content, VariantKind.Preview, cancellationToken);
+        frame.Content.Position = 0;
+        var thumbnail = await variantGenerator.GenerateAsync(frame.Content, VariantKind.Thumbnail, cancellationToken);
+        frame.Content.Position = 0;
+
+        await blobStorage.PutAsync(newPath, frame.Content, cancellationToken);
+        var previewPath = BlobPaths.Preview(ownerId, photoId);
+        var thumbnailPath = BlobPaths.Thumbnail(ownerId, photoId);
+        await blobStorage.PutAsync(previewPath, preview.Content, cancellationToken);
+        await blobStorage.PutAsync(thumbnailPath, thumbnail.Content, cancellationToken);
+        if (!string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase))
+        {
+            await blobStorage.DeleteAsync(oldPath, cancellationToken);
+        }
+
+        // ML inputs follow the displayed frame so any future re-index sees the new
+        // still; existing labels/faces are not re-enqueued (v1).
+        preview.Content.Position = 0;
+        await inputCache.SaveAsync(photoId, MlInputKind.Preview, preview.Content, cancellationToken);
+        await inputCache.SaveAsync(photoId, MlInputKind.Thumbnail, thumbnail.Content, cancellationToken);
+
+        photo.ReplaceOriginalBytes(hash, newFileName, newMime, frame.Content.Length, dateTime.UtcNow);
+        photo.OriginalBlobPath = newPath;
+
+        await UpdateVariantRowAsync(photoId, VariantKind.Original, newPath,
+            photo.Width ?? 0, photo.Height ?? 0, frame.Content.Length,
+            VariantFormats.FromMime(newMime), cancellationToken);
+        await UpdateVariantRowAsync(photoId, VariantKind.Preview, previewPath,
+            preview.Width, preview.Height, preview.SizeBytes, preview.Format, cancellationToken);
+        await UpdateVariantRowAsync(photoId, VariantKind.Thumbnail, thumbnailPath,
+            thumbnail.Width, thumbnail.Height, thumbnail.SizeBytes, thumbnail.Format, cancellationToken);
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return ToDto(photo, []);
+    }
+
+    /// <summary>
+    /// Converts video rows that are actually Live Photo motion files (imported as
+    /// standalone videos by builds before pairing existed): their bytes become the
+    /// still's Motion variant and the video row is deleted. Matches on file-name
+    /// stem — Apple pairs share it ("IMG_1234.HEIC" + "IMG_1234.mov"). Idempotent.
+    /// </summary>
+    public async Task<int> AdoptPairedMotionVideosAsync(Guid ownerId, CancellationToken cancellationToken = default)
+    {
+        var stills = (await photos.ListLiveForOwnerAsync(ownerId, cancellationToken))
+            .Where(p => p.MediaType == MediaType.Photo)
+            .GroupBy(p => StemOf(p.FileName))
+            .Where(g => g.Key.Length > 0)
+            .ToDictionary(g => g.Key, g => g.OrderBy(p => p.CreatedAt).First());
+        if (stills.Count == 0)
+        {
+            return 0;
+        }
+
+        var adopted = 0;
+        foreach (var video in await photos.ListVideosForOwnerAsync(ownerId, cancellationToken))
+        {
+            var stem = StemOf(video.FileName);
+            if (stem.Length == 0 || !stills.TryGetValue(stem, out var still) || still.Id == video.Id)
+            {
+                continue;
+            }
+
+            // A still that already carries a clip (this import just attached one)
+            // only needs its leftover video row removed — no byte rewrite.
+            var hasMotion = await variants.FindByKindAsync(still.Id, VariantKind.Motion, cancellationToken) is not null;
+            if (!hasMotion)
+            {
+                try
+                {
+                    await using var stream = await blobStorage.OpenReadAsync(video.OriginalBlobPath, cancellationToken);
+                    var seekable = EnsureSeekable(stream);
+                    await AttachMotionCoreAsync(still, video.FileName, video.MimeType, seekable, cancellationToken);
+                }
+                catch (Exception ex) when (ex is InvalidImageException or FileNotFoundException or KeyNotFoundException)
+                {
+                    // The bytes are not a decodable clip (or are gone) — leave the row alone.
+                    continue;
+                }
+            }
+
+            await DeletePhotoWithBlobsAsync(video, cancellationToken);
+            adopted++;
+        }
+
+        return adopted;
+    }
+
+    /// <summary>Motion-clip storage shared by attach (import/API) and adoption: puts the
+    /// blob, upserts the Motion variant and flags the photo live with the clip length.</summary>
+    private async Task AttachMotionCoreAsync(
+        Photo photo, string fileName, string contentType, Stream content, CancellationToken cancellationToken)
+    {
+        content.Position = 0;
+        var info = await videoProcessor.ProbeAsync(content, cancellationToken);
+
+        var blobPath = BlobPaths.Motion(photo.OwnerId, photo.Id, fileName);
+        var existing = await variants.FindByKindAsync(photo.Id, VariantKind.Motion, cancellationToken);
+        if (existing is not null && existing.BlobPath != blobPath)
+        {
+            await blobStorage.DeleteAsync(existing.BlobPath, cancellationToken);
+        }
+
+        content.Position = 0;
+        await blobStorage.PutAsync(blobPath, content, cancellationToken);
+
+        if (existing is not null)
+        {
+            existing.BlobPath = blobPath;
+            existing.SizeBytes = content.Length;
+            existing.Format = VariantFormats.FromMime(contentType);
+        }
+        else
+        {
+            await variants.AddAsync(
+                PhotoVariant.Create(photo.Id, VariantKind.Motion, blobPath, 0, 0, content.Length,
+                    VariantFormats.FromMime(contentType), dateTime.UtcNow),
+                cancellationToken);
+        }
+
+        photo.AttachMotion(info.DurationSeconds, dateTime.UtcNow);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Mutates one tracked variant row (dimensions/size follow new bytes).</summary>
+    private async Task UpdateVariantRowAsync(
+        Guid photoId, VariantKind kind, string blobPath,
+        int width, int height, long sizeBytes, string format,
+        CancellationToken cancellationToken)
+    {
+        var row = await variants.FindByKindAsync(photoId, kind, cancellationToken);
+        if (row is null)
+        {
+            await variants.AddAsync(PhotoVariant.Create(photoId, kind, blobPath, width, height, sizeBytes, format, dateTime.UtcNow), cancellationToken);
+            return;
+        }
+
+        row.BlobPath = blobPath;
+        row.Width = width;
+        row.Height = height;
+        row.SizeBytes = sizeBytes;
+        row.Format = format;
+    }
+
+    /// <summary>Case-insensitive file-name stem (Takeout pairs share it across folders).</summary>
+    private static string StemOf(string fileName) =>
+        Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
+
     public async Task<PhotoDto> GetAsync(Guid ownerId, Guid photoId, CancellationToken cancellationToken = default)
     {
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
@@ -601,7 +859,14 @@ public sealed class PhotoService(
         var photo = await photos.GetByIdForOwnerAsync(photoId, ownerId, cancellationToken)
             ?? throw new NotFoundException($"Photo '{photoId}' was not found.", ErrorCodes.PhotosNotFound);
 
-        var photoVariants = await variants.ListByPhotoAsync(photoId, cancellationToken);
+        await DeletePhotoWithBlobsAsync(photo, cancellationToken);
+    }
+
+    /// <summary>Removes a photo row together with every variant blob (adoption reuses
+    /// it when a converted motion-video row leaves the library).</summary>
+    private async Task DeletePhotoWithBlobsAsync(Photo photo, CancellationToken cancellationToken)
+    {
+        var photoVariants = await variants.ListByPhotoAsync(photo.Id, cancellationToken);
         var blobsToDelete = photoVariants
             .Select(v => v.BlobPath)
             .Append(photo.OriginalBlobPath)
@@ -613,7 +878,7 @@ public sealed class PhotoService(
             await blobStorage.DeleteAsync(blobPath, cancellationToken);
         }
 
-        await variants.DeleteByPhotoAsync(photoId, cancellationToken);
+        await variants.DeleteByPhotoAsync(photo.Id, cancellationToken);
         await photos.DeleteAsync(photo, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
     }

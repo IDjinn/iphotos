@@ -20,6 +20,7 @@ import {
 import { useAuthFileUrl } from "@/data/blob-cache";
 import { useViewerStore } from "@/stores/ui";
 import { formatDate, formatBytes, formatDuration } from "@/lib/format";
+import { LivePhotoStage } from "./LivePhotoStage";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -217,7 +218,11 @@ export function ViewerOverlay() {
             <Stage>
               {photoId && !isVideo && previewQuery.isPending ? <StageSkeleton /> : null}
               {photoId && !isVideo && previewQuery.data ? (
-                <Photo key={photoId} src={previewQuery.data} alt={photo?.fileName ?? ""} />
+                photo?.isLive ? (
+                  <LivePhotoStage key={photoId} photo={photo} previewUrl={previewQuery.data} />
+                ) : (
+                  <Photo key={photoId} src={previewQuery.data} alt={photo?.fileName ?? ""} />
+                )
               ) : null}
               {photoId && isVideo && videoQuery.data ? (
                 <Video
