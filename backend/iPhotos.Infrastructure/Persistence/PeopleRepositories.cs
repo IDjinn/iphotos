@@ -36,8 +36,10 @@ public sealed class PersonRepository(PhotosDbContext db) : IPersonRepository
             return;
         }
 
-        db.Persons.RemoveRange(persons);
-        await db.SaveChangesAsync(cancellationToken);
+        var ids = persons.Select(p => p.Id).ToList();
+        await db.Persons
+            .Where(p => ids.Contains(p.Id))
+            .ExecuteDeleteAsync(cancellationToken);
     }
 }
 
