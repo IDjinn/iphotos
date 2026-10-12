@@ -1,4 +1,5 @@
 import Animated from 'react-native-reanimated';
+import { Image } from 'expo-image';
 import styled from 'styled-components/native';
 
 import { PressableScale } from '@/components/PressableScale';
@@ -18,13 +19,9 @@ export const Hero = styled(Animated.View)`
   gap: ${({ theme }) => theme.space[3]}px;
 `;
 
-export const Logo = styled.View`
-  width: ${({ theme }) => theme.ms(96)}px;
-  height: ${({ theme }) => theme.ms(96)}px;
-  border-radius: ${({ theme }) => theme.radius.xl}px;
-  align-items: center;
-  justify-content: center;
-  background-color: ${({ theme }) => theme.colors.accentSoft};
+export const Logo = styled(Image)`
+  width: ${({ theme }) => theme.ms(120)}px;
+  height: ${({ theme }) => theme.ms(120)}px;
 `;
 
 export const Title = styled(ThemedText)`

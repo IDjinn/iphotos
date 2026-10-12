@@ -1,5 +1,4 @@
 import styled from "styled-components";
-import { SparklesIcon } from "lucide-react";
 import { breakpoint } from "@/styles/shared";
 
 export const CenteredLayout = styled.div`
@@ -36,12 +35,6 @@ export const BrandRow = styled.div`
   gap: 0.5rem;
   text-align: center;
 
-  svg {
-    width: 2rem;
-    height: 2rem;
-    color: var(--primary);
-  }
-
   h1 {
     font-size: 1.375rem;
     font-weight: 700;
@@ -56,10 +49,10 @@ export const BrandRow = styled.div`
   }
 `;
 
-export const BrandIcon = styled(SparklesIcon)`
-  width: 2rem;
-  height: 2rem;
-  color: var(--primary);
+export const BrandImage = styled.img`
+  width: 3.5rem;
+  height: 3.5rem;
+  object-fit: contain;
 `;
 
 export const Form = styled.form`

@@ -99,7 +99,7 @@ export const Chip = styled(Pressable)<{ $selected: boolean; $pressed: boolean }>
 export const ChipText = styled(Text)<{ $selected: boolean }>`
   font-size: ${({ theme }) => theme.type.size.label}px;
   font-weight: ${({ theme }) => theme.type.weight.semibold};
-  color: ${({ theme, $selected }) => ($selected ? theme.colors.textInverse : theme.colors.textSecondary)};
+  color: ${({ theme, $selected }) => ($selected ? theme.colors.onAccent : theme.colors.textSecondary)};
 `;
 
 export const SortSpacer = styled.View`

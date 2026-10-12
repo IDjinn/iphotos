@@ -80,7 +80,7 @@ export const PrimaryButton = styled(Pressable)<{ $pressed: boolean }>`
 `;
 
 export const PrimaryButtonLabel = styled(ThemedText)`
-  color: ${({ theme }) => theme.colors.textInverse};
+  color: ${({ theme }) => theme.colors.onAccent};
   font-weight: ${({ theme }) => theme.type.weight.semibold};
 `;
 

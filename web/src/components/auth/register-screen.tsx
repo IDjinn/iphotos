@@ -10,8 +10,8 @@ import { useAuthStore } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  BrandImage,
   BrandRow,
-  BrandIcon,
   Card,
   Field,
   FieldError,
@@ -70,7 +70,7 @@ export function RegisterScreen() {
   return (
     <Card>
       <BrandRow>
-        <BrandIcon aria-hidden />
+        <BrandImage src="/logo-mark.png" alt="" width={56} height={56} aria-hidden />
         <h1>Create your account</h1>
         <p>Back up your photos and reach them from any device.</p>
       </BrandRow>

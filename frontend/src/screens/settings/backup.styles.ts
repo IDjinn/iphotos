@@ -76,7 +76,7 @@ export const UsageBar = styled(View)`
   height: ${({ theme }) => theme.ms(8)}px;
   border-radius: ${({ theme }) => theme.radius.xs}px;
   overflow: hidden;
-  background-color: ${({ theme }) => theme.colors.outline};
+  background-color: ${({ theme }) => theme.colors.track};
 `;
 
 export const UsageFill = styled.View<{ $fraction: number }>`

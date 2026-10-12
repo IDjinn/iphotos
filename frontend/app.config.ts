@@ -26,7 +26,7 @@ export default {
   scheme: 'iphotos',
   userInterfaceStyle: 'automatic',
   ios: {
-    icon: './assets/expo.icon',
+    icon: './assets/images/icon.png',
     supportsTablet: true,
     infoPlist: {
       NSPhotoLibraryUsageDescription:
@@ -36,7 +36,7 @@ export default {
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: '#1F1F1F',
+      backgroundColor: '#141210',
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundImage: './assets/images/android-icon-background.png',
       monochromeImage: './assets/images/android-icon-monochrome.png',
@@ -66,9 +66,9 @@ export default {
     [
       'expo-splash-screen',
       {
-        backgroundColor: '#0B0B0D',
+        backgroundColor: '#141210',
         image: './assets/images/splash-icon.png',
-        imageWidth: 76,
+        imageWidth: 150,
       },
     ],
     [

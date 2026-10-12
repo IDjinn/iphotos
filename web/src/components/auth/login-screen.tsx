@@ -10,8 +10,8 @@ import { useAuthStore } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  BrandImage,
   BrandRow,
-  BrandIcon,
   Card,
   Field,
   FieldError,
@@ -74,7 +74,7 @@ export function LoginScreen() {
   return (
     <Card>
       <BrandRow>
-        <BrandIcon aria-hidden />
+        <BrandImage src="/logo-mark.png" alt="" width={56} height={56} aria-hidden />
         <h1>Sign in to iPhotos</h1>
         <p>Your photos, everywhere.</p>
       </BrandRow>

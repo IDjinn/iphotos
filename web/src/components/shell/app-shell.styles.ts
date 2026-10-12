@@ -14,7 +14,7 @@ export const Sidebar = styled.aside`
   width: 15rem;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
-  background: var(--card);
+  background: var(--sidebar);
   position: sticky;
   top: 0;
   height: 100dvh;

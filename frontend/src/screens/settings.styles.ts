@@ -106,7 +106,7 @@ export const BackupBarTrack = styled.View`
   border-radius: ${({ theme }) => theme.radius.full}px;
   flex-direction: row;
   margin-top: ${({ theme }) => theme.space[1]}px;
-  background-color: rgba(128, 128, 128, 0.25);
+  background-color: ${({ theme }) => theme.colors.track};
 `;
 
 export const BackupBarFill = styled.View<{ $flex: number }>`

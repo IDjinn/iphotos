@@ -41,9 +41,7 @@ export default function WelcomeScreen() {
       $insetBottom={insets.bottom + space[7]}
     >
       <Hero entering={FadeInDown.duration(300)}>
-        <Logo>
-          <Icon name="images" size={44} color={colors.accent} />
-        </Logo>
+        <Logo source={require('@/assets/images/logo-mark.png')} contentFit="contain" />
         <Title variant="display">iPhotos</Title>
         <Tagline variant="body" color="secondary">
           {t('auth.welcome.tagline')}
