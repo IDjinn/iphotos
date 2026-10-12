@@ -67,7 +67,7 @@ public sealed class Argon2PasswordHasher(Argon2HasherOptions options) : IPasswor
     {
         var config = new Argon2Config
         {
-            Type = Argon2Type.DataIndependentAddressing,
+            Type = Argon2Type.HybridAddressing,
             Version = Argon2Version.Nineteen,
             TimeCost = timeCost,
             MemoryCost = memoryCost,

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using iPhotos.Application.Abstractions;
 using iPhotos.Application.Common;
 using iPhotos.Domain;
@@ -20,31 +21,47 @@ public sealed class AuthService(
             throw new ValidationException("Password must be at least 8 characters long.", ErrorCodes.AuthPasswordTooShort);
         }
 
-        User user;
+        var email = NormalizeEmail(request.Email ?? string.Empty);
+
+        // Per-address gate: serializes the duplicate check + insert so concurrent
+        // signups with the same e-mail can't both pass the check. Single-instance
+        // only — the unique index on users.email remains the cross-instance backstop.
+        var gate = RegistrationGates.GetOrAdd(email, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
         try
         {
-            user = User.Create(
-                request.Email,
-                passwordHasher.Hash(request.Password),
-                request.DisplayName,
-                storageOptions.DefaultQuotaBytes,
-                dateTime.UtcNow);
+            // Checked before hashing: Argon2 is deliberately expensive and a
+            // duplicate e-mail must not pay for it.
+            if (await users.GetByEmailAsync(email, cancellationToken) is not null)
+            {
+                throw new EmailAlreadyExistsException(email);
+            }
+
+            User user;
+            try
+            {
+                user = User.Create(
+                    email,
+                    passwordHasher.Hash(request.Password),
+                    request.DisplayName,
+                    storageOptions.DefaultQuotaBytes,
+                    dateTime.UtcNow);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new ValidationException(ex.Message);
+            }
+
+            await users.AddAsync(user, cancellationToken);
+            var tokens = await IssueTokensAsync(user, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return new AuthResult(user.Id, user.Email, user.DisplayName, tokens);
         }
-        catch (ArgumentException ex)
+        finally
         {
-            throw new ValidationException(ex.Message);
+            gate.Release();
         }
-
-        if (await users.GetByEmailAsync(user.Email, cancellationToken) is not null)
-        {
-            throw new EmailAlreadyExistsException(user.Email);
-        }
-
-        await users.AddAsync(user, cancellationToken);
-        var tokens = await IssueTokensAsync(user, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return new AuthResult(user.Id, user.Email, user.DisplayName, tokens);
     }
 
     public async Task<AuthTokens> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
@@ -83,6 +100,10 @@ public sealed class AuthService(
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
     }
+
+    // One gate per attempted address, kept for the process lifetime — fine at
+    // signup volumes; evicting idle gates adds races for no real gain.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> RegistrationGates = new();
 
     private async Task<RefreshToken> FindActiveTokenAsync(string refreshToken, CancellationToken cancellationToken)
     {
