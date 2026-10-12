@@ -177,6 +177,12 @@ public interface IPersonRepository
     /// <summary>All the owner's persons, biggest cluster first.</summary>
     Task<IReadOnlyList<Person>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default);
 
+    /// <summary>Paged window over the owner's persons under <paramref name="filter"/>,
+    /// same ordering as the full listing (named first) — pushed down to SQL so the
+    /// grids never materialize every person (doc 18 §9).</summary>
+    Task<PagedResult<Person>> PageForOwnerAsync(
+        Guid ownerId, PersonFilter filter, int page, int pageSize, CancellationToken cancellationToken = default);
+
     Task DeleteAsync(Person person, CancellationToken cancellationToken = default);
 
     /// <summary>Removes several persons at once (batch merge, doc 18 §7.4).</summary>

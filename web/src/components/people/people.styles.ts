@@ -25,6 +25,37 @@ export const CountLabel = styled.span`
   color: var(--muted-foreground);
 `;
 
+/** Paged content (grid + pagination) — dims while a page transition is in
+ * flight, since keepPreviousData keeps the previous page visible underneath. */
+export const PeopleArea = styled.div<{ $dimmed?: boolean }>`
+  opacity: ${(props) => (props.$dimmed ? 0.55 : 1)};
+  transition: opacity 150ms ease;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+`;
+
+/** Previous / page indicator / Next under the paged grid (doc 18 §10). */
+export const PaginationBar = styled.nav`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0 1rem 1.5rem;
+
+  ${breakpoint.lg} {
+    padding: 0 2rem 2rem;
+  }
+
+  span {
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+`;
+
 export const PeopleGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));

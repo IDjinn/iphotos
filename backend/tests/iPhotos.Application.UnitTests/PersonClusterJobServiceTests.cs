@@ -176,39 +176,6 @@ public sealed class PersonClusterJobServiceTests
         Assert.Equal(3, bea.FaceCount);
     }
 
-    private sealed class InMemoryPersonRepository : IPersonRepository
-    {
-        public List<Person> Persons { get; } = [];
-
-        public Task AddAsync(Person person, CancellationToken cancellationToken = default)
-        {
-            Persons.Add(person);
-            return Task.CompletedTask;
-        }
-
-        public Task<Person?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Persons.FirstOrDefault(p => p.Id == id && p.OwnerId == ownerId));
-
-        public Task<IReadOnlyList<Person>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<Person>>(Persons.Where(p => p.OwnerId == ownerId).ToList());
-
-        public Task DeleteAsync(Person person, CancellationToken cancellationToken = default)
-        {
-            Persons.Remove(person);
-            return Task.CompletedTask;
-        }
-
-        public Task DeleteRangeAsync(IReadOnlyList<Person> persons, CancellationToken cancellationToken = default)
-        {
-            foreach (var person in persons)
-            {
-                Persons.Remove(person);
-            }
-
-            return Task.CompletedTask;
-        }
-    }
-
     private sealed class InMemoryFaceRepository : IFaceRepository
     {
         public List<PhotoFace> Faces { get; } = [];

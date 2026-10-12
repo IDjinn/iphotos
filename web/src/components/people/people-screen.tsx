@@ -1,23 +1,40 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImageOffIcon, UserRoundPlusIcon, XIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ImageOffIcon,
+  ListFilterIcon,
+  UserRoundPlusIcon,
+  XIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   acceptPersonSuggestion,
-  listPeople,
+  listPeoplePage,
   listPersonSuggestions,
   type Person,
   type PersonSuggestion,
 } from "@/data/people-repository";
 import { SkeletonGrid, StatusArea, StatusBox } from "@/components/gallery/gallery.styles";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FaceAvatar } from "./face-avatar";
 import {
   CountLabel,
+  PaginationBar,
+  PeopleArea,
   PeopleGrid,
   PeopleHeader,
   PersonTile,
@@ -32,17 +49,41 @@ import {
 } from "./people.styles";
 import { useSuggestionDismissals } from "./use-suggestion-dismissals";
 
+const PAGE_SIZE = 25;
+
 /**
  * People hub (doc 18 §10), Google-Photos style: named people first, unnamed
- * auto-groups after. A uniform circle grid — pending "same person?" reviews
- * show as a dot on the tile and are resolved inside the person's page, where
- * the merge happens over the photo grid. Clusters that match nobody sit under
- * New faces.
+ * auto-groups after. A uniform circle grid over a paged window (the request
+ * never materializes every person) — pending "same person?" reviews show as a
+ * dot on the tile and are resolved inside the person's page, where the merge
+ * happens over the photo grid. Clusters that match nobody sit under New faces.
+ * Filters and the page number live in the URL (gallery convention).
  */
 export function PeopleScreen() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const peopleQuery = useQuery({ queryKey: ["people"], queryFn: listPeople });
+
+  const name = searchParams.get("name") ?? "";
+  const isNamed = searchParams.get("isNamed");
+  const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const deferred = useDeferredValue({ name, isNamed, page });
+  const hasFilters = Boolean(name || isNamed);
+
+  const peopleQuery = useQuery({
+    queryKey: ["people", deferred],
+    queryFn: () =>
+      listPeoplePage(deferred.page, PAGE_SIZE, {
+        name: deferred.name || undefined,
+        isNamed:
+          deferred.isNamed === "true"
+            ? true
+            : deferred.isNamed === "false"
+              ? false
+              : undefined,
+      }),
+    placeholderData: keepPreviousData,
+  });
   const suggestionsQuery = useQuery({
     queryKey: ["people-suggestions"],
     queryFn: listPersonSuggestions,
@@ -56,6 +97,7 @@ export function PeopleScreen() {
     onMutate: (suggestion) => setBusyId(suggestion.id),
     onSuccess: async (person) => {
       setBusyId(null);
+      // Prefix key: refetches the visible page AND the merge-dialog listing.
       await queryClient.invalidateQueries({ queryKey: ["people"] });
       await queryClient.invalidateQueries({ queryKey: ["people-suggestions"] });
       toast.success("Person created");
@@ -67,7 +109,29 @@ export function PeopleScreen() {
     },
   });
 
-  const people = peopleQuery.data ?? [];
+  // Back to the top when the page flips (the grid keeps its layout, so the
+  // viewport would otherwise sit mid-grid on the new page).
+  const lastPage = useRef(page);
+  useEffect(() => {
+    if (lastPage.current !== page) {
+      lastPage.current = page;
+      window.scrollTo({ top: 0 });
+    }
+  }, [page]);
+
+  const setFilter = (key: string, value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set(key, value);
+    else params.delete(key);
+    // Any filter change invalidates the window we were looking at.
+    if (key !== "page") params.delete("page");
+    router.push(params.size ? `/people?${params.toString()}` : "/people");
+  };
+  const clearFilters = () => router.push("/people");
+
+  const people = peopleQuery.data?.items ?? [];
+  const totalCount = peopleQuery.data?.totalCount ?? 0;
+  const totalPages = peopleQuery.data?.totalPages ?? 0;
 
   /** Pending duplicate groups (not dismissed): members hide behind the target's
    * tile so the hub shows one entry per visual person — nothing is merged until
@@ -148,13 +212,72 @@ export function PeopleScreen() {
     );
   }
 
-  const isEmpty = people.length === 0 && newPeople.length === 0;
+  const isEmpty = totalCount === 0 && newPeople.length === 0;
 
   return (
     <>
       <PeopleHeader>
         <h1>People</h1>
-        <CountLabel>{people.length > 0 ? `${people.length}` : ""}</CountLabel>
+        <CountLabel>{totalCount > 0 ? `${totalCount}` : ""}</CountLabel>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" aria-label="Filter people">
+              <ListFilterIcon aria-hidden />
+              Filter
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="filter-people-name">Name</Label>
+                <Input
+                  id="filter-people-name"
+                  defaultValue={name}
+                  placeholder="Search by name"
+                  onBlur={(event) => setFilter("name", event.target.value.trim())}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter")
+                      setFilter("name", event.currentTarget.value.trim());
+                  }}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Show</Label>
+                <div className="flex gap-1.5" role="group" aria-label="Filter by named status">
+                  <Button
+                    variant={isNamed === null ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setFilter("isNamed", "")}
+                  >
+                    All
+                  </Button>
+                  <Button
+                    variant={isNamed === "true" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setFilter("isNamed", "true")}
+                  >
+                    Named
+                  </Button>
+                  <Button
+                    variant={isNamed === "false" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setFilter("isNamed", "false")}
+                  >
+                    Unnamed
+                  </Button>
+                </div>
+              </div>
+              {hasFilters ? (
+                <Button variant="ghost" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : null}
+            </div>
+          </PopoverContent>
+        </Popover>
       </PeopleHeader>
 
       {isEmpty ? (
@@ -169,14 +292,56 @@ export function PeopleScreen() {
         </StatusArea>
       ) : (
         <>
-          {named.length > 0 ? <PeopleGrid>{named.map(renderPerson)}</PeopleGrid> : null}
+          <PeopleArea $dimmed={peopleQuery.isPlaceholderData}>
+            {totalCount === 0 ? (
+              <StatusArea>
+                <StatusBox>
+                  <h2>No people match your filters</h2>
+                  <p>Try a different name, or clear the filters to see everyone.</p>
+                  <Button variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                </StatusBox>
+              </StatusArea>
+            ) : (
+              <>
+                {named.length > 0 ? <PeopleGrid>{named.map(renderPerson)}</PeopleGrid> : null}
 
-          {unnamed.length > 0 ? (
-            <>
-              <SectionTitle>Unnamed</SectionTitle>
-              <PeopleGrid>{unnamed.map(renderPerson)}</PeopleGrid>
-            </>
-          ) : null}
+                {unnamed.length > 0 ? (
+                  <>
+                    <SectionTitle>Unnamed</SectionTitle>
+                    <PeopleGrid>{unnamed.map(renderPerson)}</PeopleGrid>
+                  </>
+                ) : null}
+              </>
+            )}
+
+            {totalPages > 1 ? (
+              <PaginationBar aria-label="People pages">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setFilter("page", String(page - 1))}
+                >
+                  <ChevronLeftIcon aria-hidden />
+                  Previous
+                </Button>
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setFilter("page", String(page + 1))}
+                >
+                  Next
+                  <ChevronRightIcon aria-hidden />
+                </Button>
+              </PaginationBar>
+            ) : null}
+          </PeopleArea>
 
           {newPeople.length > 0 ? (
             <>

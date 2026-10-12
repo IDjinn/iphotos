@@ -38,19 +38,20 @@ public sealed class PersonService(
     }
 
     /// <summary>Paged window over the same ordering as the full listing (doc 18 §9) —
-    /// the mobile grids page instead of materializing every person at once.</summary>
+    /// paging and the optional filters run in SQL, so no client materializes every
+    /// person at once.</summary>
     public async Task<PagedResult<PersonDto>> ListAsync(
-        Guid ownerId, int page, int pageSize, CancellationToken cancellationToken = default)
+        Guid ownerId, PersonFilter filter, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var people = await ListAsync(ownerId, cancellationToken);
-        var items = people
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToList();
-        return new PagedResult<PersonDto>(items, page, pageSize, people.Count);
+        var result = await persons.PageForOwnerAsync(ownerId, filter, page, pageSize, cancellationToken);
+        return new PagedResult<PersonDto>(
+            result.Items
+                .Select(p => new PersonDto(p.Id, p.Name, p.FaceCount, p.CoverFaceId))
+                .ToList(),
+            result.Page, result.PageSize, result.TotalCount);
     }
 
     public async Task<PersonDetailDto> GetAsync(Guid ownerId, Guid personId, CancellationToken cancellationToken = default)

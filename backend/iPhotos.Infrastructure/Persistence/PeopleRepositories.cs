@@ -23,6 +23,39 @@ public sealed class PersonRepository(PhotosDbContext db) : IPersonRepository
             .ThenBy(p => p.CreatedAt)
             .ToListAsync(cancellationToken);
 
+    public async Task<PagedResult<Person>> PageForOwnerAsync(
+        Guid ownerId, PersonFilter filter, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        // Same ordering as the API listing (named first, id tiebreak keeps the
+        // windows deterministic) — the whole query stays on the Persons table
+        // since FaceCount/CoverFaceId are denormalized columns.
+        var query = db.Persons.AsNoTracking().Where(p => p.OwnerId == ownerId);
+
+        if (filter.IsNamed is not null)
+        {
+            query = filter.IsNamed == true
+            ? query.Where(p => p.Name != null)
+            : query.Where(p => p.Name == null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Name))
+        {
+            var term = filter.Name.Trim().ToLower();
+            query = query.Where(p => p.Name != null && p.Name.ToLower().Contains(term));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(p => p.Name != null)
+            .ThenByDescending(p => p.FaceCount)
+            .ThenBy(p => p.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<Person>(items, page, pageSize, total);
+    }
+
     public async Task DeleteAsync(Person person, CancellationToken cancellationToken = default)
     {
         db.Persons.Remove(person);

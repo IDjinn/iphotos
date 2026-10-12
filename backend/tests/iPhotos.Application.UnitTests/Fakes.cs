@@ -70,6 +70,68 @@ public sealed class InMemoryRefreshTokenRepository : IRefreshTokenRepository
         => Task.FromResult(Tokens.FirstOrDefault(t => t.TokenHash == tokenHash));
 }
 
+/// <summary>Shared across the person/ML test classes; mirrors the EF repository's
+/// paged listing (named-first order, IsNamed/Name filters) in memory.</summary>
+public sealed class InMemoryPersonRepository : IPersonRepository
+{
+    public List<Person> Persons { get; } = [];
+
+    public Task AddAsync(Person person, CancellationToken cancellationToken = default)
+    {
+        Persons.Add(person);
+        return Task.CompletedTask;
+    }
+
+    public Task<Person?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Persons.FirstOrDefault(p => p.Id == id && p.OwnerId == ownerId));
+
+    public Task<IReadOnlyList<Person>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<Person>>(Persons.Where(p => p.OwnerId == ownerId).ToList());
+
+    public Task<PagedResult<Person>> PageForOwnerAsync(
+        Guid ownerId, PersonFilter filter, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        IEnumerable<Person> query = Persons.Where(p => p.OwnerId == ownerId);
+
+        if (filter.IsNamed is not null)
+        {
+            query = filter.IsNamed == true
+                ? query.Where(p => p.Name != null)
+                : query.Where(p => p.Name == null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Name))
+        {
+            var term = filter.Name.Trim().ToLowerInvariant();
+            query = query.Where(p => p.Name != null && p.Name.ToLowerInvariant().Contains(term));
+        }
+
+        var ordered = query
+            .OrderByDescending(p => p.Name != null)
+            .ThenByDescending(p => p.FaceCount)
+            .ThenBy(p => p.Id)
+            .ToList();
+        var items = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        return Task.FromResult(new PagedResult<Person>(items, page, pageSize, ordered.Count));
+    }
+
+    public Task DeleteAsync(Person person, CancellationToken cancellationToken = default)
+    {
+        Persons.Remove(person);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteRangeAsync(IReadOnlyList<Person> persons, CancellationToken cancellationToken = default)
+    {
+        foreach (var person in persons)
+        {
+            Persons.Remove(person);
+        }
+
+        return Task.CompletedTask;
+    }
+}
+
 public sealed class InMemoryPhotoRepository : IPhotoRepository
 {
     public List<Photo> Photos { get; } = [];

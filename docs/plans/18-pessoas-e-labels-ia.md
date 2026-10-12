@@ -123,6 +123,20 @@
 > pós-janela) — badges + banners cobrem a entrada da revisão. Testes:
 > `PersonServiceTests` (22).
 >
+> **Round 9 (2026-10-12)** — **paginação + filtros da pessoas no web**: a paginação
+> existente deixava de materializar a lista inteira (o `Skip/Take` em memória do
+> service virou `PageForOwnerAsync` no repositório — `CountAsync` + `Skip/Take`
+> em SQL, projeção igual ao `FaceRepository`). `GET /api/people` paginado aceita
+> `?name=` (substring case-insensitive) e `?isNamed=` (`true` nomeadas / `false`
+> Unnamed; sem paginação o array completo segue igual). Web `/people` paginada em
+> **25 por página** (`listPeoplePage`, `keepPreviousData` com leve dim na troca,
+> Previous/"Page X of Y"/Next, scroll ao topo) com filtros na URL (padrão da
+> galeria): popover com busca por nome e All/Named/Unnamed + "Clear filters"; as
+> seções Named/Unnamed derivam da janela atual e o contador usa o `totalCount`.
+> O merge dialog do `person-screen` continua na listagem integral (`["people"]`
+> sem paginação; invalidações por prefixo alcançam as duas). Testes:
+> `PersonServiceTests` (23; fake de pessoas consolidado no `Fakes.cs`).
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e
@@ -528,7 +542,7 @@ diferentes. O uso correto é como **peso de grafo**, não regra dura:
 
 | Endpoint | Descrição |
 |---|---|
-| `GET /api/people` | `[{ id, name, faceCount, coverFaceId }]` — nomeadas primeiro, depois Unnamed (faceCount desc); com `?page=&pageSize=` devolve `PagedResult` (mobile pagina — Round 8) |
+| `GET /api/people` | `[{ id, name, faceCount, coverFaceId }]` — nomeadas primeiro, depois Unnamed (faceCount desc); com `?page=&pageSize=` devolve `PagedResult` (Round 8) e aceita filtros `?name=` (substring case-insensitive) e `?isNamed=` (`true`/`false`, Round 9) — paginação e filtros rodam em SQL |
 | `GET /api/people/{id}` | detalhe: `PersonDetailDto` com `Confidence` (similaridade média membro→centroide, 0..1; null sem centróide) |
 | `GET /api/people/{id}/photos` | fotos da pessoa (paged, mesmo formato de `GET /api/photos`) |
 | `PATCH /api/people/{id}` | `{ name: string \| null }` |

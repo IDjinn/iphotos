@@ -91,6 +91,30 @@ export async function listPeople(): Promise<Person[]> {
   return apiJson<Person[]>("/api/people");
 }
 
+/** Optional GET /api/people filters (all unrestricted when unset): named people
+ * only / unnamed auto-groups only, and/or a case-insensitive name substring. */
+export interface PeopleFilter {
+  name?: string;
+  isNamed?: boolean;
+}
+
+/** Paged window over the ordered people list (named first) — the hub pages
+ * instead of materializing every person at once (doc 18 §9). */
+export async function listPeoplePage(
+  page: number,
+  pageSize: number,
+  filter: PeopleFilter = {},
+): Promise<PagedResult<Person>> {
+  return apiJson<PagedResult<Person>>("/api/people", {
+    params: {
+      page,
+      pageSize,
+      name: filter.name?.trim() || undefined,
+      isNamed: filter.isNamed,
+    },
+  });
+}
+
 export async function getPerson(personId: string): Promise<PersonDetail> {
   return apiJson<PersonDetail>(`/api/people/${personId}`);
 }

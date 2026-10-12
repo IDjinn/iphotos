@@ -18,13 +18,17 @@ public static class PeopleEndpoints
             PersonService people,
             [FromQuery] int page = 0,
             [FromQuery] int pageSize = 0,
+            [FromQuery] string? name = null,
+            [FromQuery] bool? isNamed = null,
             CancellationToken cancellationToken = default) =>
         {
             // Paged when asked (doc 18 §9); the full array stays the default so
-            // unpaged clients keep their contract.
+            // unpaged clients keep their contract. Filters only apply on the
+            // paged branch — the full listing keeps its shape.
             if (page > 0 && pageSize > 0)
             {
-                return Results.Ok(await people.ListAsync(principal.GetUserId(), page, pageSize, cancellationToken));
+                var filter = new PersonFilter(isNamed, name);
+                return Results.Ok(await people.ListAsync(principal.GetUserId(), filter, page, pageSize, cancellationToken));
             }
 
             return Results.Ok(await people.ListAsync(principal.GetUserId(), cancellationToken));

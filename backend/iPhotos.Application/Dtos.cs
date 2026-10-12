@@ -198,6 +198,11 @@ public sealed record UpdateUserPreferencesRequest(string UploadQuality, bool App
 /// fetched via /api/faces/{coverFaceId}/crop (client builds the URL).</summary>
 public sealed record PersonDto(Guid Id, string? Name, int FaceCount, Guid? CoverFaceId);
 
+/// <summary>Optional list filters for GET /api/people (doc 18 §9): only named
+/// people (IsNamed), only unnamed auto-groups, and/or a case-insensitive name
+/// substring match. Null/unset = no restriction.</summary>
+public sealed record PersonFilter(bool? IsNamed = null, string? Name = null);
+
 /// <summary>Person with the group-coherence metric: mean cosine similarity of the
 /// member faces to the person's centroid (0..1, null when it can't be computed).</summary>
 public sealed record PersonDetailDto(Guid Id, string? Name, int FaceCount, Guid? CoverFaceId, float? Confidence);

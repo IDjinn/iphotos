@@ -94,12 +94,37 @@ public sealed class PersonServiceTests
         var unnamedSmall = NewPerson(null);
         unnamedSmall.FaceCount = 1;
 
-        var page = await service.ListAsync(Owner, page: 2, pageSize: 3);
+        var page = await service.ListAsync(Owner, new PersonFilter(), page: 2, pageSize: 3);
 
         Assert.Equal(4, page.TotalCount);
         Assert.Equal(2, page.Page);
         Assert.Equal(3, page.PageSize);
         Assert.Equal([unnamedSmall.Id], page.Items.Select(p => p.Id).ToList());
+    }
+
+    [Fact]
+    public async Task ListAsync_filters_by_named_and_name_term()
+    {
+        var unnamedBig = NewPerson(null);
+        unnamedBig.FaceCount = 5;
+        var namedSmall = NewPerson("Bea");
+        namedSmall.FaceCount = 2;
+        var namedBig = NewPerson("Al");
+        namedBig.FaceCount = 9;
+        var unnamedSmall = NewPerson(null);
+        unnamedSmall.FaceCount = 1;
+
+        var named = await service.ListAsync(Owner, new PersonFilter(IsNamed: true), 1, 10);
+        Assert.Equal(2, named.TotalCount);
+        Assert.Equal([namedBig.Id, namedSmall.Id], named.Items.Select(p => p.Id).ToList());
+
+        var unnamed = await service.ListAsync(Owner, new PersonFilter(IsNamed: false), 1, 10);
+        Assert.Equal(2, unnamed.TotalCount);
+        Assert.Equal([unnamedBig.Id, unnamedSmall.Id], unnamed.Items.Select(p => p.Id).ToList());
+
+        var search = await service.ListAsync(Owner, new PersonFilter(Name: "bea"), 1, 10);
+        Assert.Equal(1, search.TotalCount);
+        Assert.Equal([namedSmall.Id], search.Items.Select(p => p.Id).ToList());
     }
 
     [Fact]
@@ -454,39 +479,6 @@ public sealed class PersonServiceTests
         public Task DeleteForPersonAsync(Guid personId, CancellationToken cancellationToken = default)
         {
             Decisions.RemoveAll(d => d.PersonId == personId);
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class InMemoryPersonRepository : IPersonRepository
-    {
-        public List<Person> Persons { get; } = [];
-
-        public Task AddAsync(Person person, CancellationToken cancellationToken = default)
-        {
-            Persons.Add(person);
-            return Task.CompletedTask;
-        }
-
-        public Task<Person?> GetByIdForOwnerAsync(Guid id, Guid ownerId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Persons.FirstOrDefault(p => p.Id == id && p.OwnerId == ownerId));
-
-        public Task<IReadOnlyList<Person>> ListForOwnerAsync(Guid ownerId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<Person>>(Persons.Where(p => p.OwnerId == ownerId).ToList());
-
-        public Task DeleteAsync(Person person, CancellationToken cancellationToken = default)
-        {
-            Persons.Remove(person);
-            return Task.CompletedTask;
-        }
-
-        public Task DeleteRangeAsync(IReadOnlyList<Person> persons, CancellationToken cancellationToken = default)
-        {
-            foreach (var person in persons)
-            {
-                Persons.Remove(person);
-            }
-
             return Task.CompletedTask;
         }
     }
