@@ -286,6 +286,18 @@
 > dessas 30 — avatares instantâneos nas visitas seguintes; janelas filtradas
 > (busca/chips) nunca sobrescrevem o cache.
 >
+> **Round 14 (2026-10-13)** — **scroll infinito no hub web `/people`**: a
+> paginação Previous/Next do Round 9 vira `useInfiniteQuery` sobre o mesmo
+> endpoint paginado (**50 por janela**) — sentinela sob a grade com
+> IntersectionObserver (`rootMargin` 600 px) puxa a janela seguinte antes do
+> fim da rolagem, e o `page` sai da URL (que mantém só `name`/`isNamed`).
+> A cauda da grade renderiza tiles-skeleton enquanto a janela carrega; janela
+> que falha ganha botão "Try again" explícito (a sentinela não re-tira após
+> erro) e um guard `isPlaceholderData` evita puxar a página 2 do filtro
+> anterior durante a troca. Seções Named/Unnamed e o contador derivam das
+> janelas acumuladas; invalidações por prefixo `["people"]` continuam
+> alcançando o hub paginado e o merge dialog integral do `person-screen`.
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e

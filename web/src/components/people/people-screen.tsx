@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
+import { useEffect, useMemo, useState, useDeferredValue } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   keepPreviousData,
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
   ImageOffIcon,
   ListFilterIcon,
   UserRoundPlusIcon,
@@ -33,7 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FaceAvatar } from "./face-avatar";
 import {
   CountLabel,
-  PaginationBar,
+  GridFooter,
   PeopleArea,
   PeopleGrid,
   PeopleHeader,
@@ -49,15 +48,16 @@ import {
 } from "./people.styles";
 import { useSuggestionDismissals } from "./use-suggestion-dismissals";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 50;
 
 /**
  * People hub (doc 18 §10), Google-Photos style: named people first, unnamed
- * auto-groups after. A uniform circle grid over a paged window (the request
- * never materializes every person) — pending "same person?" reviews show as a
- * dot on the tile and are resolved inside the person's page, where the merge
- * happens over the photo grid. Clusters that match nobody sit under New faces.
- * Filters and the page number live in the URL (gallery convention).
+ * auto-groups after. A uniform circle grid over an endless paged window —
+ * pages append as the grid scrolls (the request never materializes every
+ * person). Pending "same person?" reviews show as a dot on the tile and are
+ * resolved inside the person's page, where the merge happens over the photo
+ * grid. Clusters that match nobody sit under New faces. Filters live in the
+ * URL (gallery convention).
  */
 export function PeopleScreen() {
   const router = useRouter();
@@ -66,14 +66,13 @@ export function PeopleScreen() {
 
   const name = searchParams.get("name") ?? "";
   const isNamed = searchParams.get("isNamed");
-  const page = Math.max(1, Number(searchParams.get("page")) || 1);
-  const deferred = useDeferredValue({ name, isNamed, page });
+  const deferred = useDeferredValue({ name, isNamed });
   const hasFilters = Boolean(name || isNamed);
 
-  const peopleQuery = useQuery({
+  const peopleQuery = useInfiniteQuery({
     queryKey: ["people", deferred],
-    queryFn: () =>
-      listPeoplePage(deferred.page, PAGE_SIZE, {
+    queryFn: ({ pageParam }) =>
+      listPeoplePage(pageParam, PAGE_SIZE, {
         name: deferred.name || undefined,
         isNamed:
           deferred.isNamed === "true"
@@ -82,8 +81,17 @@ export function PeopleScreen() {
               ? false
               : undefined,
       }),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
     placeholderData: keepPreviousData,
   });
+  const {
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    isPlaceholderData,
+  } = peopleQuery;
   const suggestionsQuery = useQuery({
     queryKey: ["people-suggestions"],
     queryFn: listPersonSuggestions,
@@ -109,29 +117,44 @@ export function PeopleScreen() {
     },
   });
 
-  // Back to the top when the page flips (the grid keeps its layout, so the
-  // viewport would otherwise sit mid-grid on the new page).
-  const lastPage = useRef(page);
+  // Infinite scroll: a sentinel under the grid pulls the next window before
+  // the user reaches the bottom. Paused while placeholder data shows (a filter
+  // change would otherwise fetch page 2 of the previous filter); the observer
+  // is re-created on fetch flips so a still-visible sentinel re-fires once a
+  // window lands without the user having to nudge the scroll.
+  const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (lastPage.current !== page) {
-      lastPage.current = page;
-      window.scrollTo({ top: 0 });
-    }
-  }, [page]);
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries.some((entry) => entry.isIntersecting) &&
+          !isPlaceholderData &&
+          hasNextPage &&
+          !isFetchingNextPage
+        ) {
+          void fetchNextPage();
+        }
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [sentinel, fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData]);
 
   const setFilter = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set(key, value);
     else params.delete(key);
-    // Any filter change invalidates the window we were looking at.
-    if (key !== "page") params.delete("page");
     router.push(params.size ? `/people?${params.toString()}` : "/people");
   };
   const clearFilters = () => router.push("/people");
 
-  const people = peopleQuery.data?.items ?? [];
-  const totalCount = peopleQuery.data?.totalCount ?? 0;
-  const totalPages = peopleQuery.data?.totalPages ?? 0;
+  const people = useMemo(
+    () => (peopleQuery.data ? peopleQuery.data.pages.flatMap((page) => page.items) : []),
+    [peopleQuery.data],
+  );
+  const totalCount = peopleQuery.data?.pages[0]?.totalCount ?? 0;
 
   /** Pending duplicate groups (not dismissed): members hide behind the target's
    * tile so the hub shows one entry per visual person — nothing is merged until
@@ -316,30 +339,31 @@ export function PeopleScreen() {
               </>
             )}
 
-            {totalPages > 1 ? (
-              <PaginationBar aria-label="People pages">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => setFilter("page", String(page - 1))}
-                >
-                  <ChevronLeftIcon aria-hidden />
-                  Previous
-                </Button>
-                <span>
-                  Page {page} of {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= totalPages}
-                  onClick={() => setFilter("page", String(page + 1))}
-                >
-                  Next
-                  <ChevronRightIcon aria-hidden />
-                </Button>
-              </PaginationBar>
+            {hasNextPage || isFetchingNextPage ? (
+              <>
+                <div ref={setSentinel} aria-hidden="true" />
+                {isFetchingNextPage ? (
+                  <PeopleGrid aria-hidden="true">
+                    {Array.from({ length: 8 }, (_, i) => (
+                      <div key={i} className="flex flex-col items-center gap-2">
+                        <Skeleton className="size-20 rounded-full" />
+                        <Skeleton className="h-4 w-16" />
+                      </div>
+                    ))}
+                  </PeopleGrid>
+                ) : null}
+                {isFetchNextPageError ? (
+                  <GridFooter>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void fetchNextPage()}
+                    >
+                      Couldn&apos;t load more. Try again
+                    </Button>
+                  </GridFooter>
+                ) : null}
+              </>
             ) : null}
           </PeopleArea>
 
