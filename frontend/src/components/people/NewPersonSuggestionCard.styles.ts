@@ -1,6 +1,7 @@
 import Animated from 'react-native-reanimated';
 import styled from 'styled-components/native';
 
+import { PressableScale } from '@/components/PressableScale';
 import { ThemedText } from '@/components/ThemedText';
 
 /** "New faces" suggestion card (doc 18 §7.4) — full-width row on the hub. */
@@ -15,7 +16,9 @@ export const Card = styled(Animated.View)`
   background-color: ${({ theme }) => theme.colors.surface};
 `;
 
-export const TopRow = styled.View`
+/** Card body: tapping it previews the photos before creating (the action
+ * buttons below stay independent). */
+export const PreviewPressable = styled(PressableScale)`
   flex-direction: row;
   align-items: center;
   gap: ${({ theme }) => theme.space[3]}px;

@@ -1,4 +1,4 @@
-import { Pressable } from 'react-native';
+import { TextInput } from 'react-native';
 import { Image } from 'expo-image';
 import styled from 'styled-components/native';
 
@@ -6,7 +6,8 @@ import { PressableScale } from '@/components/PressableScale';
 import { ThemedText } from '@/components/ThemedText';
 import { absoluteFill } from '@/theme/shared';
 
-/** People list (doc 18 §10) — paged card grid + "New faces" review section. */
+/** People list (doc 18 §10) — paged card grid + search/filter toolbar +
+ * "New faces" review section. */
 
 export const Screen = styled.View<{ $insetTop?: number }>`
   flex: 1;
@@ -30,6 +31,56 @@ export const HeaderTitle = styled(ThemedText)`
 /** Spacer mirroring the leading icon so the centered title stays centered. */
 export const HeaderSpacer = styled.View`
   width: ${({ theme }) => theme.ms(24)}px;
+`;
+
+// ── Toolbar: search input + All/Named/Unnamed chips ─────────────────────────
+
+export const Toolbar = styled.View`
+  gap: ${({ theme }) => theme.space[2]}px;
+  padding-horizontal: ${({ theme }) => theme.space[3]}px;
+  padding-bottom: ${({ theme }) => theme.space[2]}px;
+`;
+
+export const SearchBar = styled.View`
+  flex-direction: row;
+  align-items: center;
+  gap: ${({ theme }) => theme.space[2]}px;
+  border-radius: ${({ theme }) => theme.radius.xl}px;
+  padding-horizontal: ${({ theme }) => theme.space[3]}px;
+  height: ${({ theme }) => theme.ms(44)}px;
+  background-color: ${({ theme }) => theme.colors.surface};
+`;
+
+export const SearchInput = styled(TextInput)`
+  flex: 1;
+  font-size: ${({ theme }) => theme.type.size.body}px;
+  padding-vertical: 0px;
+  color: ${({ theme }) => theme.colors.text};
+`;
+
+export const FilterRow = styled.View`
+  flex-direction: row;
+  gap: ${({ theme }) => theme.space[2]}px;
+`;
+
+export const FilterChip = styled(PressableScale)<{ $selected: boolean }>`
+  flex: 1;
+  align-items: center;
+  padding-vertical: ${({ theme }) => theme.space[1]}px;
+  border-radius: ${({ theme }) => theme.radius.full}px;
+  border-width: ${({ theme, $selected }) => ($selected ? 0 : theme.border.width)}px;
+  border-color: ${({ theme }) => theme.colors.outline};
+  background-color: ${({ theme, $selected }) =>
+    $selected ? theme.colors.accent : theme.colors.surface};
+`;
+
+export const FilterChipLabel = styled(ThemedText)<{ $selected: boolean }>`
+  color: ${({ theme, $selected }) => ($selected ? theme.colors.onAccent : theme.colors.textSecondary)};
+  font-weight: ${({ theme }) => theme.type.weight.medium};
+`;
+
+export const ResultCount = styled(ThemedText)`
+  padding-horizontal: ${({ theme }) => theme.space[1]}px;
 `;
 
 export const Center = styled.View<{ $insetTop?: number }>`

@@ -1,4 +1,4 @@
-import Animated, { FadeIn } from 'react-native-reanimated';
+import { FadeIn } from 'react-native-reanimated';
 
 import { useTranslation } from '@/i18n/hook';
 import { ReviewButton } from '@/components/people/ReviewButton';
@@ -7,9 +7,9 @@ import {
   ActionsRow,
   Card,
   Info,
+  PreviewPressable,
   Subtitle,
   Title,
-  TopRow,
 } from '@/components/people/NewPersonSuggestionCard.styles';
 import type { PersonSuggestion } from '@/data/people-repository';
 
@@ -18,23 +18,32 @@ interface NewPersonSuggestionCardProps {
   busy: boolean;
   onCreate: (suggestion: PersonSuggestion) => void;
   onDismiss: (suggestion: PersonSuggestion) => void;
+  /** Opens the photo-grid preview sheet (card tap and the review button). */
+  onPreview: (suggestion: PersonSuggestion) => void;
 }
 
 /** "New faces" card on the people hub (doc 18 §7.4, web parity): a cluster of
- * unassigned faces that match no existing person — create the person or
- * dismiss. Cover face leads the strip. */
+ * unassigned faces that match no existing person — preview the photos, create
+ * the person or dismiss. Cover face leads the strip. */
 export function NewPersonSuggestionCard({
   suggestion,
   busy,
   onCreate,
   onDismiss,
+  onPreview,
 }: NewPersonSuggestionCardProps) {
   const { t, tCount } = useTranslation();
   const faces = [suggestion.coverFaceId, ...suggestion.faceIds.filter((id) => id !== suggestion.coverFaceId)];
 
   return (
     <Card entering={FadeIn.duration(200)}>
-      <TopRow>
+      <PreviewPressable
+        onPress={() => onPreview(suggestion)}
+        accessibilityRole="button"
+        accessibilityLabel={tCount('people.previewFacesA11y', suggestion.faceCount, {
+          count: suggestion.faceCount,
+        })}
+      >
         <FaceStrip faceIds={faces} total={suggestion.faceCount} />
         <Info>
           <Title variant="body">
@@ -46,7 +55,7 @@ export function NewPersonSuggestionCard({
             {t('people.mayBeSamePerson')}
           </Subtitle>
         </Info>
-      </TopRow>
+      </PreviewPressable>
       <ActionsRow>
         <ReviewButton
           icon="person-add-outline"
@@ -54,6 +63,13 @@ export function NewPersonSuggestionCard({
           busyLabel={t('people.creating')}
           busy={busy}
           onPress={() => onCreate(suggestion)}
+        />
+        <ReviewButton
+          variant="outline"
+          icon="eye-outline"
+          label={t('people.reviewFaces')}
+          disabled={busy}
+          onPress={() => onPreview(suggestion)}
         />
         <ReviewButton
           variant="ghost"

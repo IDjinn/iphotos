@@ -137,6 +137,21 @@
 > sem paginação; invalidações por prefixo alcançam as duas). Testes:
 > `PersonServiceTests` (23; fake de pessoas consolidado no `Fakes.cs`).
 >
+> **Round 10 (2026-10-12)** — **busca + filtros + preview das sugestões no
+> mobile**: `/people` ganha barra de busca por nome (debounce 260 ms, componente
+> isolado — teclar não re-renderiza a grade) e chips All/Named/Unnamed, ambos
+> descidos para o endpoint paginado (`?name=`/`?isNamed=`); o scroll infinito
+> existente ganha guarda de janela (contador de sequência descarta respostas de
+> janelas supersadas) e o `hasMore`/contador usam o `totalCount` da janela. As
+> **sugestões** (`/suggestions`) foram desacopladas do carregamento da página 1 —
+> a grade pinta sem esperar a fila de revisão (falha dela é silenciosa). Estado
+> vazio com filtro/busca ativos mostra "Nobody found" + "Clear filters"; a seção
+> "New faces" some quando há filtro/busca. O card de sugestão ficou **clicável**
+> (corpo abre o preview) com botão próprio **Review**: BottomSheet com grade das
+> fotos-amostra (`samplePhotoIds`, thumbs do cache; fallback para crops dos
+> rostos) e ações criar/"Not now" dentro do sheet. i18n en/pt. Verificação:
+> tsc limpo, vitest 49/49, eslint sem erros novos.
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -12,10 +12,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EmptyState } from '@/components/EmptyState';
 import { Icon } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
-import { ThemedText } from '@/components/ThemedText';
+import { NewPersonPreviewSheet } from '@/components/people/NewPersonPreviewSheet';
 import { NewPersonSuggestionCard } from '@/components/people/NewPersonSuggestionCard';
+import { ThemedText } from '@/components/ThemedText';
 import {
   Center,
+  FilterChip,
+  FilterChipLabel,
+  FilterRow,
   Header,
   HeaderSpacer,
   HeaderTitle,
@@ -28,17 +32,23 @@ import {
   PersonCount,
   PersonGroupLine,
   PersonName,
+  ResultCount,
   RetryButton,
   Screen,
+  SearchBar,
+  SearchInput,
   SectionTitle,
   SkeletonCard,
   SkeletonGrid,
+  Toolbar,
 } from '@/screens/people.styles';
 import {
   acceptPersonSuggestion,
   listPeoplePage,
   listPersonSuggestions,
+  type PeopleFilter,
   type Person,
+  type PersonSuggestion,
   type PersonSuggestions,
 } from '@/data/people-repository';
 import { useTranslation } from '@/i18n/hook';
@@ -49,11 +59,23 @@ import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
 const PAGE_SIZE = 60;
+const SEARCH_DEBOUNCE_MS = 260;
+
+/** Named-status filter behind the `isNamed` query param (doc 18 §9). */
+type NamedFilter = 'all' | 'named' | 'unnamed';
+
+const FILTER_CHIPS = [
+  { key: 'all', labelKey: 'people.filterAll' },
+  { key: 'named', labelKey: 'people.filterNamed' },
+  { key: 'unnamed', labelKey: 'people.filterUnnamed' },
+] as const;
 
 /**
  * All detected people (doc 18 §10) — reached from the Search tab's People row.
- * Paged card grid (named first) plus the §7.4 review surfaces: "New faces"
- * cards here and pending-review dots on tiles involved in a suggestion.
+ * Infinite-scroll card grid (named first) over the server-paged endpoint, with
+ * name search + All/Named/Unnamed chips pushed down as `?name=`/`?isNamed=`,
+ * plus the §7.4 review surfaces: "New faces" cards (tap to preview the photos
+ * before creating) and pending-review dots on tiles involved in a suggestion.
  */
 export default function PeopleScreen() {
   const { colors, space } = useTheme();
@@ -64,29 +86,65 @@ export default function PeopleScreen() {
   const columns = columnsFor(width);
 
   const [people, setPeople] = useState<Person[] | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const nextPage = useRef(2);
+
+  const [namedFilter, setNamedFilter] = useState<NamedFilter>('all');
+  const [query, setQuery] = useState('');
+  /** Remounts the search bar (clearing its local text) from "Clear filters". */
+  const [searchResetKey, setSearchResetKey] = useState(0);
+
   const [suggestions, setSuggestions] = useState<PersonSuggestions | null>(null);
   const [busySuggestionId, setBusySuggestionId] = useState<string | null>(null);
+  const [previewSuggestion, setPreviewSuggestion] = useState<PersonSuggestion | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const dismissed = useSuggestionDismissalsStore((s) => s.dismissed);
   const dismiss = useSuggestionDismissalsStore((s) => s.dismiss);
 
-  const load = useCallback(async (mode: 'initial' | 'silent' | 'refresh') => {
+  const nextPage = useRef(2);
+  // Bumped by every page-1 (window) load; in-flight loads compare and drop
+  // themselves when a newer window superseded them.
+  const windowSeq = useRef(0);
+  const hasContent = useRef(false);
+  const firstWindow = useRef(true);
+  // Latest window params for callbacks that must stay referentially stable
+  // (useFocusEffect would re-fire on every identity change).
+  const filterRef = useRef<PeopleFilter>({});
+
+  const filter: PeopleFilter = useMemo(
+    () => ({
+      name: query.trim() || undefined,
+      isNamed: namedFilter === 'all' ? undefined : namedFilter === 'named',
+    }),
+    [namedFilter, query],
+  );
+  useEffect(() => {
+    filterRef.current = filter;
+  }, [filter]);
+  const hasWindow = namedFilter !== 'all' || query.trim().length > 0;
+
+  const loadPage1 = useCallback(async (mode: 'initial' | 'silent' | 'refresh', f: PeopleFilter) => {
     if (mode === 'refresh') setRefreshing(true);
-    setError(null);
+    if (mode === 'initial') setError(null);
+    const seq = ++windowSeq.current;
     try {
-      const [page, queue] = await Promise.all([listPeoplePage(1, PAGE_SIZE), listPersonSuggestions()]);
+      const page = await listPeoplePage(1, PAGE_SIZE, f);
+      if (seq !== windowSeq.current) return;
+      hasContent.current = true;
       nextPage.current = 2;
       setPeople(page.items);
+      setTotalCount(page.totalCount);
       setHasMore(page.items.length < page.totalCount);
-      setSuggestions(queue);
     } catch (err) {
-      if (mode !== 'silent') setError(err instanceof Error ? err.message : String(err));
+      if (seq !== windowSeq.current) return;
+      // Surface the error only when there is nothing on screen to keep.
+      if (mode !== 'silent' || !hasContent.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       if (mode === 'refresh') setRefreshing(false);
     }
@@ -95,9 +153,12 @@ export default function PeopleScreen() {
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
+    const seq = windowSeq.current;
     try {
-      const page = await listPeoplePage(nextPage.current, PAGE_SIZE);
+      const page = await listPeoplePage(nextPage.current, PAGE_SIZE, filterRef.current);
+      if (seq !== windowSeq.current) return;
       nextPage.current += 1;
+      setTotalCount(page.totalCount);
       setHasMore(page.items.length < page.totalCount);
       setPeople((current) => {
         if (!current) return page.items;
@@ -111,16 +172,39 @@ export default function PeopleScreen() {
     }
   }, [hasMore, loadingMore]);
 
-  useEffect(() => {
-    void load('initial');
-  }, [load]);
+  // Deliberately separate from the people window: the suggestions endpoint is
+  // the slow half, and the grid must not wait on it to paint.
+  const loadSuggestions = useCallback(async () => {
+    try {
+      setSuggestions(await listPersonSuggestions());
+    } catch {
+      // Review surfaces are additive — the grid stays when they fail.
+    }
+  }, []);
 
-  // Renames/merges/reviews happen on the person screen — reload on every focus.
+  // Focus fires on mount too — the single cold-load entry point (no double
+  // fetch of page 1), plus a silent refresh after renames/merges/reviews.
   useFocusEffect(
     useCallback(() => {
-      void load('silent');
-    }, [load]),
+      void loadPage1('silent', filterRef.current);
+      void loadSuggestions();
+    }, [loadPage1, loadSuggestions]),
   );
+
+  // Search/filter window change: keep the previous grid on screen (the paged
+  // endpoint answers fast) and swap in the new window when it arrives.
+  useEffect(() => {
+    if (firstWindow.current) {
+      firstWindow.current = false;
+      return;
+    }
+    void loadPage1('silent', filter);
+  }, [filter, loadPage1]);
+
+  const refresh = useCallback(() => {
+    void loadPage1('refresh', filterRef.current);
+    void loadSuggestions();
+  }, [loadPage1, loadSuggestions]);
 
   const createPerson = async (suggestion: { id: string; faceIds: string[] }) => {
     setBusySuggestionId(suggestion.id);
@@ -128,14 +212,22 @@ export default function PeopleScreen() {
       const person = await acceptPersonSuggestion(suggestion.faceIds);
       haptic('success');
       setToast(t('people.personCreated'));
+      setPreviewSuggestion(null);
       router.push(`/person/${person.id}`);
-      void load('silent');
+      void loadPage1('silent', filterRef.current);
+      void loadSuggestions();
     } catch {
       setToast(t('people.createFailed'));
     } finally {
       setBusySuggestionId(null);
     }
   };
+
+  const clearFilters = useCallback(() => {
+    setNamedFilter('all');
+    setQuery('');
+    setSearchResetKey((key) => key + 1);
+  }, []);
 
   const newPeople = (suggestions?.newPeople ?? []).filter((s) => !dismissed.includes(s.id));
   const activeGroups = (suggestions?.personMergeGroups ?? []).filter(
@@ -154,8 +246,10 @@ export default function PeopleScreen() {
   });
 
   const showSkeleton = people === null && !error;
+  const showNoMatches =
+    !showSkeleton && !error && hasWindow && (people?.length ?? 0) === 0;
   const showEmpty =
-    !showSkeleton && !error && (people?.length ?? 0) === 0 && newPeople.length === 0;
+    !showSkeleton && !error && !hasWindow && (people?.length ?? 0) === 0 && newPeople.length === 0;
 
   return (
     <Screen $insetTop={insets.top}>
@@ -166,6 +260,34 @@ export default function PeopleScreen() {
         <HeaderTitle variant="titleMedium">{t('people.title')}</HeaderTitle>
         <HeaderSpacer />
       </Header>
+
+      <Toolbar>
+        <SearchBarHolder key={searchResetKey} onQueryChange={setQuery} placeholder={t('people.searchPlaceholder')} />
+        <FilterRow>
+          {FILTER_CHIPS.map((chip) => {
+            const selected = namedFilter === chip.key;
+            return (
+              <FilterChip
+                key={chip.key}
+                $selected={selected}
+                onPress={() => setNamedFilter(chip.key)}
+                accessibilityRole="button"
+                accessibilityLabel={t(chip.labelKey)}
+                accessibilityState={{ selected }}
+              >
+                <FilterChipLabel variant="bodySmall" $selected={selected}>
+                  {t(chip.labelKey)}
+                </FilterChipLabel>
+              </FilterChip>
+            );
+          })}
+        </FilterRow>
+        {hasWindow && totalCount > 0 ? (
+          <ResultCount variant="label" color="secondary">
+            {tCount('people.peopleCount', totalCount, { count: totalCount })}
+          </ResultCount>
+        ) : null}
+      </Toolbar>
 
       {showSkeleton ? (
         <SkeletonGrid>
@@ -178,9 +300,18 @@ export default function PeopleScreen() {
           <ThemedText variant="bodySmall" color="danger">
             {error}
           </ThemedText>
-          <RetryButton onPress={() => void load('initial')}>
+          <RetryButton onPress={() => void loadPage1('initial', filterRef.current)}>
             <ThemedText variant="bodySmall" color="accent">
               {t('common.retry')}
+            </ThemedText>
+          </RetryButton>
+        </Center>
+      ) : showNoMatches ? (
+        <Center $insetTop={0}>
+          <EmptyState icon="search-outline" title={t('people.noMatchTitle')} subtitle={t('people.noMatchSubtitle')} />
+          <RetryButton onPress={clearFilters}>
+            <ThemedText variant="bodySmall" color="accent">
+              {t('people.clearFilters')}
             </ThemedText>
           </RetryButton>
         </Center>
@@ -202,7 +333,7 @@ export default function PeopleScreen() {
               />
             )}
             ListHeaderComponent={
-              newPeople.length > 0 ? (
+              !hasWindow && newPeople.length > 0 ? (
                 <NewFacesSection>
                   <SectionTitle variant="label" color="secondary">
                     {t('people.newFaces')}
@@ -214,6 +345,7 @@ export default function PeopleScreen() {
                       busy={busySuggestionId === suggestion.id}
                       onCreate={(candidate) => void createPerson(candidate)}
                       onDismiss={(candidate) => dismiss(candidate.id)}
+                      onPreview={setPreviewSuggestion}
                     />
                   ))}
                 </NewFacesSection>
@@ -231,7 +363,7 @@ export default function PeopleScreen() {
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
-                onRefresh={() => void load('refresh')}
+                onRefresh={refresh}
                 tintColor={colors.textSecondary}
                 progressBackgroundColor={colors.surface}
               />
@@ -240,8 +372,72 @@ export default function PeopleScreen() {
         </ListArea>
       )}
 
+      <NewPersonPreviewSheet
+        suggestion={previewSuggestion}
+        busy={previewSuggestion ? busySuggestionId === previewSuggestion.id : false}
+        onClose={() => setPreviewSuggestion(null)}
+        onCreate={(candidate) => void createPerson(candidate)}
+        onDismiss={(candidate) => {
+          setPreviewSuggestion(null);
+          dismiss(candidate.id);
+        }}
+      />
+
       <MiniToast message={toast} onDismissed={() => setToast(null)} />
     </Screen>
+  );
+}
+
+/**
+ * Isolated search field: owns the raw text so keystrokes never re-render the
+ * grid, and commits the debounced value up (same 260ms cadence as the Search
+ * tab). Remount (key change) is the reset path.
+ */
+function SearchBarHolder({
+  placeholder,
+  onQueryChange,
+}: {
+  placeholder: string;
+  onQueryChange: (query: string) => void;
+}) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const [text, setText] = useState('');
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const update = (value: string) => {
+    setText(value);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => onQueryChange(value), SEARCH_DEBOUNCE_MS);
+  };
+
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  return (
+    <SearchBar>
+      <Icon name="search" size={20} color={colors.textSecondary} />
+      <SearchInput
+        value={text}
+        onChangeText={update}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textDisabled}
+        returnKeyType="search"
+        autoCorrect={false}
+        autoCapitalize="words"
+      />
+      {text.length > 0 ? (
+        <Pressable
+          hitSlop={12}
+          onPress={() => update('')}
+          accessibilityRole="button"
+          accessibilityLabel={t('search.clearA11y')}
+        >
+          <Icon name="close-circle" size={18} color={colors.textSecondary} />
+        </Pressable>
+      ) : null}
+    </SearchBar>
   );
 }
 

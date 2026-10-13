@@ -101,10 +101,29 @@ export async function listPeople(): Promise<Person[]> {
   return apiJson<Person[]>('/api/people');
 }
 
+/** Optional GET /api/people filters (all unrestricted when unset): named people
+ * only / unnamed auto-groups only, and/or a case-insensitive name substring.
+ * Filters only apply on the paged branch — the full listing keeps its shape. */
+export interface PeopleFilter {
+  name?: string;
+  isNamed?: boolean;
+}
+
 /** Paged window over the ordered people list (named first) — the grids page
  * instead of materializing every person at once. */
-export async function listPeoplePage(page: number, pageSize: number): Promise<PagedResult<Person>> {
-  return apiJson<PagedResult<Person>>('/api/people', { params: { page, pageSize } });
+export async function listPeoplePage(
+  page: number,
+  pageSize: number,
+  filter: PeopleFilter = {},
+): Promise<PagedResult<Person>> {
+  return apiJson<PagedResult<Person>>('/api/people', {
+    params: {
+      page,
+      pageSize,
+      name: filter.name?.trim() || undefined,
+      isNamed: filter.isNamed,
+    },
+  });
 }
 
 export async function getPerson(personId: string): Promise<PersonDetail> {
