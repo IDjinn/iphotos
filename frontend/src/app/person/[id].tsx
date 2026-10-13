@@ -12,6 +12,7 @@ import { MiniToast } from '@/components/MiniToast';
 import { ThemedText } from '@/components/ThemedText';
 import { ReviewBanner } from '@/components/people/ReviewBanner';
 import { ReviewStepperSheet, type StepperItem } from '@/components/people/ReviewStepperSheet';
+import { Skeleton } from '@/components/skeleton/Skeleton';
 import {
   acceptMergeSuggestion,
   deletePerson,
@@ -61,6 +62,9 @@ import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
 const MERGE_PAGE_SIZE = 50;
+/** The one-by-one stepper stays usable on huge clusters — the quick-accept
+ * ("add faces"/"merge all") is the uncapped path. */
+const MAX_STEPPER_FACES = 200;
 
 /**
  * One person (backend face cluster, doc 18 §10): photo grid + rename, merge
@@ -71,13 +75,12 @@ const MERGE_PAGE_SIZE = 50;
 export default function PersonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, ms } = useTheme();
   const insets = useSafeAreaInsets();
   const { t, tCount } = useTranslation();
 
   const [person, setPerson] = useState<PersonDetail | null>(null);
   const [suggestions, setSuggestions] = useState<PersonSuggestions | null>(null);
-  const [loading, setLoading] = useState(true);
   const [gridToken, setGridToken] = useState(0);
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -100,17 +103,28 @@ export default function PersonScreen() {
     [id],
   );
 
-  const reload = useCallback(async () => {
+  // The two loads are deliberately independent: the suggestions endpoint is
+  // the slow half, so the page paints around it (skeletons fill the gaps)
+  // instead of gating header + grid behind it.
+  const loadPerson = useCallback(async () => {
     try {
-      const [detail, queue] = await Promise.all([getPerson(id), listPersonSuggestions()]);
-      setPerson(detail);
-      setSuggestions(queue);
+      setPerson(await getPerson(id));
     } catch {
       setPerson(null);
-    } finally {
-      setLoading(false);
     }
   }, [id]);
+
+  const loadSuggestions = useCallback(async () => {
+    try {
+      setSuggestions(await listPersonSuggestions());
+    } catch {
+      // Review surfaces are additive — the page stays when they fail.
+    }
+  }, []);
+
+  const reload = useCallback(async () => {
+    await Promise.all([loadPerson(), loadSuggestions()]);
+  }, [loadPerson, loadSuggestions]);
 
   useEffect(() => {
     void reload();
@@ -203,7 +217,7 @@ export default function PersonScreen() {
 
   const stepperItems: StepperItem[] =
     reviewFor === 'faces' && pendingFaceMerge
-      ? pendingFaceMerge.faceIds.map((faceId) => ({
+      ? pendingFaceMerge.faceIds.slice(0, MAX_STEPPER_FACES).map((faceId) => ({
           id: faceId,
           faceId,
           caption: t('suggestion.candidateFace'),
@@ -336,14 +350,6 @@ export default function PersonScreen() {
     }
   };
 
-  if (loading) {
-    return (
-      <Center $insetTop={insets.top}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </Center>
-    );
-  }
-
   return (
     <Screen $insetTop={insets.top}>
       {renaming ? (
@@ -367,10 +373,14 @@ export default function PersonScreen() {
           <Pressable hitSlop={12} onPress={() => router.back()} accessibilityLabel={t('common.back')}>
             <Icon name="arrow-back" size={24} />
           </Pressable>
-          <HeaderTitle variant="titleMedium" numberOfLines={1}>
-            {displayName}
-            {person ? `  ·  ${tCount('people.photosCount', person.faceCount, { count: person.faceCount })}` : ''}
-          </HeaderTitle>
+          {person ? (
+            <HeaderTitle variant="titleMedium" numberOfLines={1}>
+              {displayName}
+              {`  ·  ${tCount('people.photosCount', person.faceCount, { count: person.faceCount })}`}
+            </HeaderTitle>
+          ) : (
+            <Skeleton fill height={ms(16)} radius="sm" />
+          )}
           <HeaderSpacer />
         </Header>
       )}
@@ -386,6 +396,12 @@ export default function PersonScreen() {
           <ConfidenceValue variant="bodySmall" color="secondary">
             {Math.round(person.confidence * 100)}%
           </ConfidenceValue>
+        </ConfidenceBar>
+      ) : person === null ? (
+        <ConfidenceBar>
+          <Skeleton width="30%" height={ms(14)} radius="sm" />
+          <Skeleton fill height={ms(6)} radius="full" />
+          <Skeleton width="12%" height={ms(14)} radius="sm" />
         </ConfidenceBar>
       ) : null}
 

@@ -148,34 +148,51 @@ export const PersonGroupLine = styled(ThemedText)`
   text-align: center;
 `;
 
-// ── New faces (suggestions, doc 18 §7.4) ───────────────────────────────────
+// ── Review suggestions (doc 18 §7.4) ────────────────────────────────────────
 
-export const NewFacesSection = styled.View`
-  gap: ${({ theme }) => theme.space[3]}px;
-  padding-top: ${({ theme }) => theme.space[3]}px;
-`;
-
-export const SectionTitle = styled(ThemedText)`
-  padding-bottom: ${({ theme }) => theme.space[1]}px;
-`;
-
-// ── Skeleton (initial load) ────────────────────────────────────────────────
-
-export const SkeletonGrid = styled.View`
-  flex: 1;
+/** Compact toolbar row for the pending "New faces" queue — the cards live in
+ * a bottom sheet so the grid never gets pushed down when suggestions load.
+ * Renders immediately in a loading state while the (slow) suggestions
+ * endpoint works, so the affordance never pops in late. */
+export const ReviewSuggestionsButton = styled(PressableScale)<{ $loading?: boolean }>`
   flex-direction: row;
-  flex-wrap: wrap;
-  gap: ${({ theme }) => theme.space[3]}px;
-  padding: ${({ theme }) => theme.space[3]}px;
+  align-items: center;
+  gap: ${({ theme }) => theme.space[2]}px;
+  padding-horizontal: ${({ theme }) => theme.space[3]}px;
+  padding-vertical: ${({ theme }) => theme.space[2]}px;
+  border-radius: ${({ theme }) => theme.radius.full}px;
+  border-width: ${({ theme }) => theme.border.width}px;
+  border-color: ${({ theme }) => theme.colors.accent};
+  background-color: ${({ theme }) => theme.colors.accentSoft};
+  opacity: ${({ $loading }) => ($loading ? 0.6 : 1)};
 `;
 
-export const SkeletonCard = styled.View`
-  width: 30%;
-  flex-grow: 1;
-  aspect-ratio: 0.9;
-  border-radius: ${({ theme }) => theme.radius.lg}px;
-  background-color: ${({ theme }) => theme.colors.surfaceElevated};
+export const ReviewSuggestionsLabel = styled(ThemedText)`
+  flex: 1;
+  font-weight: ${({ theme }) => theme.type.weight.medium};
 `;
+
+/** Skeleton twin of the cycling face strip — three overlapping crops. */
+export const LoadingStrip = styled.View`
+  flex-direction: row;
+`;
+
+export const LoadingStripItem = styled.View<{ $first?: boolean }>`
+  margin-left: ${({ $first, theme }) => ($first ? 0 : -theme.ms(10))}px;
+`;
+
+
+export const ReviewSheetContent = styled.View`
+  flex: 1;
+  gap: ${({ theme }) => theme.space[3]}px;
+`;
+
+export const ReviewSheetEmpty = styled(ThemedText)`
+  text-align: center;
+  padding: ${({ theme }) => theme.space[4]}px;
+`;
+
+// ── Skeleton (initial load) lives in `components/skeleton/` ────────────────
 
 export const RetryButton = styled(PressableScale)`
   padding-horizontal: ${({ theme }) => theme.space[4]}px;

@@ -1,7 +1,6 @@
 import { ActivityIndicator } from 'react-native';
 
 import { Icon, type IconName } from '@/components/Icon';
-import { ThemedText } from '@/components/ThemedText';
 import {
   ButtonLabel,
   ButtonShell,
@@ -44,7 +43,7 @@ export function ReviewButton({
 
   return (
     <ButtonShell
-      variant={variant}
+      $variant={variant}
       $destructive={destructive}
       $disabled={disabled || busy}
       onPress={onPress}

@@ -209,8 +209,8 @@ public sealed record PersonDetailDto(Guid Id, string? Name, int FaceCount, Guid?
 
 /// <summary>"Same person?" review candidate (doc 18 §7.4): a cluster of unassigned
 /// faces above the suggestion threshold. The id is a stable hash of the member face
-/// ids, so clients can persist dismissals across reloads; FaceIds drives the
-/// accept call (capped at PersonService.MaxSuggestionFaces).</summary>
+/// ids, so clients can persist dismissals across reloads; FaceIds carries the
+/// whole cluster — accepting merges all of it, uncapped.</summary>
 public sealed record PersonSuggestionDto(
     string Id, int FaceCount, Guid? CoverFaceId, IReadOnlyList<Guid> FaceIds, IReadOnlyList<Guid> SamplePhotoIds);
 

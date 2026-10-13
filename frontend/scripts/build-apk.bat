@@ -18,4 +18,5 @@ if errorlevel 1 (
 
 echo.
 echo ==^> Done: %USERPROFILE%\Downloads\iphotos-%VARIANT%-%ABI%.apk
-pause
+adb install -r %USERPROFILE%\Downloads\iphotos-%VARIANT%-%ABI%.apk
+

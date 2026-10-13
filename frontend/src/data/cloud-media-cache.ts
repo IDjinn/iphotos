@@ -67,6 +67,30 @@ export function getCachedCloudFileUri(photoId: string, kind: VariantKind): strin
 
 const pending = new Set<string>();
 
+// ── Download concurrency cap ─────────────────────────────────────────────────
+// A full grid page used to fire ~60 parallel downloadAsync calls that starved
+// each other; a small FIFO keeps throughput without the contention. Slots are
+// handed over directly on release so the cap is never exceeded.
+
+const DOWNLOAD_CONCURRENCY = 4;
+let activeDownloads = 0;
+const waitingForSlot: (() => void)[] = [];
+
+async function withDownloadSlot<T>(task: () => Promise<T>): Promise<T> {
+  if (activeDownloads >= DOWNLOAD_CONCURRENCY) {
+    await new Promise<void>((resolve) => waitingForSlot.push(resolve));
+  } else {
+    activeDownloads += 1;
+  }
+  try {
+    return await task();
+  } finally {
+    const next = waitingForSlot.shift();
+    if (next) next();
+    else activeDownloads -= 1;
+  }
+}
+
 /**
  * Downloads `kind` for `photo` into the cache (authenticated) and resolves
  * with the local URI. Resolves with the cached URI when already present,
@@ -81,31 +105,33 @@ export async function ensureCloudFile(photoId: string, kind: VariantKind): Promi
   if (pending.has(key)) return null;
   pending.add(key);
   try {
-    const { downloadAsync } = await import('expo-file-system/legacy');
-    cacheDirectory().create({ idempotent: true, intermediates: true });
-    let result = await downloadAsync(fileUrl(photoId, kind), cacheFile(photoId, kind).uri, {
-      headers: authHeaders(),
-    });
-    if (result.status === 401) {
-      // This path bypasses axios, so an expired access token never reaches the
-      // client's refresh interceptor — refresh once (single-flight) and retry.
-      await forceRefreshAccessToken();
-      result = await downloadAsync(fileUrl(photoId, kind), cacheFile(photoId, kind).uri, {
+    return await withDownloadSlot(async () => {
+      const { downloadAsync } = await import('expo-file-system/legacy');
+      cacheDirectory().create({ idempotent: true, intermediates: true });
+      let result = await downloadAsync(fileUrl(photoId, kind), cacheFile(photoId, kind).uri, {
         headers: authHeaders(),
       });
-    }
-    if (result.status < 200 || result.status >= 300) {
-      try {
-        const file = cacheFile(photoId, kind);
-        if (file.exists) file.delete();
-      } catch {
-        // Best-effort cleanup.
+      if (result.status === 401) {
+        // This path bypasses axios, so an expired access token never reaches the
+        // client's refresh interceptor — refresh once (single-flight) and retry.
+        await forceRefreshAccessToken();
+        result = await downloadAsync(fileUrl(photoId, kind), cacheFile(photoId, kind).uri, {
+          headers: authHeaders(),
+        });
       }
-      return null;
-    }
-    knownFiles.add(key);
-    enforceCacheLimitIfConfigured();
-    return result.uri;
+      if (result.status < 200 || result.status >= 300) {
+        try {
+          const file = cacheFile(photoId, kind);
+          if (file.exists) file.delete();
+        } catch {
+          // Best-effort cleanup.
+        }
+        return null;
+      }
+      knownFiles.add(key);
+      enforceCacheLimitIfConfigured();
+      return result.uri;
+    });
   } catch {
     return null;
   } finally {
@@ -284,29 +310,31 @@ export async function ensureFaceCrop(faceId: string): Promise<string | null> {
   if (facePending.has(faceId)) return null;
   facePending.add(faceId);
   try {
-    const { downloadAsync } = await import('expo-file-system/legacy');
-    cacheDirectory().create({ idempotent: true, intermediates: true });
-    let result = await downloadAsync(faceCropUrl(faceId), faceCacheFile(faceId).uri, {
-      headers: authHeaders(),
-    });
-    if (result.status === 401) {
-      // Same as variants: this bypasses axios, so refresh once and retry.
-      await forceRefreshAccessToken();
-      result = await downloadAsync(faceCropUrl(faceId), faceCacheFile(faceId).uri, {
+    return await withDownloadSlot(async () => {
+      const { downloadAsync } = await import('expo-file-system/legacy');
+      cacheDirectory().create({ idempotent: true, intermediates: true });
+      let result = await downloadAsync(faceCropUrl(faceId), faceCacheFile(faceId).uri, {
         headers: authHeaders(),
       });
-    }
-    if (result.status < 200 || result.status >= 300) {
-      try {
-        const file = faceCacheFile(faceId);
-        if (file.exists) file.delete();
-      } catch {
-        // Best-effort cleanup.
+      if (result.status === 401) {
+        // Same as variants: this bypasses axios, so refresh once and retry.
+        await forceRefreshAccessToken();
+        result = await downloadAsync(faceCropUrl(faceId), faceCacheFile(faceId).uri, {
+          headers: authHeaders(),
+        });
       }
-      return null;
-    }
-    faceKnown.add(faceId);
-    return result.uri;
+      if (result.status < 200 || result.status >= 300) {
+        try {
+          const file = faceCacheFile(faceId);
+          if (file.exists) file.delete();
+        } catch {
+          // Best-effort cleanup.
+        }
+        return null;
+      }
+      faceKnown.add(faceId);
+      return result.uri;
+    });
   } catch {
     return null;
   } finally {

@@ -152,6 +152,64 @@
 > rostos) e ações criar/"Not now" dentro do sheet. i18n en/pt. Verificação:
 > tsc limpo, vitest 49/49, eslint sem erros novos.
 >
+> **Round 11 (2026-10-13)** — **UX das telas de pessoas no mobile**: causa raiz
+> dos botões bugados dos banners de revisão e dos cards "Sem nome" sobrepostos
+> era o `PressableScale` — o styled-components entregava os estilos do shell ao
+> `Pressable` interno enquanto o filho real da row era o `Animated.View`
+> externo sem estilo, então `flex: 1` nunca se aplicava (botões com largura de
+> conteúdo transbordavam o card; o avatar `width: 100%` do card resolvia contra
+> largura indefinida e colapsava/estourava). O componente virou **um único nó**
+> (`Animated.createAnimatedComponent(Pressable)`) que carrega estilo + toque +
+> escala, e `variant` do `ButtonShell` virou `$variant` (transient, não vaza ao
+> nativo). `/person/[id]` não bloqueia mais a tela no `Promise.all` com
+> `GET /api/people/suggestions` (o endpoint pesado): `getPerson` e sugestões
+> carregam em paralelo, header/grid pintam de imediato, banners chegam depois;
+> a tela abre em **skeleton** (barra de título + barra de confiança + grade)
+> em vez de spinner. Novo `components/skeleton/` — `Skeleton` (pulso de
+> opacidade via Reanimated, estático com reduced motion), `SkeletonPhotoGrid`
+> (gêmeo das células do `CloudPhotoGrid`) e `SkeletonPeopleGrid` (gêmeo dos
+> cards de pessoa, `columnsFor`) — usado em `/people` (substitui o skeleton
+> estático antigo, que tinha outra geometria e causava o "flicker" da primeira
+> abertura), no estado loading do `CloudPhotoGrid` e na `/person/[id]`.
+> `/people` ganhou `keyExtractor` (keys estáveis) e os cards "New faces"
+> deixaram de ser `ListHeaderComponent` (empurravam a grade para baixo quando
+> as sugestões chegavam): uma row compacta **"Revisar sugestões · N"** entra na
+> toolbar (`FadeIn`) e abre um **BottomSheet** com a fila de cards de sugestão
+> (criar/"Not now" e preview das fotos — o preview empilha sobre o sheet).
+> Downloads de
+> thumbnail/crop agora passam por um semáforo global FIFO (4 simultâneos) no
+> `cloud-media-cache` — uma página disparava ~60 `downloadAsync` em paralelo e
+> se estrangulavam. **Sugestões lentas (Round 11b)**: `GET /api/people/suggestions`
+> recarregava todos os rostos com embeddings + O(faces×people) a cada chamada
+> (o app refetch a cada foco de tela); paginação não se aplica (as filas já são
+> limitadas a `MaxSuggestions`), então o `SuggestAsync` passou a ser servido de
+> um `ISuggestionCache` em memória por owner, chaveado por um
+> `SuggestionStamp` barato (count de rostos/atribuídos/pessoas/reviews +
+> MAX(persons.updated_at) — qualquer mutação relevante move o stamp e
+> invalida naturalmente; TTL de 10 min como defense in depth). A row "Revisar
+> sugestões" no mobile agora renderiza **de imediato** em estado de loading
+> (desabilitada, strip de skeletons) e, carregada, mostra o strip de 3 rostos
+> sobrepostos (`CyclingFaceStrip`) transicionando entre as sugestões a cada
+> 3,5 s (cross-fade de opacidade; estático com reduced motion). **Round 11c
+> (2026-10-13)** — a fila "Revisar sugestões" virou **página** (`/people/review`,
+> par do padrão `settings.tsx` + `settings/`): carrega as próprias sugestões
+> (o cache do backend torna isso barato), skeleton em card, criar permanece na
+> página (toast + fila anda) e o preview de fotos segue em BottomSheet sobre
+> ela; a row da toolbar passa a navegar. **Renomear na lista**: long-press no
+> card de pessoa abre `PromptDialog` (novo primitivo — chrome do ConfirmDialog
+> + input) → `PATCH /api/people/{id}`; nome corrigido na lista em memória +
+> toast. **Search tab**: a fileira de pessoas renderiza chips-skeleton (mesmo
+> footprint do chip real) enquanto `listPeoplePage` responde. **Merge sem
+> limite de 200 rostos**: os cards passam a carregar TODOS os `faceIds` do
+> cluster (antes `.Take(200)` — aceitar criava a pessoa com só uma janela das
+> faces) e os accepts (`AcceptSuggestionAsync`/`AcceptMergeSuggestionAsync`)
+> perderam o teto de validação; `ListOwnedIdsAsync`/`AssignUnassignedManyAsync`
+> quebram o IN/UPDATE em lotes de 1000 (retry idempotente — só rostos ainda
+> não atribuídos são tocados); o stepper um-a-um segue capado a 200 faces
+> (`MaxStepperFaces`) para permanecer utilizável. Verificação: unit tests
+> 196/196 (+3 uncapped), typecheck/vitest mobile 49/49, eslint sem erros
+> novos, API reconstruída no compose (health 200).
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e

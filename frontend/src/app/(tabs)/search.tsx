@@ -6,6 +6,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Icon } from '@/components/Icon';
+import { Skeleton } from '@/components/skeleton/Skeleton';
 import { TabSwipe } from '@/components/TabSwipe';
 import { ThemedText } from '@/components/ThemedText';
 import { PhotoGrid } from '@/components/grid/PhotoGrid';
@@ -25,6 +26,7 @@ import {
   PersonChipCircle,
   PersonChipImage,
   PersonChipName,
+  PersonChipSkeleton,
   PeopleRow,
   RecentChip,
   Screen,
@@ -62,7 +64,8 @@ export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [albums, setAlbums] = useState<AlbumRecord[]>([]);
   const [recents, setRecents] = useState<string[]>([]);
-  const [people, setPeople] = useState<Person[]>([]);
+  /** null = loading — the row shows skeleton chips until the first answer. */
+  const [people, setPeople] = useState<Person[] | null>(null);
   const [labels, setLabels] = useState<LabelCount[]>([]);
   const [results, setResults] = useState<PhotoAsset[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -162,20 +165,24 @@ export default function SearchScreen() {
 
       {!showResults ? (
         <Suggestions>
-          {people.length > 0 ? (
+          {people === null || people.length > 0 ? (
             <>
               <ChipHeader>
                 <ThemedText variant="label">{t('search.people')}</ThemedText>
-                <Pressable hitSlop={8} onPress={() => router.push('/people')}>
-                  <ThemedText variant="bodySmall" color="accent">
-                    {t('people.seeAll')}
-                  </ThemedText>
-                </Pressable>
+                {people !== null && people.length > 0 ? (
+                  <Pressable hitSlop={8} onPress={() => router.push('/people')}>
+                    <ThemedText variant="bodySmall" color="accent">
+                      {t('people.seeAll')}
+                    </ThemedText>
+                  </Pressable>
+                ) : null}
               </ChipHeader>
               <PeopleRow>
-                {people.slice(0, 12).map((person) => (
-                  <PersonChipItem key={person.id} person={person} />
-                ))}
+                {people === null
+                  ? Array.from({ length: 4 }, (_, index) => <LoadingPersonChip key={index} />)
+                  : people
+                      .slice(0, 12)
+                      .map((person) => <PersonChipItem key={person.id} person={person} />)}
               </PeopleRow>
             </>
           ) : null}
@@ -327,5 +334,16 @@ function PersonChipItem({ person }: { person: Person }) {
       </PersonChipCircle>
       <PersonChipName numberOfLines={1}>{person.name ?? t('people.unnamed')}</PersonChipName>
     </PersonChip>
+  );
+}
+
+/** Loading twin of a person chip: skeleton circle + name bar, same footprint. */
+function LoadingPersonChip() {
+  const { ms } = useTheme();
+  return (
+    <PersonChipSkeleton>
+      <Skeleton width={ms(64)} height={ms(64)} radius="full" />
+      <Skeleton width={ms(56)} height={ms(10)} radius="sm" />
+    </PersonChipSkeleton>
   );
 }

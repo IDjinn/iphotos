@@ -168,6 +168,17 @@ public interface IBillingPurchaseRepository
     Task<IReadOnlyList<BillingPurchase>> ListLapsedActiveAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Cheap change signature for derived reads over people/faces state
+/// (doc 18 §7.4): any suggestion-relevant mutation — faces detected, assigned,
+/// merged or deleted, persons created/touched, review verdicts persisted —
+/// moves at least one of these aggregates.</summary>
+public sealed record SuggestionStamp(
+    int FaceCount,
+    int AssignedFaces,
+    int PersonCount,
+    DateTimeOffset PersonsTouched,
+    int ReviewCount);
+
 public interface IPersonRepository
 {
     Task AddAsync(Person person, CancellationToken cancellationToken = default);
@@ -187,6 +198,10 @@ public interface IPersonRepository
 
     /// <summary>Removes several persons at once (batch merge, doc 18 §7.4).</summary>
     Task DeleteRangeAsync(IReadOnlyList<Person> persons, CancellationToken cancellationToken = default);
+
+    /// <summary>Aggregate counters keyed caches use to detect suggestion-relevant
+    /// changes without loading faces (doc 18 §7.4).</summary>
+    Task<SuggestionStamp> SuggestionStampAsync(Guid ownerId, CancellationToken cancellationToken = default);
 }
 
 public interface IFaceRepository

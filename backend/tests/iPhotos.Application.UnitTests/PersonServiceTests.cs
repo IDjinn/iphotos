@@ -22,6 +22,7 @@ public sealed class PersonServiceTests
     private readonly InMemoryFaceRepository faces = new();
     private readonly InMemoryFaceReviewRepository reviews = new();
     private readonly FakeUnitOfWork unitOfWork = new();
+    private readonly InMemorySuggestionCache suggestionCache = new();
     private readonly PersonService service;
 
     public PersonServiceTests()
@@ -34,6 +35,7 @@ public sealed class PersonServiceTests
             unitOfWork,
             new StubDateTimeProvider(Now),
             Options.Create(new MlOptions { SuggestThreshold = 0.75f, MatchThreshold = 0.9f }),
+            suggestionCache,
             NullLogger<PersonService>.Instance);
     }
 
@@ -186,6 +188,86 @@ public sealed class PersonServiceTests
         Assert.Empty(result.Merges);
         var novel = Assert.Single(result.NewPeople);
         Assert.Equal(2, novel.FaceCount);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_caches_per_owner_until_the_state_stamp_moves()
+    {
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        alice.FaceCount = 1;
+        NewFace(UnitVector(1, 0, 0), alice.Id);
+        persons.Stamp = new SuggestionStamp(1, 1, 1, Now, 0);
+
+        var first = await service.SuggestAsync(Owner);
+        var second = await service.SuggestAsync(Owner);
+        Assert.Same(first, second);
+
+        // Untracked mutation (stamp unchanged): the cached queues come back.
+        var extra = NewFace(UnitVector(1, 0, 0));
+        var stale = await service.SuggestAsync(Owner);
+        Assert.Same(first, stale);
+
+        // Stamp catches up with the mutation: the queues recompute.
+        persons.Stamp = new SuggestionStamp(2, 1, 1, Now, 0);
+        var fresh = await service.SuggestAsync(Owner);
+        Assert.NotSame(first, fresh);
+        var merge = Assert.Single(fresh.Merges);
+        Assert.Contains(extra.Id, merge.FaceIds);
+
+        // Another owner never sees this cache entry.
+        var other = await service.SuggestAsync(Guid.NewGuid());
+        Assert.Empty(other.Merges);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_carries_every_cluster_face_in_the_card()
+    {
+        // 210 close faces — above the old 200-face card cap — form ONE new-person
+        // suggestion whose FaceIds list is uncapped.
+        for (var i = 0; i < 210; i++)
+        {
+            NewFace(UnitVector(1, 0, 0));
+        }
+
+        var result = await service.SuggestAsync(Owner);
+
+        var novel = Assert.Single(result.NewPeople);
+        Assert.Equal(210, novel.FaceCount);
+        Assert.Equal(210, novel.FaceIds.Count);
+    }
+
+    [Fact]
+    public async Task AcceptSuggestionAsync_merges_the_whole_cluster_uncapped()
+    {
+        const int count = 250;
+        var faces = new List<PhotoFace>(count);
+        for (var i = 0; i < count; i++)
+        {
+            faces.Add(NewFace(UnitVector(1, 0, 0)));
+        }
+
+        var person = await service.AcceptSuggestionAsync(Owner, faces.Select(f => f.Id).ToList());
+
+        Assert.Equal(count, person.FaceCount);
+        Assert.All(faces, face => Assert.Equal(person.Id, face.PersonId));
+    }
+
+    [Fact]
+    public async Task AcceptMergeSuggestionAsync_merges_the_whole_cluster_uncapped()
+    {
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        alice.FaceCount = 1;
+        NewFace(UnitVector(1, 0, 0), alice.Id);
+        var candidates = new List<PhotoFace>(210);
+        for (var i = 0; i < 210; i++)
+        {
+            candidates.Add(NewFace(UnitVector(1, 0, 0)));
+        }
+
+        await service.AcceptMergeSuggestionAsync(Owner, alice.Id, candidates.Select(f => f.Id).ToList());
+
+        Assert.Equal(211, alice.FaceCount);
+        Assert.All(candidates, face => Assert.Equal(alice.Id, face.PersonId));
     }
 
     [Fact]
@@ -361,8 +443,11 @@ public sealed class PersonServiceTests
         var held = await service.SuggestAsync(Owner);
         Assert.Empty(held.Merges);
 
-        // The person gains faces (better embedding) — the deferral expires.
+        // The person gains faces (better embedding) — production recomputes the
+        // aggregates and touches the person, which moves the change stamp; the
+        // fake needs the stamp bumped by hand. The deferral expires.
         alice.FaceCount = 4;
+        persons.Stamp = new SuggestionStamp(1, 0, 1, Now.AddSeconds(1), 1);
         var retried = await service.SuggestAsync(Owner);
         var merge = Assert.Single(retried.Merges);
         Assert.Contains(face.Id, merge.FaceIds);

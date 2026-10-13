@@ -130,6 +130,13 @@ public sealed class InMemoryPersonRepository : IPersonRepository
 
         return Task.CompletedTask;
     }
+
+    /// <summary>Tests move this to simulate mutations the fake's lists can't
+    /// express (the production stamp reads face/review tables too).</summary>
+    public SuggestionStamp Stamp { get; set; } = new(0, 0, 0, DateTimeOffset.MinValue, 0);
+
+    public Task<SuggestionStamp> SuggestionStampAsync(Guid ownerId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Stamp);
 }
 
 public sealed class InMemoryPhotoRepository : IPhotoRepository

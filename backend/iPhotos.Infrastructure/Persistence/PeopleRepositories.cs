@@ -74,6 +74,21 @@ public sealed class PersonRepository(PhotosDbContext db) : IPersonRepository
             .Where(p => ids.Contains(p.Id))
             .ExecuteDeleteAsync(cancellationToken);
     }
+
+    public async Task<SuggestionStamp> SuggestionStampAsync(Guid ownerId, CancellationToken cancellationToken = default)
+    {
+        // Five indexed aggregates instead of the faces-with-embeddings load the
+        // suggestion pass needs — cheap enough to run per request as the cache
+        // key, sensitive to every mutation that could change the suggestions.
+        var personQuery = db.Persons.AsNoTracking().Where(p => p.OwnerId == ownerId);
+        var faceQuery = db.PhotoFaces.AsNoTracking().Where(f => f.OwnerId == ownerId);
+        return new SuggestionStamp(
+            await faceQuery.CountAsync(cancellationToken),
+            await faceQuery.CountAsync(f => f.PersonId != null, cancellationToken),
+            await personQuery.CountAsync(cancellationToken),
+            await personQuery.MaxAsync(p => (DateTimeOffset?)p.UpdatedAt, cancellationToken) ?? DateTimeOffset.MinValue,
+            await db.FaceReviewDecisions.AsNoTracking().CountAsync(r => r.OwnerId == ownerId, cancellationToken));
+    }
 }
 
 public sealed class FaceRepository(PhotosDbContext db) : IFaceRepository
@@ -124,6 +139,11 @@ public sealed class FaceRepository(PhotosDbContext db) : IFaceRepository
             .ExecuteUpdateAsync(set => set.SetProperty(f => f.PersonId, toPersonId), cancellationToken);
     }
 
+    /// <summary>IN-list batch size for the bulk accept paths — a whole-cluster
+    /// accept can carry thousands of ids, and one giant IN both bloats the query
+    /// plan and ties the statement to the parameter count.</summary>
+    private const int BulkAcceptBatchSize = 1000;
+
     public async Task<IReadOnlyList<Guid>> ListOwnedIdsAsync(
         Guid ownerId, IReadOnlyList<Guid> faceIds, CancellationToken cancellationToken = default)
     {
@@ -132,10 +152,15 @@ public sealed class FaceRepository(PhotosDbContext db) : IFaceRepository
             return [];
         }
 
-        IReadOnlyList<Guid> owned = await db.PhotoFaces
-            .Where(f => f.OwnerId == ownerId && faceIds.Contains(f.Id))
-            .Select(f => f.Id)
-            .ToListAsync(cancellationToken);
+        var owned = new List<Guid>(faceIds.Count);
+        foreach (var batch in faceIds.Chunk(BulkAcceptBatchSize))
+        {
+            owned.AddRange(await db.PhotoFaces
+                .Where(f => f.OwnerId == ownerId && batch.Contains(f.Id))
+                .Select(f => f.Id)
+                .ToListAsync(cancellationToken));
+        }
+
         return owned;
     }
 
@@ -147,9 +172,17 @@ public sealed class FaceRepository(PhotosDbContext db) : IFaceRepository
             return 0;
         }
 
-        return await db.PhotoFaces
-            .Where(f => f.PersonId == null && faceIds.Contains(f.Id))
-            .ExecuteUpdateAsync(set => set.SetProperty(f => f.PersonId, personId), cancellationToken);
+        // Chunks stay idempotent: each update only touches still-unassigned
+        // faces, so a retry after a mid-way failure completes the accept.
+        var assigned = 0;
+        foreach (var batch in faceIds.Chunk(BulkAcceptBatchSize))
+        {
+            assigned += await db.PhotoFaces
+                .Where(f => f.PersonId == null && batch.Contains(f.Id))
+                .ExecuteUpdateAsync(set => set.SetProperty(f => f.PersonId, personId), cancellationToken);
+        }
+
+        return assigned;
     }
 
     public async Task<PagedResult<Photo>> ListPhotosForPersonAsync(

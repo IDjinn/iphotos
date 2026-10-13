@@ -113,6 +113,7 @@ builder.Services.AddScoped<BillingService>();
 // generate the variants here, and the ML jobs consume them from the worker side.
 builder.Services.AddSingleton<IFaceClusterer, ChineseWhispersClusterer>();
 builder.Services.AddSingleton<IMlInputCache, DiskMlInputCache>();
+builder.Services.AddSingleton<ISuggestionCache, InMemorySuggestionCache>();
 builder.Services.AddScoped<MlJobEnqueuer>();
 builder.Services.AddScoped<PersonService>();
 builder.Services.AddScoped<LabelService>();

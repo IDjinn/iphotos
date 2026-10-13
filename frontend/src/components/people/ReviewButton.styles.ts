@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/ThemedText';
 export type ReviewButtonVariant = 'primary' | 'outline' | 'ghost';
 
 interface ShellProps {
-  variant: ReviewButtonVariant;
+  $variant: ReviewButtonVariant;
   $destructive: boolean;
   $disabled: boolean;
 }
@@ -24,9 +24,9 @@ export const ButtonShell = styled(PressableScale)<ShellProps>`
   padding-horizontal: ${({ theme }) => theme.space[2]}px;
   border-radius: ${({ theme }) => theme.radius.md}px;
   opacity: ${({ $disabled }) => ($disabled ? 0.5 : 1)};
-  background-color: ${({ theme, variant, $destructive }) =>
-    variant === 'primary' && !$destructive ? theme.colors.accent : 'transparent'};
-  border-width: ${({ theme, variant }) => (variant === 'outline' ? theme.border.width : 0)}px;
+  background-color: ${({ theme, $variant, $destructive }) =>
+    $variant === 'primary' && !$destructive ? theme.colors.accent : 'transparent'};
+  border-width: ${({ theme, $variant }) => ($variant === 'outline' ? theme.border.width : 0)}px;
   border-color: ${({ theme, $destructive }) =>
     $destructive ? theme.colors.danger : theme.colors.accent};
 `;

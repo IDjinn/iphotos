@@ -21,6 +21,7 @@ public sealed class PersonService(
     IUnitOfWork unitOfWork,
     IDateTimeProvider dateTime,
     IOptions<MlOptions> options,
+    ISuggestionCache suggestionCache,
     ILogger<PersonService> logger)
 {
     public async Task<IReadOnlyList<PersonDto>> ListAsync(Guid ownerId, CancellationToken cancellationToken = default)
@@ -187,7 +188,32 @@ public sealed class PersonService(
     /// <summary>Suggestion list caps — review UI scale, not a data limit.</summary>
     public const int MaxSuggestions = 20;
     public const int SamplePhotoLimit = 8;
-    public const int MaxSuggestionFaces = 200;
+    /// <summary>The one-by-one review stepper shows at most this many faces —
+    /// suggestion accepts are NOT capped: a merge takes the whole cluster.</summary>
+    public const int MaxStepperFaces = 200;
+
+    /// <summary>The "same person?" review queue (doc 18 §7.4) — computed by
+    /// <see cref="ComputeSuggestionsAsync"/> and cached against the owner's
+    /// change stamp, since clients refetch on every screen focus.</summary>
+    public async Task<PersonSuggestionsDto> SuggestAsync(
+        Guid ownerId, CancellationToken cancellationToken = default)
+    {
+        // The pass recomputes purely derived state but pays a faces-with-
+        // embeddings load plus O(faces×people) scoring — and clients refetch on
+        // every screen focus. Cache against the cheap change stamp: identical
+        // stamp returns instantly, any relevant mutation moves it naturally.
+        var stamp = await persons.SuggestionStampAsync(ownerId, cancellationToken);
+        var signature =
+            $"{stamp.FaceCount}:{stamp.AssignedFaces}:{stamp.PersonCount}:{stamp.PersonsTouched.UtcTicks}:{stamp.ReviewCount}";
+        if (suggestionCache.TryGet(ownerId, signature) is { } cached)
+        {
+            return cached;
+        }
+
+        var suggestions = await ComputeSuggestionsAsync(ownerId, cancellationToken);
+        suggestionCache.Set(ownerId, signature, suggestions);
+        return suggestions;
+    }
 
     /// <summary>
     /// The "same person?" review queue (doc 18 §7.4), split by destination like
@@ -201,7 +227,7 @@ public sealed class PersonService(
     /// reappear until its faces are assigned or its members change — clients
     /// keep the dismissal list keyed by the stable suggestion id.
     /// </summary>
-    public async Task<PersonSuggestionsDto> SuggestAsync(
+    private async Task<PersonSuggestionsDto> ComputeSuggestionsAsync(
         Guid ownerId, CancellationToken cancellationToken = default)
     {
         var people = await persons.ListForOwnerAsync(ownerId, cancellationToken);
@@ -282,7 +308,9 @@ public sealed class PersonService(
             .Take(MaxSuggestions)
             .Select(g =>
             {
-                var members = g.Members.Take(MaxSuggestionFaces).ToList();
+                // Every face of the group travels with the card — accepting
+                // merges the whole cluster, not a capped window of it.
+                var members = g.Members.ToList();
                 var faceIds = members.Select(m => m.Face.Id).ToList();
                 return new MergeSuggestionDto(
                     SuggestionId(g.Person.Id, members.Select(m => m.Face).ToList()),
@@ -322,7 +350,9 @@ public sealed class PersonService(
                     SuggestionId(members),
                     members.Count,
                     members.MaxBy(f => f.CoverScore)!.Id,
-                    members.Select(f => f.Id).Take(MaxSuggestionFaces).ToList(),
+                    // Every face travels with the card — accepting creates the
+                    // person with the whole cluster, not a capped window.
+                    members.Select(f => f.Id).ToList(),
                     members.Select(f => f.PhotoId).Distinct().Take(SamplePhotoLimit).ToList()))
                 .ToList();
         }
@@ -442,10 +472,12 @@ public sealed class PersonService(
     public async Task<PersonDto> AcceptSuggestionAsync(
         Guid ownerId, IReadOnlyList<Guid> faceIds, CancellationToken cancellationToken = default)
     {
-        if (faceIds.Count == 0 || faceIds.Count > MaxSuggestionFaces)
+        // No upper bound: the card carries the whole cluster and accepting must
+        // merge ALL of it, however large (the assignment paths chunk their SQL).
+        if (faceIds.Count == 0)
         {
             throw new ValidationException(
-                $"A suggestion accepts between 1 and {MaxSuggestionFaces} faces.", ErrorCodes.Validation);
+                "A suggestion accepts at least 1 face.", ErrorCodes.Validation);
         }
 
         // One batched existence/ownership check, then ONE UPDATE for the whole
@@ -482,10 +514,12 @@ public sealed class PersonService(
     public async Task AcceptMergeSuggestionAsync(
         Guid ownerId, Guid personId, IReadOnlyList<Guid> faceIds, CancellationToken cancellationToken = default)
     {
-        if (faceIds.Count == 0 || faceIds.Count > MaxSuggestionFaces)
+        // No upper bound — same contract as the new-person accept: the whole
+        // cluster moves, however large (the assignment paths chunk their SQL).
+        if (faceIds.Count == 0)
         {
             throw new ValidationException(
-                $"A suggestion accepts between 1 and {MaxSuggestionFaces} faces.", ErrorCodes.Validation);
+                "A suggestion accepts at least 1 face.", ErrorCodes.Validation);
         }
 
         var person = await GetPersonOrThrowAsync(ownerId, personId, cancellationToken);

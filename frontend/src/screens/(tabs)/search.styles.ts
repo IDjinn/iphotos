@@ -120,6 +120,13 @@ export const PersonChipName = styled(ThemedText)`
   color: ${({ theme }) => theme.colors.text};
 `;
 
+/** Loading twin of a person chip: skeleton circle + name bar, same footprint. */
+export const PersonChipSkeleton = styled.View`
+  width: ${({ theme }) => theme.ms(76)}px;
+  align-items: center;
+  gap: ${({ theme }) => theme.space[1]}px;
+`;
+
 /** Horizontal chip rail for backend scene labels. */
 export const LabelChipRow = styled(ScrollView).attrs((props) => ({
   horizontal: true,

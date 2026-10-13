@@ -7,13 +7,16 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/EmptyState';
 import { Icon } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
-import { NewPersonPreviewSheet } from '@/components/people/NewPersonPreviewSheet';
-import { NewPersonSuggestionCard } from '@/components/people/NewPersonSuggestionCard';
+import { PromptDialog } from '@/components/PromptDialog';
+import { CyclingFaceStrip } from '@/components/people/CyclingFaceStrip';
+import { Skeleton } from '@/components/skeleton/Skeleton';
+import { SkeletonPeopleGrid } from '@/components/skeleton/SkeletonPeopleGrid';
 import { ThemedText } from '@/components/ThemedText';
 import {
   Center,
@@ -24,7 +27,8 @@ import {
   HeaderSpacer,
   HeaderTitle,
   ListArea,
-  NewFacesSection,
+  LoadingStrip,
+  LoadingStripItem,
   PersonBadgeDot,
   PersonCard,
   PersonCardAvatar,
@@ -34,21 +38,19 @@ import {
   PersonName,
   ResultCount,
   RetryButton,
+  ReviewSuggestionsButton,
+  ReviewSuggestionsLabel,
   Screen,
   SearchBar,
   SearchInput,
-  SectionTitle,
-  SkeletonCard,
-  SkeletonGrid,
   Toolbar,
 } from '@/screens/people.styles';
 import {
-  acceptPersonSuggestion,
   listPeoplePage,
   listPersonSuggestions,
+  renamePerson,
   type PeopleFilter,
   type Person,
-  type PersonSuggestion,
   type PersonSuggestions,
 } from '@/data/people-repository';
 import { useTranslation } from '@/i18n/hook';
@@ -56,6 +58,7 @@ import { useFaceCropSource } from '@/hooks/use-cloud-file';
 import { useSuggestionDismissalsStore } from '@/stores/suggestion-dismissals';
 import { columnsFor } from '@/theme/scale';
 import { useTheme } from '@/theme/context';
+import { Durations } from '@/theme/tokens';
 import { haptic } from '@/utils/haptics';
 
 const PAGE_SIZE = 60;
@@ -78,7 +81,7 @@ const FILTER_CHIPS = [
  * before creating) and pending-review dots on tiles involved in a suggestion.
  */
 export default function PeopleScreen() {
-  const { colors, space } = useTheme();
+  const { colors, space, ms } = useTheme();
   const { t, tCount } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -98,12 +101,11 @@ export default function PeopleScreen() {
   const [searchResetKey, setSearchResetKey] = useState(0);
 
   const [suggestions, setSuggestions] = useState<PersonSuggestions | null>(null);
-  const [busySuggestionId, setBusySuggestionId] = useState<string | null>(null);
-  const [previewSuggestion, setPreviewSuggestion] = useState<PersonSuggestion | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** Long-press rename: the person being renamed (drives the prompt dialog). */
+  const [renaming, setRenaming] = useState<Person | null>(null);
 
   const dismissed = useSuggestionDismissalsStore((s) => s.dismissed);
-  const dismiss = useSuggestionDismissalsStore((s) => s.dismiss);
 
   const nextPage = useRef(2);
   // Bumped by every page-1 (window) load; in-flight loads compare and drop
@@ -206,20 +208,22 @@ export default function PeopleScreen() {
     void loadSuggestions();
   }, [loadPage1, loadSuggestions]);
 
-  const createPerson = async (suggestion: { id: string; faceIds: string[] }) => {
-    setBusySuggestionId(suggestion.id);
+  const handleRename = async (person: Person, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === (person.name ?? '')) return;
     try {
-      const person = await acceptPersonSuggestion(suggestion.faceIds);
+      await renamePerson(person.id, trimmed);
       haptic('success');
-      setToast(t('people.personCreated'));
-      setPreviewSuggestion(null);
-      router.push(`/person/${person.id}`);
-      void loadPage1('silent', filterRef.current);
-      void loadSuggestions();
+      setToast(t('person.renamed'));
+      // Patch the loaded windows in place — the next focus refreshes anyway.
+      setPeople(
+        (current) =>
+          current?.map((candidate) =>
+            candidate.id === person.id ? { ...candidate, name: trimmed } : candidate,
+          ) ?? current,
+      );
     } catch {
-      setToast(t('people.createFailed'));
-    } finally {
-      setBusySuggestionId(null);
+      setToast(t('person.renameFailed'));
     }
   };
 
@@ -230,6 +234,7 @@ export default function PeopleScreen() {
   }, []);
 
   const newPeople = (suggestions?.newPeople ?? []).filter((s) => !dismissed.includes(s.id));
+  const suggestionsLoading = suggestions === null;
   const activeGroups = (suggestions?.personMergeGroups ?? []).filter(
     (group) => !dismissed.includes(group.id),
   );
@@ -282,6 +287,42 @@ export default function PeopleScreen() {
             );
           })}
         </FilterRow>
+        {/* The suggestions endpoint is the slow half — the affordance renders
+          immediately (disabled, skeleton strip) so it never pops in late. The
+          queue itself lives on the /people/review page. */}
+        {suggestionsLoading || newPeople.length > 0 ? (
+          <ReviewSuggestionsButton
+            entering={FadeIn.duration(Durations.normal)}
+            $loading={suggestionsLoading}
+            disabled={suggestionsLoading}
+            onPress={() => router.push('/people/review')}
+            accessibilityRole="button"
+            accessibilityLabel={t('people.reviewSuggestions')}
+          >
+            {suggestionsLoading ? (
+              <LoadingStrip>
+                {Array.from({ length: 3 }, (_, index) => (
+                  <LoadingStripItem key={index} $first={index === 0}>
+                    <Skeleton width={ms(28)} height={ms(28)} radius="full" />
+                  </LoadingStripItem>
+                ))}
+              </LoadingStrip>
+            ) : (
+              <CyclingFaceStrip suggestions={newPeople} />
+            )}
+            <ReviewSuggestionsLabel variant="bodySmall" color="accent">
+              {t('people.reviewSuggestions')}
+            </ReviewSuggestionsLabel>
+            {!suggestionsLoading ? (
+              <ThemedText variant="bodySmall" color="accent">
+                {tCount('people.reviewCount', newPeople.length, { count: newPeople.length })}
+              </ThemedText>
+            ) : null}
+            {!suggestionsLoading ? (
+              <Icon name="chevron-forward" size={16} color={colors.textSecondary} />
+            ) : null}
+          </ReviewSuggestionsButton>
+        ) : null}
         {hasWindow && totalCount > 0 ? (
           <ResultCount variant="label" color="secondary">
             {tCount('people.peopleCount', totalCount, { count: totalCount })}
@@ -290,11 +331,7 @@ export default function PeopleScreen() {
       </Toolbar>
 
       {showSkeleton ? (
-        <SkeletonGrid>
-          {Array.from({ length: 9 }, (_, index) => (
-            <SkeletonCard key={index} />
-          ))}
-        </SkeletonGrid>
+        <SkeletonPeopleGrid />
       ) : error ? (
         <Center $insetTop={0}>
           <ThemedText variant="bodySmall" color="danger">
@@ -325,32 +362,15 @@ export default function PeopleScreen() {
             key={columns}
             numColumns={columns}
             data={people ?? []}
+            keyExtractor={(person) => person.id}
             renderItem={({ item }) => (
               <PersonCardItem
                 person={item}
                 pending={pendingIds.has(item.id)}
                 groupCount={groupCounts.get(item.id) ?? 0}
+                onLongPress={() => setRenaming(item)}
               />
             )}
-            ListHeaderComponent={
-              !hasWindow && newPeople.length > 0 ? (
-                <NewFacesSection>
-                  <SectionTitle variant="label" color="secondary">
-                    {t('people.newFaces')}
-                  </SectionTitle>
-                  {newPeople.map((suggestion) => (
-                    <NewPersonSuggestionCard
-                      key={suggestion.id}
-                      suggestion={suggestion}
-                      busy={busySuggestionId === suggestion.id}
-                      onCreate={(candidate) => void createPerson(candidate)}
-                      onDismiss={(candidate) => dismiss(candidate.id)}
-                      onPreview={setPreviewSuggestion}
-                    />
-                  ))}
-                </NewFacesSection>
-              ) : null
-            }
             ListFooterComponent={loadingMore ? <ListSpinner /> : null}
             onEndReached={() => void loadMore()}
             onEndReachedThreshold={0.6}
@@ -372,15 +392,20 @@ export default function PeopleScreen() {
         </ListArea>
       )}
 
-      <NewPersonPreviewSheet
-        suggestion={previewSuggestion}
-        busy={previewSuggestion ? busySuggestionId === previewSuggestion.id : false}
-        onClose={() => setPreviewSuggestion(null)}
-        onCreate={(candidate) => void createPerson(candidate)}
-        onDismiss={(candidate) => {
-          setPreviewSuggestion(null);
-          dismiss(candidate.id);
+      <PromptDialog
+        visible={renaming !== null}
+        title={t('person.rename')}
+        initialValue={renaming?.name ?? ''}
+        placeholder={t('people.unnamed')}
+        confirmLabel={t('common.save')}
+        cancelLabel={t('common.cancel')}
+        maxLength={200}
+        onConfirm={(name) => {
+          const person = renaming;
+          setRenaming(null);
+          if (person) void handleRename(person, name);
         }}
+        onCancel={() => setRenaming(null)}
       />
 
       <MiniToast message={toast} onDismissed={() => setToast(null)} />
@@ -457,10 +482,12 @@ function PersonCardItem({
   person,
   pending,
   groupCount,
+  onLongPress,
 }: {
   person: Person;
   pending: boolean;
   groupCount: number;
+  onLongPress: () => void;
 }) {
   const { t, tCount } = useTranslation();
   const { colors } = useTheme();
@@ -473,8 +500,13 @@ function PersonCardItem({
         haptic('light');
         router.push(`/person/${person.id}`);
       }}
+      onLongPress={() => {
+        haptic('light');
+        onLongPress();
+      }}
       accessibilityRole="button"
       accessibilityLabel={person.name ?? t('people.unnamed')}
+      accessibilityHint={t('person.rename')}
     >
       {pending ? <PersonBadgeDot /> : null}
       <PersonCardAvatar>

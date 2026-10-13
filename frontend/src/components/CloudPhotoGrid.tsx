@@ -13,6 +13,7 @@ import {
   StateBadge,
 } from '@/components/CloudGallery.styles';
 import { Icon } from '@/components/Icon';
+import { SkeletonPhotoGrid } from '@/components/skeleton/SkeletonPhotoGrid';
 import type { CloudPhoto, PagedResult } from '@/data/cloud-photos-repository';
 import { authHeaders } from '@/data/api-client';
 import { getCachedCloudFileUri } from '@/data/cloud-media-cache';
@@ -183,11 +184,7 @@ export function CloudPhotoGrid({ fetchPage, refreshToken = 0 }: CloudPhotoGridPr
   };
 
   if (state.status === 'loading') {
-    return (
-      <Center>
-        <ActivityIndicator color={colors.accent} />
-      </Center>
-    );
+    return <SkeletonPhotoGrid />;
   }
 
   if (state.status === 'error') {
