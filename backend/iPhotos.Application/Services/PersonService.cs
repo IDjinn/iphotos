@@ -76,6 +76,27 @@ public sealed class PersonService(
             result.Page, result.PageSize, result.TotalCount);
     }
 
+    /// <summary>Paged photos behind a new-face suggestion (doc 18 §7.4) — the
+    /// preview grid pages the WHOLE cluster, not just its sample window. The id
+    /// resolves against the (cached) suggestion pass, so a cluster that vanished
+    /// meanwhile — accepted, merged or reassigned — is a 404 the client reads
+    /// as "the suggestion is gone".</summary>
+    public async Task<PagedResult<PhotoDto>> ListSuggestionPhotosAsync(
+        Guid ownerId, string suggestionId, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var suggestions = await SuggestAsync(ownerId, cancellationToken);
+        var cluster = suggestions.NewPeople.FirstOrDefault(s => s.Id == suggestionId)
+            ?? throw new NotFoundException($"Suggestion '{suggestionId}' was not found.", ErrorCodes.PeopleNotFound);
+
+        var result = await faces.ListPhotosForFacesAsync(ownerId, cluster.FaceIds, page, pageSize, cancellationToken);
+        return new PagedResult<PhotoDto>(
+            result.Items.Select(p => PhotoDto.From(p, [])).ToList(),
+            result.Page, result.PageSize, result.TotalCount);
+    }
+
     public async Task RenameAsync(Guid ownerId, Guid personId, string? name, CancellationToken cancellationToken = default)
     {
         var person = await GetPersonOrThrowAsync(ownerId, personId, cancellationToken);
@@ -185,7 +206,9 @@ public sealed class PersonService(
         await persons.DeleteAsync(person, cancellationToken);
     }
 
-    /// <summary>Suggestion list caps — review UI scale, not a data limit.</summary>
+    /// <summary>Suggestion list caps — review UI scale, not a data limit. The
+    /// new-person queue is uncapped (the review page pages through ALL of it);
+    /// this bounds only the per-person merge and person-merge queues.</summary>
     public const int MaxSuggestions = 20;
     public const int SamplePhotoLimit = 8;
     /// <summary>The one-by-one review stepper shows at most this many faces —
@@ -213,6 +236,22 @@ public sealed class PersonService(
         var suggestions = await ComputeSuggestionsAsync(ownerId, cancellationToken);
         suggestionCache.Set(ownerId, signature, suggestions);
         return suggestions;
+    }
+
+    /// <summary>Paged window over the new-person queue (doc 18 §7.4) — the
+    /// review page scrolls the WHOLE queue instead of the first screenful. The
+    /// queue is computed (and cached) whole; paging is a cheap in-memory slice,
+    /// so every window stays consistent with the same cached pass.</summary>
+    public async Task<PagedResult<PersonSuggestionDto>> SuggestNewPeoplePageAsync(
+        Guid ownerId, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var suggestions = await SuggestAsync(ownerId, cancellationToken);
+        return new PagedResult<PersonSuggestionDto>(
+            suggestions.NewPeople.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
+            page, pageSize, suggestions.NewPeople.Count);
     }
 
     /// <summary>
@@ -345,7 +384,9 @@ public sealed class PersonService(
             newPeople = groups.Values
                 .Where(members => members.Count >= 2)
                 .OrderByDescending(members => members.Count)
-                .Take(MaxSuggestions)
+                // Uncapped on purpose: the review page pages through the whole
+                // queue (SuggestNewPeoplePageAsync), so no candidate hides
+                // behind an arbitrary limit.
                 .Select(members => new PersonSuggestionDto(
                     SuggestionId(members),
                     members.Count,

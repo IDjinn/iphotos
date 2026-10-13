@@ -30,7 +30,7 @@ export function FaceAvatar({ faceId, size, label }: FaceAvatarProps) {
       {source ? (
         <FaceImage
           source={source}
-          contentFit="cover"
+          contentFit="contain"
           recyclingKey={faceId ?? undefined}
           accessibilityLabel={label}
         />

@@ -17,13 +17,18 @@ export const BackdropPressable = styled(Pressable)`
   ${absoluteFill}
 `;
 
-export const Sheet = styled(Animated.View)<{ $maxHeight: string; $paddingBottom: number }>`
+export const Sheet = styled(Animated.View)<{
+  $maxHeight: string;
+  $height: string | null;
+  $paddingBottom: number;
+}>`
   ${absoluteFill}
   top: auto;
   border-top-left-radius: ${({ theme }) => theme.radius.xl}px;
   border-top-right-radius: ${({ theme }) => theme.radius.xl}px;
   overflow: hidden;
   max-height: ${({ $maxHeight }) => $maxHeight};
+  height: ${({ $height }) => $height ?? 'auto'};
   padding-bottom: ${({ $paddingBottom }) => $paddingBottom}px;
   background-color: ${({ theme }) => theme.colors.surfaceElevated};
 `;

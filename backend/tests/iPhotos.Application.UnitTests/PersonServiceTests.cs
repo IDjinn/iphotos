@@ -48,14 +48,22 @@ public sealed class PersonServiceTests
         return person;
     }
 
-    private PhotoFace NewFace(float[] embedding, Guid? personId = null)
+    private PhotoFace NewFace(float[] embedding, Guid? personId = null, Guid? photoId = null)
     {
         var face = PhotoFace.Create(
-            Guid.NewGuid(), Owner, "buffalo_l", 10, 10, 100, 100, 0.9f, embedding,
+            photoId ?? Guid.NewGuid(), Owner, "buffalo_l", 10, 10, 100, 100, 0.9f, embedding,
             $"crop-{Guid.NewGuid():N}.jpg", Now);
         face.PersonId = personId;
         faces.Faces.Add(face);
         return face;
+    }
+
+    private Photo NewPhoto(DateTimeOffset takenAt)
+    {
+        var photo = Photo.Create(Owner, $"hash-{Guid.NewGuid():N}", $"p-{Guid.NewGuid():N}.jpg", "image/jpeg", 100, Now);
+        photo.TakenAt = takenAt;
+        faces.Photos.Add(photo);
+        return photo;
     }
 
     private static float[] UnitVector(params float[] vector)
@@ -234,6 +242,73 @@ public sealed class PersonServiceTests
         var novel = Assert.Single(result.NewPeople);
         Assert.Equal(210, novel.FaceCount);
         Assert.Equal(210, novel.FaceIds.Count);
+    }
+
+    [Fact]
+    public async Task ListSuggestionPhotosAsync_pages_the_whole_cluster()
+    {
+        var oldest = NewPhoto(Now.AddHours(-2));
+        var middle = NewPhoto(Now.AddHours(-1));
+        var newest = NewPhoto(Now);
+        NewFace(UnitVector(1, 0, 0), photoId: oldest.Id);
+        NewFace(UnitVector(1, 0, 0), photoId: middle.Id);
+        NewFace(UnitVector(1, 0, 0), photoId: newest.Id);
+
+        var novel = Assert.Single((await service.SuggestAsync(Owner)).NewPeople);
+
+        var first = await service.ListSuggestionPhotosAsync(Owner, novel.Id, page: 1, pageSize: 2);
+        Assert.Equal(3, first.TotalCount);
+        Assert.Equal([newest.Id, middle.Id], first.Items.Select(p => p.Id).ToList());
+
+        var second = await service.ListSuggestionPhotosAsync(Owner, novel.Id, page: 2, pageSize: 2);
+        Assert.Equal([oldest.Id], second.Items.Select(p => p.Id).ToList());
+    }
+
+    [Fact]
+    public async Task ListSuggestionPhotosAsync_unknown_suggestion_is_not_found()
+    {
+        NewFace(UnitVector(1, 0, 0));
+        NewFace(UnitVector(1, 0, 0));
+
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => service.ListSuggestionPhotosAsync(Owner, "unknown-id", 1, 20));
+    }
+
+    [Fact]
+    public async Task SuggestAsync_new_person_queue_is_not_capped()
+    {
+        // 25 well-separated pairs (orthogonal directions cluster apart) — above
+        // the old MaxSuggestions cap of 20, every cluster must still surface.
+        for (var i = 0; i < 25; i++)
+        {
+            var direction = new float[25];
+            direction[i] = 1;
+            NewFace(direction);
+            NewFace(direction);
+        }
+
+        var result = await service.SuggestAsync(Owner);
+
+        Assert.Equal(25, result.NewPeople.Count);
+    }
+
+    [Fact]
+    public async Task SuggestNewPeoplePageAsync_slices_the_whole_queue()
+    {
+        for (var i = 0; i < 25; i++)
+        {
+            var direction = new float[25];
+            direction[i] = 1;
+            NewFace(direction);
+            NewFace(direction);
+        }
+
+        var first = await service.SuggestNewPeoplePageAsync(Owner, page: 1, pageSize: 20);
+        Assert.Equal(25, first.TotalCount);
+        Assert.Equal(20, first.Items.Count);
+
+        var second = await service.SuggestNewPeoplePageAsync(Owner, page: 2, pageSize: 20);
+        Assert.Equal(5, second.Items.Count);
     }
 
     [Fact]
@@ -634,5 +709,23 @@ public sealed class PersonServiceTests
         public Task<PagedResult<Photo>> ListPhotosForPersonAsync(
             Guid ownerId, Guid personId, int page, int pageSize, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PagedResult<Photo>([], 0, page, pageSize));
+
+        public List<Photo> Photos { get; } = [];
+
+        public Task<PagedResult<Photo>> ListPhotosForFacesAsync(
+            Guid ownerId, IReadOnlyList<Guid> faceIds, int page, int pageSize, CancellationToken cancellationToken = default)
+        {
+            var photoIds = Faces
+                .Where(f => f.OwnerId == ownerId && faceIds.Contains(f.Id))
+                .Select(f => f.PhotoId)
+                .ToHashSet();
+            var owned = Photos
+                .Where(p => p.OwnerId == ownerId && photoIds.Contains(p.Id))
+                .OrderByDescending(p => p.TakenAt ?? p.CreatedAt)
+                .ToList();
+
+            return Task.FromResult(new PagedResult<Photo>(
+                owned.Skip((page - 1) * pageSize).Take(pageSize).ToList(), page, pageSize, owned.Count));
+        }
     }
 }

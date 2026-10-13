@@ -4,7 +4,6 @@ import styled from 'styled-components/native';
 
 import { PressableScale } from '@/components/PressableScale';
 import { ThemedText } from '@/components/ThemedText';
-import { absoluteFill } from '@/theme/shared';
 
 /** People list (doc 18 §10) — paged card grid + search/filter toolbar +
  * "New faces" review section. */
@@ -118,8 +117,14 @@ export const PersonCardAvatar = styled.View`
   background-color: ${({ theme }) => theme.colors.placeholder};
 `;
 
+/** Inset + contain: the face crop fits the circle with visible breathing room
+ * instead of pressing against the edge. */
 export const PersonCardImage = styled(Image)`
-  ${absoluteFill}
+  position: absolute;
+  top: 12%;
+  right: 12%;
+  bottom: 12%;
+  left: 12%;
 `;
 
 /** Pending-review dot, top-right of the card with a background ring. */

@@ -210,6 +210,42 @@
 > 196/196 (+3 uncapped), typecheck/vitest mobile 49/49, eslint sem erros
 > novos, API reconstruída no compose (health 200).
 >
+> **Round 12 (2026-10-13)** — **preview "Novos rostos" completo + fila infinita
+> no mobile**: o BottomSheet de preview deixou de mostrar só a janela de
+> amostras (`samplePhotoIds`) e agora **pagina TODAS as fotos do cluster** —
+> novo endpoint `GET /api/people/suggestions/{id}/photos?page=&pageSize=`
+> (`ListSuggestionPhotosAsync` resolve o id contra a passagem de sugestões
+> **cacheada**; cluster aceito/mesclado/reatribuído meanwhile = 404) com
+> `ListPhotosForFacesAsync` (mesma ordenação da listagem de fotos da pessoa), com
+> skeleton na primeira página, no footer de load-more e retry embutido nas
+> falhas (404 fecha o sheet e atualiza a fila). Correção de scroll: as listas do
+> sheet ficavam sem `flex: 1` — FlatList de altura automática nunca rola (o
+> próprio frame cresce com o conteúdo) — e o `Gesture.Pan` global do
+> `BottomSheet` roubava o drag vertical do scroll interno; agora `PhotoGrid`/
+> `PickerList` (`styled(FlatList<T>)`) ocupam o restante do sheet
+> (`fixedHeight` = altura definida) e o drag-to-dismiss ficou **no handle** com
+> `hitSlop` (backdrop e back seguem como saídas). Além de "Criar pessoa", o
+> sheet ganha **"Adicionar a uma pessoa"**: picker embutido (header com volta,
+> busca server-side com debounce de 250 ms via `listPeoplePage`, paginação,
+> skeleton de rows) que atribui o cluster inteiro via `POST /suggestions/merge`
+> — sem gate de threshold, é o usuário corrigindo a IA. Sucesso fecha o sheet,
+> dispensa a sugestão e recarrega a fila com toast "Adicionado a {nome}".
+> **Criar pessoa agora abre as fotos dela**: `create` navega para
+> `/person/[id]?name=1`, e a página abre o **input de renome** ao carregar
+> (uma vez por pessoa, render-phase latch). **Fila de revisão infinita**: o
+> `.Take(MaxSuggestions)` saiu da fila de novos-rostos (os 20 ficam só em
+> merges/person-merge) e `GET /api/people/suggestions` ganhou ramo paginado
+> (`SuggestNewPeoplePageAsync` — slice em memória da passagem cacheada; payload
+> completo segue o padrão para clientes sem paginação); `/people/review` roda
+> scroll infinito (dedupe por id, footer skeleton, retry ao rolar de novo).
+> **Avatares circulares**: os crops de rosto agora **cabem** no círculo —
+> `FaceAvatar`, card de pessoa, chip da busca, `MergeCircle` e o picker usam
+> inset 12% + `contentFit="contain"` (o rosto não preenche mais 100% do
+> círculo). Testes: paginação do cluster por TakenAt, 404 para id desconhecido,
+> fila sem cap (>20 clusters) e janelas do `SuggestNewPeoplePageAsync`
+> (200/200). Verificação: build da solution limpo, tsc/vitest/eslint mobile
+> limpos, API reconstruída no compose (health 200).
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e

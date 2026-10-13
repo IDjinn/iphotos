@@ -163,6 +163,31 @@ export async function listPersonSuggestions(): Promise<PersonSuggestions> {
   return apiJson<PersonSuggestions>('/api/people/suggestions');
 }
 
+/** Paged window over the new-person review queue — the review page scrolls
+ * the WHOLE queue instead of the first screenful. */
+export async function listPersonSuggestionPage(
+  page: number,
+  pageSize = 20,
+): Promise<PagedResult<PersonSuggestion>> {
+  return apiJson<PagedResult<PersonSuggestion>>('/api/people/suggestions', {
+    params: { page, pageSize },
+  });
+}
+
+/** Paged photos behind a new-face suggestion (doc 18 §7.4) — the preview grid
+ * scrolls the WHOLE cluster, newest first. Rejects with ApiError 404 once the
+ * cluster is gone (accepted, merged or reassigned). */
+export async function listSuggestionPhotos(
+  suggestionId: string,
+  page = 1,
+  pageSize = 60,
+): Promise<PagedResult<CloudPhoto>> {
+  return apiJson<PagedResult<CloudPhoto>>(
+    `/api/people/suggestions/${encodeURIComponent(suggestionId)}/photos`,
+    { params: { page, pageSize } },
+  );
+}
+
 /** Creates one person from a reviewed suggestion group; returns the new person. */
 export async function acceptPersonSuggestion(faceIds: string[]): Promise<Person> {
   return apiJson<Person>('/api/people/suggestions/accept', { method: 'POST', body: { faceIds } });

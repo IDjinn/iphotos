@@ -73,7 +73,7 @@ const MAX_STEPPER_FACES = 200;
  * bar.
  */
 export default function PersonScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const router = useRouter();
   const { colors, ms } = useTheme();
   const insets = useSafeAreaInsets();
@@ -97,6 +97,16 @@ export default function PersonScreen() {
 
   const dismissed = useSuggestionDismissalsStore((s) => s.dismissed);
   const dismiss = useSuggestionDismissalsStore((s) => s.dismiss);
+
+  // Arriving from a fresh "create person" (`?name=1`): open the rename input
+  // once, as soon as the person exists — naming happens where the photos are.
+  const namePrompt = (Array.isArray(name) ? name[0] : name) === '1';
+  const [promptedPerson, setPromptedPerson] = useState<string | null>(null);
+  if (person && namePrompt && promptedPerson !== person.id) {
+    setPromptedPerson(person.id);
+    setDraftName('');
+    setRenaming(true);
+  }
 
   const fetchPage = useCallback(
     (page: number, pageSize: number) => listPersonPhotos(id, page, pageSize),
@@ -584,7 +594,7 @@ function MergeTargetRow({ target, onMerge }: { target: Person; onMerge: (target:
       accessibilityLabel={target.name ?? t('people.unnamed')}
     >
       {cover ? (
-        <MergeCircle source={cover} contentFit="cover" recyclingKey={target.id} />
+        <MergeCircle source={cover} contentFit="contain" recyclingKey={target.id} />
       ) : (
         <MergeCirclePlaceholder>
           <Icon name="person" size={20} color={colors.textSecondary} />

@@ -129,10 +129,13 @@ export const MergeRow = styled(Pressable)<{ $pressed: boolean }>`
   background-color: ${({ theme, $pressed }) => ($pressed ? theme.colors.surface : 'transparent')};
 `;
 
+/** Padding + contain (at the usage): the crop fits the circle instead of
+ * pressing against the edge. */
 export const MergeCircle = styled(Image)`
   width: ${({ theme }) => theme.ms(44)}px;
   height: ${({ theme }) => theme.ms(44)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
+  padding: ${({ theme }) => theme.ms(4)}px;
   background-color: ${({ theme }) => theme.colors.placeholder};
 `;
 

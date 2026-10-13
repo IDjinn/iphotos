@@ -511,7 +511,7 @@ function PersonCardItem({
       {pending ? <PersonBadgeDot /> : null}
       <PersonCardAvatar>
         {cover ? (
-          <PersonCardImage source={cover} contentFit="cover" recyclingKey={person.id} />
+          <PersonCardImage source={cover} contentFit="contain" recyclingKey={person.id} />
         ) : (
           <Icon name="person" size={28} color={colors.textSecondary} />
         )}

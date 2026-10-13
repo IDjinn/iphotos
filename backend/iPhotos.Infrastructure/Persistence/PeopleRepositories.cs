@@ -204,6 +204,26 @@ public sealed class FaceRepository(PhotosDbContext db) : IFaceRepository
 
         return new PagedResult<Photo>(items, page, pageSize, total);
     }
+
+    public async Task<PagedResult<Photo>> ListPhotosForFacesAsync(
+        Guid ownerId, IReadOnlyList<Guid> faceIds, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query =
+            from face in db.PhotoFaces
+            join photo in db.Photos on face.PhotoId equals photo.Id
+            where face.OwnerId == ownerId && faceIds.Contains(face.Id)
+            select photo;
+
+        var total = await query.Distinct().CountAsync(cancellationToken);
+        var items = await query
+            .Distinct()
+            .OrderByDescending(p => p.TakenAt ?? p.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<Photo>(items, page, pageSize, total);
+    }
 }
 
 public sealed class PhotoLabelRepository(PhotosDbContext db) : IPhotoLabelRepository

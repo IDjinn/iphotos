@@ -191,6 +191,10 @@ public class MlJobHandlerCacheTests
         public Task<PagedResult<Photo>> ListPhotosForPersonAsync(
             Guid ownerId, Guid personId, int page, int pageSize, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PagedResult<Photo>([], 0, page, pageSize));
+
+        public Task<PagedResult<Photo>> ListPhotosForFacesAsync(
+            Guid ownerId, IReadOnlyList<Guid> faceIds, int page, int pageSize, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PagedResult<Photo>([], 0, page, pageSize));
     }
 
     private sealed class InMemoryPhotoLabelRepository : IPhotoLabelRepository

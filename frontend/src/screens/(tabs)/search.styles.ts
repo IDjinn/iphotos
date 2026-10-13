@@ -3,7 +3,6 @@ import { Pressable, ScrollView, TextInput } from 'react-native';
 import styled from 'styled-components/native';
 
 import { ThemedText } from '@/components/ThemedText';
-import { absoluteFill } from '@/theme/shared';
 
 export const Screen = styled.View<{ $insetTop?: number }>`
   flex: 1;
@@ -111,8 +110,13 @@ export const PersonChipCircle = styled.View`
   background-color: ${({ theme }) => theme.colors.placeholder};
 `;
 
+/** Inset + contain: the face crop fits the chip circle instead of filling it. */
 export const PersonChipImage = styled(Image)`
-  ${absoluteFill}
+  position: absolute;
+  top: 12%;
+  right: 12%;
+  bottom: 12%;
+  left: 12%;
 `;
 
 export const PersonChipName = styled(ThemedText)`

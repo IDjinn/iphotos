@@ -91,13 +91,38 @@ public static class PeopleEndpoints
 
         // "Same person?" review (doc 18 §7.4), split by destination: merges into
         // existing people and candidates for a new person. Dismissal is
-        // client-side, keyed by the stable suggestion id.
+        // client-side, keyed by the stable suggestion id. Paged when asked —
+        // the review page scrolls the whole new-person queue — while the full
+        // split payload stays the default for unpaged clients.
         group.MapGet("/suggestions", async (
             ClaimsPrincipal principal,
             PersonService people,
-            CancellationToken cancellationToken) =>
-            Results.Ok(await people.SuggestAsync(principal.GetUserId(), cancellationToken)))
+            [FromQuery] int page = 0,
+            [FromQuery] int pageSize = 0,
+            CancellationToken cancellationToken = default) =>
+        {
+            if (page > 0 && pageSize > 0)
+            {
+                return Results.Ok(
+                    await people.SuggestNewPeoplePageAsync(principal.GetUserId(), page, pageSize, cancellationToken));
+            }
+
+            return Results.Ok(await people.SuggestAsync(principal.GetUserId(), cancellationToken));
+        })
         .WithName("SuggestPeople");
+
+        // Paged photos behind a new-face suggestion (doc 18 §7.4): the preview
+        // grid scrolls the whole cluster, so the id resolves against the cached
+        // suggestion pass and an accepted/merged cluster 404s ("gone").
+        group.MapGet("/suggestions/{id}/photos", async (
+            string id,
+            ClaimsPrincipal principal,
+            PersonService people,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            CancellationToken cancellationToken = default) =>
+            Results.Ok(await people.ListSuggestionPhotosAsync(principal.GetUserId(), id, page, pageSize, cancellationToken)))
+        .WithName("ListSuggestionPhotos");
 
         group.MapPost("/suggestions/accept", async (
             ClaimsPrincipal principal,

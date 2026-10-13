@@ -245,6 +245,12 @@ public interface IFaceRepository
     /// <summary>Paged photos containing the person's faces, newest TakenAt first (listing order).</summary>
     Task<PagedResult<Photo>> ListPhotosForPersonAsync(
         Guid ownerId, Guid personId, int page, int pageSize, CancellationToken cancellationToken = default);
+
+    /// <summary>Paged photos containing any of the given faces, newest TakenAt first
+    /// (same listing order) — the new-faces preview grid pages the whole cluster
+    /// (doc 18 §7.4), not just its sample window.</summary>
+    Task<PagedResult<Photo>> ListPhotosForFacesAsync(
+        Guid ownerId, IReadOnlyList<Guid> faceIds, int page, int pageSize, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Per-face review verdicts (doc 18 §7.4): the persisted "not the same"

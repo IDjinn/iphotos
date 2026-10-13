@@ -30,6 +30,9 @@ interface BottomSheetProps {
   children?: React.ReactNode;
   /** Max sheet height as a fraction of screen height. */
   maxHeightFactor?: number;
+  /** Fix the sheet at maxHeightFactor instead of letting it hug its content —
+   * inner scroll views then get a definite height and virtualize properly. */
+  fixedHeight?: boolean;
   containerProps?: ViewProps;
 }
 
@@ -37,7 +40,7 @@ interface BottomSheetProps {
  * Lightweight bottom sheet: spring slide-up, drag handle to dismiss,
  * tap backdrop to close, Android back button support.
  */
-export function BottomSheet({ visible, onClose, children, maxHeightFactor = 0.7, containerProps }: BottomSheetProps) {
+export function BottomSheet({ visible, onClose, children, maxHeightFactor = 0.7, fixedHeight = false, containerProps }: BottomSheetProps) {
   const { space } = useTheme();
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(0);
@@ -53,7 +56,11 @@ export function BottomSheet({ visible, onClose, children, maxHeightFactor = 0.7,
     return () => sub.remove();
   }, [visible, onClose]);
 
+  // Drag-to-dismiss lives on the handle only: a sheet-wide pan gesture steals
+  // vertical drags from inner scroll views (the paged grids), which then can
+  // never scroll. Backdrop tap and hardware back remain dismissal exits too.
   const drag = Gesture.Pan()
+    .hitSlop({ top: space[2], bottom: space[2] })
     .onUpdate((e) => {
       translateY.value = Math.max(0, e.translationY);
     })
@@ -76,20 +83,21 @@ export function BottomSheet({ visible, onClose, children, maxHeightFactor = 0.7,
       <Backdrop entering={FadeIn.duration(180)} exiting={FadeOut.duration(160)}>
         <BackdropPressable onPress={onClose} accessibilityLabel="Close sheet" />
       </Backdrop>
-      <GestureDetector gesture={drag}>
-        <Sheet
-          entering={SlideInDown.springify().dampingRatio(0.85).stiffness(260)}
-          exiting={SlideOutDown.duration(180)}
-          style={sheetStyle}
-          $maxHeight={`${Math.round(maxHeightFactor * 100)}%`}
-          $paddingBottom={insets.bottom + space[3]}
-        >
+      <Sheet
+        entering={SlideInDown.springify().dampingRatio(0.85).stiffness(260)}
+        exiting={SlideOutDown.duration(180)}
+        style={sheetStyle}
+        $maxHeight={`${Math.round(maxHeightFactor * 100)}%`}
+        $height={fixedHeight ? `${Math.round(maxHeightFactor * 100)}%` : null}
+        $paddingBottom={insets.bottom + space[3]}
+      >
+        <GestureDetector gesture={drag}>
           <HandleWrap>
             <Handle />
           </HandleWrap>
-          {children}
-        </Sheet>
-      </GestureDetector>
+        </GestureDetector>
+        {children}
+      </Sheet>
     </Root>
   );
 }
