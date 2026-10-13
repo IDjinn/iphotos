@@ -3,7 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { configureLanguage, type LanguageMode } from '@/i18n';
 import { sqliteStorage } from '@/data/kv-storage';
-import type { CloudCacheMode } from '@/data/cloud-media-cache';
+import type { CloudCacheMode, CloudFullCacheCount } from '@/data/cloud-media-cache';
 import type { UploadQuality } from '@/data/user-preferences';
 import type { ThemeMode } from '@/theme/context';
 
@@ -15,6 +15,8 @@ interface SettingsState {
   cloudCacheMode: CloudCacheMode;
   /** Total cache ceiling in MB for `cloudCacheMode: 'limited'`. */
   cloudCacheLimitMb: number;
+  /** How many of the newest photos keep their full-size original on disk (0 = off). */
+  cloudFullCacheCount: CloudFullCacheCount;
   /** Local cache of the account-wide upload quality (synced from the backend). */
   uploadQuality: UploadQuality;
   setThemeMode: (mode: ThemeMode) => void;
@@ -22,6 +24,7 @@ interface SettingsState {
   setHapticsEnabled: (enabled: boolean) => void;
   setCloudCacheMode: (mode: CloudCacheMode) => void;
   setCloudCacheLimitMb: (limitMb: number) => void;
+  setCloudFullCacheCount: (count: CloudFullCacheCount) => void;
   setUploadQuality: (quality: UploadQuality) => void;
 }
 
@@ -33,12 +36,14 @@ export const useSettingsStore = create<SettingsState>()(
       hapticsEnabled: true,
       cloudCacheMode: 'default',
       cloudCacheLimitMb: 500,
+      cloudFullCacheCount: 15,
       uploadQuality: 'storageSaver',
       setThemeMode: (themeMode) => set({ themeMode }),
       setLanguage: (language) => set({ language }),
       setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),
       setCloudCacheMode: (cloudCacheMode) => set({ cloudCacheMode }),
       setCloudCacheLimitMb: (cloudCacheLimitMb) => set({ cloudCacheLimitMb }),
+      setCloudFullCacheCount: (cloudFullCacheCount) => set({ cloudFullCacheCount }),
       setUploadQuality: (uploadQuality) => set({ uploadQuality }),
     }),
     {

@@ -12,6 +12,7 @@ import {
   BackupBarFill,
   BackupBarTrack,
   CacheInput,
+  GroupTitle,
   Header,
   HeaderSpacer,
   HeaderTitle,
@@ -28,7 +29,7 @@ import {
   ThemeRow,
 } from '@/screens/settings.styles';
 import type { CloudCacheMode } from '@/data/cloud-media-cache';
-import { cloudCacheModeChanged } from '@/data/cloud-media-cache';
+import { cloudCacheModeChanged, cloudFullCacheCountChanged, type CloudFullCacheCount } from '@/data/cloud-media-cache';
 import type { UploadQuality } from '@/data/user-preferences';
 import { getUserPreferences, updateUserPreferences } from '@/data/user-preferences';
 import { getPendingFolderDecisions } from '@/data/sync-rules-repository';
@@ -108,6 +109,13 @@ const CLOUD_CACHE_OPTIONS: { mode: CloudCacheMode; labelKey: TranslationKey; ico
   { mode: 'all', labelKey: 'settings.cloudCache.everything', icon: 'cloud-done-outline' },
 ];
 
+const FULL_CACHE_OPTIONS: { count: CloudFullCacheCount; labelKey: TranslationKey | null; label: string }[] = [
+  { count: 0, labelKey: 'settings.cloudCache.fullOff', label: '' },
+  { count: 15, labelKey: null, label: '15' },
+  { count: 50, labelKey: null, label: '50' },
+  { count: 100, labelKey: null, label: '100' },
+];
+
 const UPLOAD_QUALITY_OPTIONS: { mode: UploadQuality; labelKey: TranslationKey; icon: IconName }[] = [
   { mode: 'original', labelKey: 'settings.uploadQuality.original', icon: 'diamond-outline' },
   { mode: 'storageSaver', labelKey: 'settings.uploadQuality.storageSaver', icon: 'save-outline' },
@@ -137,6 +145,11 @@ export default function SettingsScreen() {
   const setCloudCacheMode = useSettingsStore((s) => s.setCloudCacheMode);
   const cloudCacheLimitMb = useSettingsStore((s) => s.cloudCacheLimitMb);
   const setCloudCacheLimitMb = useSettingsStore((s) => s.setCloudCacheLimitMb);
+  const cloudFullCacheCount = useSettingsStore((s) => s.cloudFullCacheCount);
+  const setCloudFullCacheCount = useSettingsStore((s) => s.setCloudFullCacheCount);
+  // The tapped quantity while its cache eviction is still running — drives the
+  // instant spinner on top of the store-driven highlight.
+  const [fullCacheBusyCount, setFullCacheBusyCount] = useState<CloudFullCacheCount | null>(null);
   const [cacheLimitInput, setCacheLimitInput] = useState(() => String(cloudCacheLimitMb));
 
   const onCacheLimitChange = (text: string) => {
@@ -456,6 +469,54 @@ export default function SettingsScreen() {
               />
             </StaticRow>
           ) : null}
+          <GroupTitle variant="bodySmall" color="secondary">
+            {t('settings.cloudCache.fullLabel')}
+          </GroupTitle>
+          <ThemeRow>
+            {FULL_CACHE_OPTIONS.map((option) => {
+              const active = cloudFullCacheCount === option.count;
+              const busy = fullCacheBusyCount === option.count;
+              return (
+                <ThemeOption
+                  key={option.count}
+                  $active={active}
+                  onPress={() => {
+                    if (fullCacheBusyCount !== null) return;
+                    haptic('light');
+                    // The highlight moves now; the (synchronous) cache
+                    // eviction runs after this frame paints so the choice is
+                    // on screen while it works, with the pill spinning.
+                    setCloudFullCacheCount(option.count);
+                    setFullCacheBusyCount(option.count);
+                    requestAnimationFrame(() => {
+                      try {
+                        cloudFullCacheCountChanged();
+                      } finally {
+                        setFullCacheBusyCount(null);
+                      }
+                    });
+                  }}
+                  disabled={fullCacheBusyCount !== null}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('settings.cloudCache.fullA11y', {
+                    count: option.labelKey ? t(option.labelKey) : option.label,
+                  })}
+                  accessibilityState={{ busy: fullCacheBusyCount !== null }}
+                >
+                  {busy ? (
+                    <ActivityIndicator size="small" color={colors.accent} />
+                  ) : (
+                    <ThemedText variant="bodySmall" color={active ? 'accent' : 'secondary'}>
+                      {option.labelKey ? t(option.labelKey) : option.label}
+                    </ThemedText>
+                  )}
+                </ThemeOption>
+              );
+            })}
+          </ThemeRow>
+          <SectionHint variant="bodySmall" color="secondary">
+            {t('settings.cloudCache.fullHint')}
+          </SectionHint>
         </SectionBlock>
 
         <SectionBlock title={t('settings.sections.appearance')}>

@@ -9,6 +9,7 @@ import {
 } from '@/data/cloud-media-cache';
 import { fileUrl, type VariantKind } from '@/data/cloud-photos-repository';
 import { faceCropUrl } from '@/data/people-repository';
+import { isOfflineNow, useIsOffline } from '@/hooks/use-net-info';
 
 interface CloudFileState {
   /** Local cached URI, or null while the variant is not (yet) on disk. */
@@ -23,9 +24,19 @@ export interface CloudFileSource {
   headers?: Record<string, string>;
 }
 
-function cloudFileSource(localUri: string | null, failed: boolean, photoId: string, kind: VariantKind): CloudFileSource | null {
+/**
+ * Offline the remote URL can never load, so a failed state must not surface
+ * it — callers render their placeholder instead.
+ */
+function cloudFileSource(
+  localUri: string | null,
+  failed: boolean,
+  photoId: string,
+  kind: VariantKind
+): CloudFileSource | null {
   if (localUri) return { uri: localUri };
-  return failed ? { uri: fileUrl(photoId, kind), headers: authHeaders() } : null;
+  if (isOfflineNow() || !failed) return null;
+  return { uri: fileUrl(photoId, kind), headers: authHeaders() };
 }
 
 /**
@@ -36,6 +47,7 @@ function cloudFileSource(localUri: string | null, failed: boolean, photoId: stri
  */
 function useCloudFile(photoId: string, kind: VariantKind): CloudFileState {
   const emptyId = !photoId;
+  const offline = useIsOffline();
   const [state, setState] = useState<CloudFileState>(() => ({
     localUri: emptyId ? null : getCachedCloudFileUri(photoId, kind),
     failed: false,
@@ -49,7 +61,9 @@ function useCloudFile(photoId: string, kind: VariantKind): CloudFileState {
   }
 
   useEffect(() => {
-    if (emptyId || state.localUri) return;
+    // Offline there is nothing to download — the effect reruns (and retries)
+    // when connectivity returns.
+    if (emptyId || state.localUri || offline) return;
     let cancelled = false;
     void ensureCloudFile(photoId, kind).then((uri) => {
       if (cancelled) return;
@@ -61,7 +75,7 @@ function useCloudFile(photoId: string, kind: VariantKind): CloudFileState {
     };
     // `state.localUri` deliberately excluded — a null result must not retrigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photoId, kind, emptyId]);
+  }, [photoId, kind, emptyId, offline]);
 
   return state;
 }

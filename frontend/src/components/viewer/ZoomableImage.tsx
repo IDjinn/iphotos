@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, {
@@ -12,10 +12,15 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { ZoomFill } from '@/components/viewer/ZoomableImage.styles';
+import { Icon } from '@/components/Icon';
+import { ThemedText } from '@/components/ThemedText';
+import { ZoomFill, UnavailableState } from '@/components/viewer/ZoomableImage.styles';
 import type { PhotoAsset } from '@/data/types';
 import { shouldCommitPinchDismiss, PINCH_FLOOR } from '@/animations/gestures';
+import { useIsOffline } from '@/hooks/use-net-info';
+import { useTranslation } from '@/i18n/hook';
 import { Durations, Springs } from '@/theme/tokens';
+import { useTheme } from '@/theme/context';
 
 const MAX_SCALE = 5;
 const DOUBLE_TAP_SCALE = 2.5;
@@ -98,6 +103,20 @@ export function containFit(width: number, height: number, viewW: number, viewH: 
 export function ZoomableImage({ asset, controller, pagerPan, dismiss, onTap }: ZoomableImageProps) {
   const { scale, tx, ty, boundX, boundY, pinching } = controller;
   const { width: viewW, height: viewH } = useWindowDimensions();
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const offline = useIsOffline();
+
+  // A failed primary source (e.g. remote preview while offline) degrades to
+  // the locally cached thumbnail; with neither, an offline note replaces the
+  // blank image.
+  const [primaryFailed, setPrimaryFailed] = useState(false);
+  useEffect(() => {
+    setPrimaryFailed(false);
+  }, [asset.uri]);
+  const activeUri = primaryFailed && asset.fallbackUri ? asset.fallbackUri : asset.uri;
+  const unavailable = primaryFailed && !asset.fallbackUri;
+
   const layout = useMemo(
     () => containFit(asset.width, asset.height, viewW, viewH),
     [asset.width, asset.height, viewW, viewH]
@@ -233,11 +252,25 @@ export function ZoomableImage({ asset, controller, pagerPan, dismiss, onTap }: Z
     <GestureDetector gesture={composed}>
       <ZoomFill style={animatedStyle}>
         <Image
-          source={{ uri: asset.uri, headers: asset.sourceHeaders }}
+          source={{ uri: activeUri, headers: asset.sourceHeaders }}
+          placeholder={asset.fallbackUri ? { uri: asset.fallbackUri } : undefined}
           style={{ width: layout.w, height: layout.h }}
           contentFit="contain"
           transition={120}
+          onError={() => setPrimaryFailed(true)}
         />
+        {unavailable ? (
+          <UnavailableState pointerEvents="none">
+            <Icon
+              name={offline ? 'cloud-offline-outline' : 'alert-circle-outline'}
+              size={36}
+              color={colors.iconInactive}
+            />
+            <ThemedText variant="bodySmall" color="secondary">
+              {offline ? t('cloud.viewerOffline') : t('cloud.viewerLoadFailed')}
+            </ThemedText>
+          </UnavailableState>
+        ) : null}
       </ZoomFill>
     </GestureDetector>
   );

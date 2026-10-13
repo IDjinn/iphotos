@@ -69,6 +69,14 @@ export const RowText = styled.View`
   gap: ${({ theme }) => theme.space[1]}px;
 `;
 
+/** Sub-heading for an option group inside a section — plain text, no card
+ * chrome, with breathing room before the options row. */
+export const GroupTitle = styled(ThemedText)`
+  margin-top: ${({ theme }) => theme.space[2]}px;
+  margin-bottom: ${({ theme }) => theme.space[2]}px;
+  font-weight: ${({ theme }) => theme.type.weight.medium};
+`;
+
 export const RowLabel = styled(ThemedText)`
   flex: 1;
 `;

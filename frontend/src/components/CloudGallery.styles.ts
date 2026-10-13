@@ -36,6 +36,15 @@ export const CellImage = styled(Image)`
   background-color: rgba(128, 128, 128, 0.15);
 `;
 
+/** Offline stand-in for an uncached cloud cell: dim square + cloud-slash icon. */
+export const CellPlaceholder = styled.View`
+  flex: 1;
+  border-radius: ${({ theme }) => theme.radius.xs}px;
+  background-color: rgba(128, 128, 128, 0.15);
+  align-items: center;
+  justify-content: center;
+`;
+
 export const StateBadge = styled.View`
   position: absolute;
   top: ${({ theme }) => theme.space[1]}px;
@@ -43,6 +52,12 @@ export const StateBadge = styled.View`
   border-radius: ${({ theme }) => theme.radius.sm}px;
   padding: ${({ theme }) => theme.space[1]}px;
   background-color: ${({ theme }) => theme.colors.background};
+`;
+
+/** Corner badge marking a cloud photo that is viewable from the offline cache. */
+export const CloudOfflineBadge = styled(StateBadge)`
+  flex-direction: row;
+  align-items: center;
 `;
 
 /** Corner badge over grid media: play for videos, live rings for Live Photos. */

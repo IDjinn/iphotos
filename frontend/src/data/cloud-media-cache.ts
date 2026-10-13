@@ -23,10 +23,13 @@ import { useSettingsStore } from '@/stores/settings';
 
 const DEFAULT_PREVIEW_PREFETCH_COUNT = 100;
 const PREVIEW_PREFETCH_CONCURRENCY = 3;
+const ORIGINAL_PREFETCH_CONCURRENCY = 2;
 /** Eviction safety margin so the ceiling also covers files added after a pass. */
 const LIMIT_HEADROOM_BYTES = 16 * 1024 * 1024;
 
 export type CloudCacheMode = 'default' | 'limited' | 'all';
+/** Size of the full-size (original) offline window; 0 keeps originals off disk. */
+export type CloudFullCacheCount = 0 | 15 | 50 | 100;
 
 function cacheDirectory(): Directory {
   return new Directory(Paths.document, 'cloud-cache');
@@ -193,6 +196,75 @@ function evictStalePreviews(keepPhotoIds: Set<string>): void {
 export function cloudCacheModeChanged(): void {
   previewsEvicted = false;
   enforceCacheLimitIfConfigured();
+}
+
+/**
+ * Caches the `original` variant of the newest photos so they open in the
+ * viewer at full quality — instantly and even offline. The window size comes
+ * from the `cloudFullCacheCount` setting (0 disables and evicts everything);
+ * originals that fall out of the window are evicted like stale previews.
+ * Originals are large, so concurrency stays below the thumbnail workers'.
+ */
+let originalsEvicted = false;
+/** Photo ids of the last prefetch window, newest first (drives re-eviction on count change). */
+let lastOriginalWindow: string[] = [];
+
+export async function prefetchRecentOriginals(photos: CloudPhoto[]): Promise<void> {
+  const count = useSettingsStore.getState().cloudFullCacheCount;
+  loadKnownFromDisk();
+  if (count <= 0) {
+    if (!originalsEvicted) {
+      originalsEvicted = true;
+      lastOriginalWindow = [];
+      evictStaleOriginals(new Set());
+    }
+    return;
+  }
+  const candidates = photos
+    .filter((photo) => photo.state === 'Ready' && photo.mediaType === 'Photo')
+    .slice(0, count);
+  if (candidates.length === 0) return;
+
+  lastOriginalWindow = candidates.map((photo) => photo.id);
+  if (!originalsEvicted) {
+    originalsEvicted = true;
+    evictStaleOriginals(new Set(lastOriginalWindow));
+  }
+
+  let index = 0;
+  const worker = async (): Promise<void> => {
+    while (index < candidates.length) {
+      const photo = candidates[index++];
+      await ensureCloudFile(photo.id, 'original');
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(ORIGINAL_PREFETCH_CONCURRENCY, candidates.length) }, worker)
+  );
+}
+
+/** Removes cached originals whose photo is no longer among the recent window. */
+function evictStaleOriginals(keepPhotoIds: Set<string>): void {
+  try {
+    const dir = cacheDirectory();
+    if (!dir.exists) return;
+    for (const child of dir.list()) {
+      const photoId = parseCacheFileName(child.name, 'original');
+      if (photoId !== null && !keepPhotoIds.has(photoId)) {
+        child.delete();
+        knownFiles.delete(cacheKey(photoId, 'original'));
+      }
+    }
+  } catch {
+    // Best-effort.
+  }
+}
+
+/** Called by Settings when the full-size window changes, so eviction reruns. */
+export function cloudFullCacheCountChanged(): void {
+  originalsEvicted = false;
+  lastOriginalWindow = lastOriginalWindow.slice(0, useSettingsStore.getState().cloudFullCacheCount);
+  evictStaleOriginals(new Set(lastOriginalWindow));
 }
 
 /** Splits `{photoId}.{kind}` back into its parts; null when not a cache file. */

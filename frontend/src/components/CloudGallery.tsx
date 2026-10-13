@@ -11,9 +11,11 @@ import { usePinchColumns } from '@/components/grid/usePinchColumns';
 import {
   Cell,
   CellImage,
+  CellPlaceholder,
   Center,
   Chip,
   ChipText,
+  CloudOfflineBadge,
   Duration,
   EmptyText,
   FilterRow,
@@ -23,7 +25,12 @@ import {
   StateBadge,
   MediaBadge,
 } from '@/components/CloudGallery.styles';
-import { prefetchRecentPreviews, getCachedCloudFileUri } from '@/data/cloud-media-cache';
+import { OfflineBanner } from '@/components/OfflineBanner';
+import {
+  prefetchRecentOriginals,
+  prefetchRecentPreviews,
+  getCachedCloudFileUri,
+} from '@/data/cloud-media-cache';
 import {
   fileUrl,
   getUsage,
@@ -37,6 +44,7 @@ import type { GridLayoutMetrics } from '@/data/grid-metrics';
 import { authHeaders } from '@/data/api-client';
 import type { PhotoAsset } from '@/data/types';
 import { useCloudThumbnailUri } from '@/hooks/use-cloud-file';
+import { useIsOffline } from '@/hooks/use-net-info';
 import { useViewerStore } from '@/stores/viewer';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -124,17 +132,32 @@ function CloudPhotoCell({
   onPress: () => void;
 }) {
   const { colors } = useTheme();
+  const offline = useIsOffline();
   const thumbnailUri = useCloudThumbnailUri(item.id);
+  // Offline the hook never downloads — look the persistent cache up directly.
+  const cachedUri = offline ? getCachedCloudFileUri(item.id, 'thumbnail') : null;
+  const source = offline ? (cachedUri ? { uri: cachedUri } : null) : thumbnailUri;
   return (
     <Cell $columns={columns} onPress={onPress} accessibilityLabel={item.fileName}>
-      <CellImage
-        source={thumbnailUri}
-        contentFit="cover"
-        recyclingKey={item.id}
-        onError={(event) => {
-          if (__DEV__) console.warn(`[gallery] thumbnail failed for ${item.id}: ${event.error}`);
-        }}
-      />
+      {source ? (
+        <CellImage
+          source={source}
+          contentFit="cover"
+          recyclingKey={item.id}
+          onError={(event) => {
+            if (__DEV__) console.warn(`[gallery] thumbnail failed for ${item.id}: ${event.error}`);
+          }}
+        />
+      ) : (
+        <CellPlaceholder>
+          <Icon name="cloud-offline-outline" size={18} color={colors.iconInactive} />
+        </CellPlaceholder>
+      )}
+      {offline && source ? (
+        <CloudOfflineBadge>
+          <Icon name="cloud-offline-outline" size={14} color={colors.textSecondary} />
+        </CloudOfflineBadge>
+      ) : null}
       {item.state !== 'Ready' ? (
         <StateBadge>
           {item.state === 'Failed' ? (
@@ -273,10 +296,14 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
 
   // Warm the persistent caches: previews of the newest photos are prefetched
   // so opening them is instant; thumbnails cache themselves on first render.
+  // Full-size originals follow the Settings window (15 by default).
   useEffect(() => {
     if (state.status !== 'ready' || state.page !== 1 || order !== 'desc' || mediaFilter !== 'All') return;
     void prefetchRecentPreviews(state.items).catch(() => {
       // Best-effort prefetch — the gallery still works over the network.
+    });
+    void prefetchRecentOriginals(state.items).catch(() => {
+      // Best-effort — originals are an enhancement, not a requirement.
     });
   }, [state, mediaFilter, order]);
 
@@ -391,22 +418,28 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     void load(state.page + 1, mediaFilter, order);
   };
 
-  /** Maps a cloud photo to the shared viewer asset, preferring the cached preview. */
-  const toViewerAsset = (photo: CloudPhoto): PhotoAsset => ({
-    id: photo.id,
-    uri: getCachedCloudFileUri(photo.id, 'preview') ?? fileUrl(photo.id, 'preview'),
-    filename: photo.title || photo.fileName,
-    mediaType: 'photo',
-    width: photo.width ?? 0,
-    height: photo.height ?? 0,
-    creationTime: new Date(photo.takenAt ?? photo.createdAt).getTime(),
-    modificationTime: new Date(photo.createdAt).getTime(),
-    // Live playback: the paired motion clip plays on hold in the viewer.
-    isLive: photo.isLive,
-    motionUri: photo.variants.some((v) => v.kind === 'Motion') ? fileUrl(photo.id, 'motion') : undefined,
-    // Harmless on cached local files, required on the authenticated remote fallback.
-    sourceHeaders: authHeaders(),
-  });
+  /** Maps a cloud photo to the shared viewer asset: cached files first, and a
+   *  locally cached thumbnail as the offline fallback for a failed preview. */
+  const toViewerAsset = (photo: CloudPhoto): PhotoAsset => {
+    const cachedOriginal = getCachedCloudFileUri(photo.id, 'original');
+    const cachedPreview = getCachedCloudFileUri(photo.id, 'preview');
+    return {
+      id: photo.id,
+      uri: cachedOriginal ?? cachedPreview ?? fileUrl(photo.id, 'preview'),
+      fallbackUri: getCachedCloudFileUri(photo.id, 'thumbnail') ?? undefined,
+      filename: photo.title || photo.fileName,
+      mediaType: 'photo',
+      width: photo.width ?? 0,
+      height: photo.height ?? 0,
+      creationTime: new Date(photo.takenAt ?? photo.createdAt).getTime(),
+      modificationTime: new Date(photo.createdAt).getTime(),
+      // Live playback: the paired motion clip plays on hold in the viewer.
+      isLive: photo.isLive,
+      motionUri: photo.variants.some((v) => v.kind === 'Motion') ? fileUrl(photo.id, 'motion') : undefined,
+      // Harmless on cached local files, required on the authenticated remote fallback.
+      sourceHeaders: authHeaders(),
+    };
+  };
 
   const openPhoto = (photo: CloudPhoto) => {
     haptic('light');
@@ -458,6 +491,13 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
     </FilterRow>
   );
 
+  const listHeader = (
+    <>
+      <OfflineBanner />
+      {filterHeader}
+    </>
+  );
+
   if (state.status === 'loading') {
     return (
       <Center>
@@ -499,7 +539,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
             : undefined;
     return (
       <Center>
-        {filterHeader}
+        {listHeader}
         <Icon name="cloud-offline-outline" size={40} color={colors.iconInactive} />
         <EmptyText variant="bodySmall" color="secondary">
           {emptyByFilter ?? emptyHint ?? 'No photos or videos in the cloud yet — run a backup from Settings.'}
@@ -518,7 +558,7 @@ export function CloudGallery({ emptyHint, contentContainerStyle }: CloudGalleryP
           key={columns}
           numColumns={columns}
           contentContainerStyle={contentContainerStyle}
-          ListHeaderComponent={filterHeader}
+          ListHeaderComponent={listHeader}
           onContentSizeChange={handleContentSizeChange}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.5}

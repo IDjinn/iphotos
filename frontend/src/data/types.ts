@@ -33,6 +33,11 @@ export interface PhotoAsset {
    * URI is the authenticated remote file URL instead of a local cache path.
    */
   sourceHeaders?: Record<string, string>;
+  /**
+   * Lower-quality locally cached variant (cloud thumbnails) the viewer can
+   * fall back to when `uri` fails to load, e.g. while offline.
+   */
+  fallbackUri?: string;
 }
 
 export interface AlbumRecord {

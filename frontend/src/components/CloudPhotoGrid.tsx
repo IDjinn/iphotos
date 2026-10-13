@@ -8,10 +8,13 @@ import {
   Center,
   Cell,
   CellImage,
+  CellPlaceholder,
+  CloudOfflineBadge,
   FooterSpin,
   RetryButton,
   StateBadge,
 } from '@/components/CloudGallery.styles';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { Icon } from '@/components/Icon';
 import { SkeletonPhotoGrid } from '@/components/skeleton/SkeletonPhotoGrid';
 import type { CloudPhoto, PagedResult } from '@/data/cloud-photos-repository';
@@ -20,6 +23,7 @@ import { getCachedCloudFileUri } from '@/data/cloud-media-cache';
 import { fileUrl } from '@/data/cloud-photos-repository';
 import type { PhotoAsset } from '@/data/types';
 import { useCloudThumbnailUri } from '@/hooks/use-cloud-file';
+import { useIsOffline } from '@/hooks/use-net-info';
 import { useViewerStore } from '@/stores/viewer';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
@@ -52,15 +56,30 @@ function GridPhotoCell({
   onPress: () => void;
 }) {
   const { colors } = useTheme();
+  const offline = useIsOffline();
   const thumbnailUri = useCloudThumbnailUri(item.id);
+  // Offline the hook never downloads — look the persistent cache up directly.
+  const cachedUri = offline ? getCachedCloudFileUri(item.id, 'thumbnail') : null;
+  const source = offline ? (cachedUri ? { uri: cachedUri } : null) : thumbnailUri;
   return (
     <Cell $columns={columns} onPress={onPress} accessibilityLabel={item.fileName}>
-      <CellImage
-        source={thumbnailUri}
-        contentFit="cover"
-        recyclingKey={item.id}
-        transition={180}
-      />
+      {source ? (
+        <CellImage
+          source={source}
+          contentFit="cover"
+          recyclingKey={item.id}
+          transition={180}
+        />
+      ) : (
+        <CellPlaceholder>
+          <Icon name="cloud-offline-outline" size={18} color={colors.iconInactive} />
+        </CellPlaceholder>
+      )}
+      {offline && source ? (
+        <CloudOfflineBadge>
+          <Icon name="cloud-offline-outline" size={14} color={colors.textSecondary} />
+        </CloudOfflineBadge>
+      ) : null}
       {item.state !== 'Ready' ? (
         <StateBadge>
           {item.state === 'Failed' ? (
@@ -162,19 +181,25 @@ export function CloudPhotoGrid({ fetchPage, refreshToken = 0 }: CloudPhotoGridPr
     setRefreshing(false);
   };
 
-  /** Maps a cloud photo to the shared viewer asset, preferring the cached preview. */
-  const toViewerAsset = (photo: CloudPhoto): PhotoAsset => ({
-    id: photo.id,
-    uri: getCachedCloudFileUri(photo.id, 'preview') ?? fileUrl(photo.id, 'preview'),
-    filename: photo.title || photo.fileName,
-    mediaType: 'photo',
-    width: photo.width ?? 0,
-    height: photo.height ?? 0,
-    creationTime: new Date(photo.takenAt ?? photo.createdAt).getTime(),
-    modificationTime: new Date(photo.createdAt).getTime(),
-    // Harmless on cached local files, required on the authenticated remote fallback.
-    sourceHeaders: authHeaders(),
-  });
+  /** Maps a cloud photo to the shared viewer asset: cached files first, and a
+   *  locally cached thumbnail as the offline fallback for a failed preview. */
+  const toViewerAsset = (photo: CloudPhoto): PhotoAsset => {
+    const cachedOriginal = getCachedCloudFileUri(photo.id, 'original');
+    const cachedPreview = getCachedCloudFileUri(photo.id, 'preview');
+    return {
+      id: photo.id,
+      uri: cachedOriginal ?? cachedPreview ?? fileUrl(photo.id, 'preview'),
+      fallbackUri: getCachedCloudFileUri(photo.id, 'thumbnail') ?? undefined,
+      filename: photo.title || photo.fileName,
+      mediaType: 'photo',
+      width: photo.width ?? 0,
+      height: photo.height ?? 0,
+      creationTime: new Date(photo.takenAt ?? photo.createdAt).getTime(),
+      modificationTime: new Date(photo.createdAt).getTime(),
+      // Harmless on cached local files, required on the authenticated remote fallback.
+      sourceHeaders: authHeaders(),
+    };
+  };
 
   const openPhoto = (photo: CloudPhoto) => {
     haptic('light');
@@ -217,6 +242,7 @@ export function CloudPhotoGrid({ fetchPage, refreshToken = 0 }: CloudPhotoGridPr
         keyExtractor={(item) => item.id}
         key={columns}
         numColumns={columns}
+        ListHeaderComponent={<OfflineBanner />}
         onContentSizeChange={handleContentSizeChange}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.5}

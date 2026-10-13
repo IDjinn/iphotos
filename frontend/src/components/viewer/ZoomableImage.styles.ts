@@ -6,3 +6,11 @@ export const ZoomFill = styled(Animated.View)`
   align-items: center;
   justify-content: center;
 `;
+
+/** Overlaid note when no image source could load (e.g. photo not cached offline). */
+export const UnavailableState = styled.View`
+  position: absolute;
+  align-items: center;
+  justify-content: center;
+  gap: ${({ theme }) => theme.space[2]}px;
+`;
