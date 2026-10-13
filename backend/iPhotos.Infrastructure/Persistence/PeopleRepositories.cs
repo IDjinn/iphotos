@@ -2,6 +2,7 @@ using iPhotos.Application;
 using iPhotos.Application.Abstractions;
 using iPhotos.Domain;
 using Microsoft.EntityFrameworkCore;
+using Pgvector;
 
 namespace iPhotos.Infrastructure.Persistence;
 
@@ -54,6 +55,47 @@ public sealed class PersonRepository(PhotosDbContext db) : IPersonRepository
             .ToListAsync(cancellationToken);
 
         return new PagedResult<Person>(items, page, pageSize, total);
+    }
+
+    /// <summary>Raw SQL like <see cref="PhotoLabelRepository.ListTopForOwnerAsync"/>:
+    /// EF cannot translate pgvector's cosine distance operator through the float[]
+    /// value converter, so ranking/ordering/paging all ride one SQL statement —
+    /// embeddings never leave the database. Column aliases stay lowercase because
+    /// the model's snake_case convention names the columns SqlQuery materializes.</summary>
+    public async Task<PagedResult<PersonSimilarDto>> PageSimilarForOwnerAsync(
+        Guid ownerId,
+        Guid personId,
+        float[] targetCentroid,
+        float minSimilarity,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var target = new Vector(targetCentroid);
+        var total = await db.Database
+            .SqlQuery<int>(
+                $"""
+                SELECT COUNT(*)::int AS value
+                FROM persons
+                WHERE owner_id = {ownerId} AND id <> {personId} AND centroid IS NOT NULL
+                  AND 1 - (centroid <=> {target}) >= {minSimilarity}
+                """)
+            .ToListAsync(cancellationToken);
+
+        var items = await db.Database
+            .SqlQuery<PersonSimilarDto>(
+                $"""
+                SELECT id, name, cover_face_id, face_count,
+                       1 - (centroid <=> {target}) AS similarity
+                FROM persons
+                WHERE owner_id = {ownerId} AND id <> {personId} AND centroid IS NOT NULL
+                  AND 1 - (centroid <=> {target}) >= {minSimilarity}
+                ORDER BY centroid <=> {target}, id
+                LIMIT {pageSize} OFFSET {(page - 1) * pageSize}
+                """)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<PersonSimilarDto>(items, page, pageSize, total.Single());
     }
 
     public async Task DeleteAsync(Person person, CancellationToken cancellationToken = default)

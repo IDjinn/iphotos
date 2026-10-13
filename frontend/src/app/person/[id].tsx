@@ -12,6 +12,7 @@ import { MiniToast } from '@/components/MiniToast';
 import { ThemedText } from '@/components/ThemedText';
 import { ReviewBanner } from '@/components/people/ReviewBanner';
 import { ReviewStepperSheet, type StepperItem } from '@/components/people/ReviewStepperSheet';
+import { SimilarPeopleSheet } from '@/components/people/SimilarPeopleSheet';
 import { Skeleton } from '@/components/skeleton/Skeleton';
 import {
   acceptMergeSuggestion,
@@ -91,6 +92,7 @@ export default function PersonScreen() {
   const [hasMoreTargets, setHasMoreTargets] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [reviewFor, setReviewFor] = useState<'faces' | 'group' | null>(null);
+  const [similarSheet, setSimilarSheet] = useState(false);
   const [busyBanner, setBusyBanner] = useState(false);
   const [busyReview, setBusyReview] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -220,6 +222,24 @@ export default function PersonScreen() {
     } catch {
       setToast(t('suggestion.mergeFailed'));
       setBusyBanner(false);
+    }
+  };
+
+  /** Folds the similar-people sheet's selection INTO this person in ONE atomic
+   * request — the manual path for the fragments the AI chaining missed (doc 18
+   * §7.3). Stays on this screen: this person is the one absorbing. */
+  const handleSimilarMerge = async (sourceIds: string[]): Promise<boolean> => {
+    if (!person) return false;
+    try {
+      await mergePeopleBatch(person.id, sourceIds);
+      haptic('success');
+      setToast(tCount('suggestion.mergedPeople', sourceIds.length, { count: sourceIds.length }));
+      setGridToken((token) => token + 1);
+      await loadSuggestions();
+      return true;
+    } catch {
+      setToast(t('suggestion.mergeFailed'));
+      return false;
     }
   };
 
@@ -509,6 +529,17 @@ export default function PersonScreen() {
           <ActionButton
             onPress={() => {
               haptic('light');
+              setSimilarSheet(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={t('person.similar')}
+          >
+            <Icon name="people-outline" size={20} color={colors.text} />
+            <ActionLabel variant="bodySmall">{t('person.similar')}</ActionLabel>
+          </ActionButton>
+          <ActionButton
+            onPress={() => {
+              haptic('light');
               setDeleteConfirm(true);
             }}
             accessibilityRole="button"
@@ -542,6 +573,13 @@ export default function PersonScreen() {
           />
         </MergeListContainer>
       </BottomSheet>
+
+      <SimilarPeopleSheet
+        personId={similarSheet && person ? person.id : null}
+        personName={displayName}
+        onClose={() => setSimilarSheet(false)}
+        onMerge={handleSimilarMerge}
+      />
 
       <ReviewStepperSheet
         visible={reviewFor !== null && stepperItems.length > 0}

@@ -194,6 +194,19 @@ public interface IPersonRepository
     Task<PagedResult<Person>> PageForOwnerAsync(
         Guid ownerId, PersonFilter filter, int page, int pageSize, CancellationToken cancellationToken = default);
 
+    /// <summary>Paged window over the owner's OTHER persons ranked by centroid
+    /// similarity to <paramref name="targetCentroid"/> (closest first, only pairs
+    /// at or above <paramref name="minSimilarity"/>) — ranking runs in SQL via
+    /// pgvector's cosine distance so no client materializes embeddings (doc 18 §7.3).</summary>
+    Task<PagedResult<PersonSimilarDto>> PageSimilarForOwnerAsync(
+        Guid ownerId,
+        Guid personId,
+        float[] targetCentroid,
+        float minSimilarity,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
     Task DeleteAsync(Person person, CancellationToken cancellationToken = default);
 
     /// <summary>Removes several persons at once (batch merge, doc 18 §7.4).</summary>

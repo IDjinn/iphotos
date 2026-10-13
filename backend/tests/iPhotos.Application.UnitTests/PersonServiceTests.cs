@@ -445,14 +445,90 @@ public sealed class PersonServiceTests
     }
 
     [Fact]
-    public async Task SuggestAsync_never_suggests_merging_two_named_people()
+    public async Task SuggestAsync_suggests_merging_two_named_people()
     {
+        // The classic "same person, named twice" case (doc 18 §7.4): naming was
+        // the user's structure, but two same-looking named clusters are exactly
+        // the duplicate that otherwise needs N manual merges — one card now
+        // proposes the fold, and the biggest named side keeps the name.
         var alice = NewPerson("Alice", UnitVector(1, 0, 0));
-        alice.FaceCount = 3;
+        alice.FaceCount = 10;
         var bea = NewPerson("Bea", UnitVector(0.97f, 0.24f, 0));
         bea.FaceCount = 3;
 
         var result = await service.SuggestAsync(Owner);
+
+        var group = Assert.Single(result.PersonMergeGroups);
+        Assert.Equal(alice.Id, group.Target.PersonId);
+        var member = Assert.Single(group.Members);
+        Assert.Equal(bea.Id, member.PersonId);
+        Assert.True(group.MinSimilarity >= 0.9f);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_folds_named_and_unnamed_duplicates_into_one_group()
+    {
+        // A chained component with several named people used to be discarded
+        // wholesale; now it surfaces as ONE card — the biggest named side is the
+        // target and every other member, named or not, folds into it.
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        alice.FaceCount = 10;
+        var bea = NewPerson("Bea", UnitVector(0.97f, 0.24f, 0));
+        bea.FaceCount = 3;
+        var unnamed = NewPerson(null, UnitVector(0.8f, 0.6f, 0));
+        unnamed.FaceCount = 13;
+
+        var result = await service.SuggestAsync(Owner);
+
+        var group = Assert.Single(result.PersonMergeGroups);
+        Assert.Equal(alice.Id, group.Target.PersonId);
+        Assert.Equal([unnamed.Id, bea.Id], group.Members.Select(m => m.PersonId).ToList());
+    }
+
+    [Fact]
+    public async Task SuggestAsync_chains_person_duplicates_below_the_face_suggestion_bar()
+    {
+        // Centroid-to-centroid of two multi-face clusters is a stronger signal
+        // than a lone unassigned face, so chaining runs at its own lower knob:
+        // this pair sits at 0.70 — below min(Suggest, Match)=0.75, above the
+        // 0.65 PersonMergeSuggestThreshold default.
+        var a = NewPerson(null, UnitVector(1, 0, 0));
+        a.FaceCount = 12;
+        var b = NewPerson(null, UnitVector(0.7f, 0.7141f, 0));
+        b.FaceCount = 6;
+
+        var result = await service.SuggestAsync(Owner);
+
+        var group = Assert.Single(result.PersonMergeGroups);
+        Assert.Equal(a.Id, group.Target.PersonId);
+        Assert.Equal(b.Id, Assert.Single(group.Members).PersonId);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_person_merge_threshold_is_configurable()
+    {
+        var a = NewPerson(null, UnitVector(1, 0, 0));
+        a.FaceCount = 12;
+        var b = NewPerson(null, UnitVector(0.7f, 0.7141f, 0));
+        b.FaceCount = 6;
+
+        var strict = new PersonService(
+            persons,
+            faces,
+            reviews,
+            new ChineseWhispersClusterer(),
+            unitOfWork,
+            new StubDateTimeProvider(Now),
+            Options.Create(new MlOptions
+            {
+                SuggestThreshold = 0.75f,
+                MatchThreshold = 0.9f,
+                PersonMergeSuggestThreshold = 0.8f,
+            }),
+            suggestionCache,
+            NullLogger<PersonService>.Instance);
+
+        var result = await strict.SuggestAsync(Owner);
 
         Assert.Empty(result.PersonMergeGroups);
     }
@@ -607,6 +683,76 @@ public sealed class PersonServiceTests
 
         await Assert.ThrowsAsync<ValidationException>(
             () => service.MergeManyAsync(Owner, target.Id, []));
+    }
+
+    [Fact]
+    public async Task ListSimilarAsync_ranks_other_people_by_centroid_similarity()
+    {
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        alice.FaceCount = 10;
+        var close = NewPerson("Close", UnitVector(0.97f, 0.24f, 0));
+        close.FaceCount = 4;
+        var mid = NewPerson(null, UnitVector(0.8f, 0.6f, 0));
+        mid.FaceCount = 6;
+        var far = NewPerson("Far", UnitVector(0, 1, 0));
+        far.FaceCount = 8;
+
+        var result = await service.ListSimilarAsync(Owner, alice.Id, minSimilarity: 0.4f, page: 1, pageSize: 20);
+
+        Assert.Equal(2, result.TotalCount);
+        Assert.Equal([close.Id, mid.Id], result.Items.Select(p => p.Id).ToList());
+        Assert.All(result.Items, p => Assert.True(p.Similarity is >= 0.4f and <= 1f));
+        Assert.DoesNotContain(result.Items, p => p.Id == alice.Id);
+    }
+
+    [Fact]
+    public async Task ListSimilarAsync_pages_the_ranked_list()
+    {
+        var alice = NewPerson("Alice", UnitVector(1, 0, 0));
+        foreach (var (name, x) in new[] { ("A", 0.97f), ("B", 0.9f), ("C", 0.8f) })
+        {
+            var person = NewPerson(name, UnitVector(x, 1f - x, 0));
+            person.FaceCount = 2;
+        }
+
+        var first = await service.ListSimilarAsync(Owner, alice.Id, minSimilarity: 0.4f, page: 1, pageSize: 2);
+        var second = await service.ListSimilarAsync(Owner, alice.Id, minSimilarity: 0.4f, page: 2, pageSize: 2);
+
+        Assert.Equal(3, first.TotalCount);
+        Assert.Equal(2, first.Items.Count);
+        Assert.Single(second.Items);
+        Assert.Equal(
+            first.Items.Select(p => p.Id).Concat(second.Items.Select(p => p.Id)),
+            first.Items.Select(p => p.Id).Concat(second.Items.Select(p => p.Id)).Distinct());
+    }
+
+    [Fact]
+    public async Task ListSimilarAsync_unknown_person_is_not_found()
+    {
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => service.ListSimilarAsync(Owner, Guid.NewGuid(), minSimilarity: 0.4f, page: 1, pageSize: 20));
+    }
+
+    [Fact]
+    public async Task ListSimilarAsync_foreign_person_is_not_found()
+    {
+        var foreign = Person.Create(Guid.NewGuid(), Now);
+        foreign.Name = "Foreign";
+        persons.Persons.Add(foreign);
+
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => service.ListSimilarAsync(Owner, foreign.Id, minSimilarity: 0.4f, page: 1, pageSize: 20));
+    }
+
+    [Fact]
+    public async Task ListSimilarAsync_person_without_centroid_is_empty()
+    {
+        var empty = NewPerson("Empty", centroid: null);
+
+        var result = await service.ListSimilarAsync(Owner, empty.Id, minSimilarity: 0.4f, page: 1, pageSize: 20);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
     }
 
     private sealed class InMemoryFaceReviewRepository : IFaceReviewRepository

@@ -115,6 +115,35 @@ public sealed class InMemoryPersonRepository : IPersonRepository
         return Task.FromResult(new PagedResult<Person>(items, page, pageSize, ordered.Count));
     }
 
+    /// <summary>In-memory twin of the pgvector ranking: centroid cosine in memory,
+    /// closest first, filtered by the similarity floor.</summary>
+    public Task<PagedResult<PersonSimilarDto>> PageSimilarForOwnerAsync(
+        Guid ownerId,
+        Guid personId,
+        float[] targetCentroid,
+        float minSimilarity,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var similar = Persons
+            .Where(p => p.OwnerId == ownerId && p.Id != personId && p.Centroid is not null)
+            .Select(p => (Person: p, Similarity: System.Numerics.Tensors.TensorPrimitives.CosineSimilarity(targetCentroid, p.Centroid!)))
+            .Where(pair => pair.Similarity >= minSimilarity)
+            .OrderByDescending(pair => pair.Similarity)
+            .ThenBy(pair => pair.Person.Id)
+            .ToList();
+
+        var items = similar
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(pair => new PersonSimilarDto(
+                pair.Person.Id, pair.Person.Name, pair.Person.CoverFaceId, pair.Person.FaceCount, pair.Similarity))
+            .ToList();
+
+        return Task.FromResult(new PagedResult<PersonSimilarDto>(items, page, pageSize, similar.Count));
+    }
+
     public Task DeleteAsync(Person person, CancellationToken cancellationToken = default)
     {
         Persons.Remove(person);

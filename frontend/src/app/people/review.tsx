@@ -8,12 +8,21 @@ import { Icon } from '@/components/Icon';
 import { MiniToast } from '@/components/MiniToast';
 import { NewPersonPreviewSheet } from '@/components/people/NewPersonPreviewSheet';
 import { NewPersonSuggestionCard } from '@/components/people/NewPersonSuggestionCard';
+import { ReviewBanner } from '@/components/people/ReviewBanner';
+import {
+  ReviewStepperSheet,
+  type StepperItem,
+  type StepperVerdict,
+} from '@/components/people/ReviewStepperSheet';
 import { Skeleton } from '@/components/skeleton/Skeleton';
 import {
   acceptMergeSuggestion,
   acceptPersonSuggestion,
   listPersonSuggestionPage,
+  listPersonSuggestions,
+  mergePeopleBatch,
   type Person,
+  type PersonMergeGroup,
   type PersonSuggestion,
 } from '@/data/people-repository';
 import { useTranslation } from '@/i18n/hook';
@@ -29,44 +38,56 @@ import {
   LoadingStripItem,
   Screen,
 } from '@/screens/people.styles';
-import { SkeletonCard, SkeletonMeta } from '@/screens/people/review.styles';
+import { SectionTitle, SkeletonCard, SkeletonMeta } from '@/screens/people/review.styles';
 
 /**
- * The "New faces" review queue as a page (doc 18 §7.4): every unassigned-face
- * cluster the backend suggests grouping into a new person, paged with infinite
- * scroll (the backend caches suggestions until faces/people change). Creating
- * jumps to the new person's photos (with the name input up); the queue is
- * refetched on every focus so returning here shows what is left.
+ * The §7.4 review queue as a page (doc 18): the "same person?" merge-group
+ * cards up top — ONE atomic merge-batch folds every member into the target —
+ * then the paged "New faces" queue with infinite scroll (the backend caches
+ * suggestions until faces/people change). Creating jumps to the new person's
+ * photos (with the name input up); the queues are refetched on every focus so
+ * returning here shows what is left.
  */
 const PAGE_SIZE = 20;
 
 export default function ReviewSuggestionsScreen() {
-  const { t } = useTranslation();
+  const { t, tCount } = useTranslation();
   const { space } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const [queue, setQueue] = useState<PersonSuggestion[] | null>(null);
   const [total, setTotal] = useState(0);
+  const [groups, setGroups] = useState<PersonMergeGroup[] | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [preview, setPreview] = useState<PersonSuggestion | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [busyGroupId, setBusyGroupId] = useState<string | null>(null);
+  const [reviewGroup, setReviewGroup] = useState<PersonMergeGroup | null>(null);
+  const [busyReview, setBusyReview] = useState(false);
 
   const dismissed = useSuggestionDismissalsStore((s) => s.dismissed);
   const dismiss = useSuggestionDismissalsStore((s) => s.dismiss);
 
+  // The two queues load independently — each is additive, so one failing
+  // never blanks the other (hub convention).
   const load = useCallback(async () => {
     setQueue(null);
     setTotal(0);
-    try {
-      const result = await listPersonSuggestionPage(1, PAGE_SIZE);
-      setQueue(result.items);
-      setTotal(result.totalCount);
-    } catch {
-      // Additive queue — an empty page beats an error wall here.
-      setQueue([]);
-    }
+    setGroups(null);
+    void listPersonSuggestionPage(1, PAGE_SIZE)
+      .then((result) => {
+        setQueue(result.items);
+        setTotal(result.totalCount);
+      })
+      .catch(() => {
+        // Additive queue — an empty page beats an error wall here.
+        setQueue([]);
+      });
+    void listPersonSuggestions()
+      .then((result) => setGroups(result.personMergeGroups ?? []))
+      .catch(() => setGroups([]));
   }, []);
 
   useFocusEffect(
@@ -77,6 +98,7 @@ export default function ReviewSuggestionsScreen() {
 
   const visible =
     queue === null ? null : queue.filter((suggestion) => !dismissed.includes(suggestion.id));
+  const activeGroups = (groups ?? []).filter((group) => !dismissed.includes(group.id));
 
   const loadMore = () => {
     if (queue === null || loadingMore || queue.length >= total) return;
@@ -97,7 +119,7 @@ export default function ReviewSuggestionsScreen() {
 
   /** Creates the person and jumps straight to their photos — the `name`
    * param opens the page's rename input so the person gets named where their
-   * pictures are. The queue refreshes underneath for the back navigation. */
+   * pictures are. The card leaves locally; refocusing this page re-syncs. */
   const create = async (suggestion: PersonSuggestion) => {
     setBusyId(suggestion.id);
     try {
@@ -105,7 +127,6 @@ export default function ReviewSuggestionsScreen() {
       haptic('success');
       setPreview(null);
       dismiss(suggestion.id);
-      void load();
       router.push({
         pathname: '/person/[id]',
         params: { id: person.id, name: '1' },
@@ -127,7 +148,6 @@ export default function ReviewSuggestionsScreen() {
       setToast(t('people.addedToPerson', { name: person.name ?? t('people.unnamed') }));
       setPreview(null);
       dismiss(suggestion.id);
-      void load();
     } catch {
       setToast(t('suggestion.addFailed'));
     } finally {
@@ -146,6 +166,73 @@ export default function ReviewSuggestionsScreen() {
     [dismiss, load],
   );
 
+  /** "Merge all": every member folds into the target in ONE atomic request
+   * (doc 18 §7.4) — the whole point of the group card. The card leaves the
+   * list locally (no refetch flash); the next focus re-syncs the queues. */
+  const handleMergeGroup = async (group: PersonMergeGroup) => {
+    setBusyGroupId(group.id);
+    try {
+      const sourceIds = group.members.map((member) => member.personId);
+      await mergePeopleBatch(group.target.personId, sourceIds);
+      haptic('success');
+      setToast(tCount('suggestion.mergedPeople', sourceIds.length, { count: sourceIds.length }));
+      setGroups((current) =>
+        current ? current.filter((candidate) => candidate.id !== group.id) : current,
+      );
+    } catch {
+      setToast(t('suggestion.mergeFailed'));
+    } finally {
+      setBusyGroupId(null);
+    }
+  };
+
+  const handleGroupReviewFinish = async (verdict: StepperVerdict) => {
+    if (!reviewGroup) return;
+    setBusyReview(true);
+    try {
+      if (verdict.accepted.length > 0) {
+        await mergePeopleBatch(reviewGroup.target.personId, verdict.accepted);
+        haptic('success');
+        setToast(
+          tCount('suggestion.mergedPeople', verdict.accepted.length, {
+            count: verdict.accepted.length,
+          }),
+        );
+        setGroups((current) =>
+          current ? current.filter((candidate) => candidate.id !== reviewGroup.id) : current,
+        );
+      } else {
+        // Finishing a group review with no merges is a dismissal (web parity).
+        dismiss(reviewGroup.id);
+      }
+    } catch {
+      setToast(t('suggestion.reviewFailed'));
+    } finally {
+      setBusyReview(false);
+      setReviewGroup(null);
+    }
+  };
+
+  const matchPercent = (value: number) =>
+    t('suggestion.matchPercent', { match: Math.round(value * 100) });
+
+  const groupTotalFaces = (group: PersonMergeGroup) =>
+    group.target.faceCount + group.members.reduce((sum, member) => sum + member.faceCount, 0);
+
+  const stepperItems: StepperItem[] = reviewGroup
+    ? reviewGroup.members.map((member) => ({
+        id: member.personId,
+        faceId: member.coverFaceId,
+        caption: member.name ?? t('people.unnamed'),
+        meta:
+          member.similarity != null
+            ? `${tCount('suggestion.facesCount', member.faceCount, { count: member.faceCount })} · ${matchPercent(member.similarity)}`
+            : tCount('suggestion.facesCount', member.faceCount, { count: member.faceCount }),
+      }))
+    : [];
+
+  const noContent = visible !== null && visible.length === 0 && activeGroups.length === 0;
+
   return (
     <Screen $insetTop={insets.top}>
       <Header>
@@ -156,9 +243,9 @@ export default function ReviewSuggestionsScreen() {
         <HeaderSpacer />
       </Header>
 
-      {visible === null ? (
+      {queue === null ? (
         <ListSkeleton />
-      ) : visible.length === 0 ? (
+      ) : noContent ? (
         <Center $insetTop={0}>
           <EmptyState icon="sparkles-outline" title={t('people.reviewEmpty')} />
         </Center>
@@ -175,6 +262,38 @@ export default function ReviewSuggestionsScreen() {
               onPreview={setPreview}
             />
           )}
+          ListHeaderComponent={
+            activeGroups.length > 0 ? (
+              <>
+                <SectionTitle variant="titleMedium">{t('people.mergeGroupsTitle')}</SectionTitle>
+                {activeGroups.map((group) => (
+                  <ReviewBanner
+                    key={group.id}
+                    flush
+                    faces={[
+                      group.target.coverFaceId,
+                      ...group.members.slice(0, 3).map((member) => member.coverFaceId),
+                    ]}
+                    total={group.members.length + 1}
+                    title={tCount('suggestion.groupsLookLike', group.members.length, {
+                      count: group.members.length,
+                    })}
+                    subtitle={`${tCount('suggestion.facesTotal', groupTotalFaces(group), {
+                      count: groupTotalFaces(group),
+                    })} · ${matchPercent(group.minSimilarity)}`}
+                    reviewLabel={t('people.reviewFaces')}
+                    primaryLabel={t('suggestion.mergeAll')}
+                    primaryBusyLabel={t('suggestion.merging')}
+                    busy={busyGroupId === group.id}
+                    onReview={() => setReviewGroup(group)}
+                    onPrimary={() => void handleMergeGroup(group)}
+                    onDismiss={() => dismiss(group.id)}
+                  />
+                ))}
+                <SectionTitle variant="titleMedium">{t('people.newFaces')}</SectionTitle>
+              </>
+            ) : null
+          }
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
           ListFooterComponent={loadingMore ? <QueueSkeletonCard /> : null}
@@ -198,6 +317,19 @@ export default function ReviewSuggestionsScreen() {
           dismiss(candidate.id);
         }}
         onGone={handleGone}
+      />
+
+      <ReviewStepperSheet
+        visible={reviewGroup !== null}
+        onClose={() => setReviewGroup(null)}
+        mode="group"
+        reference={{
+          faceId: reviewGroup?.target.coverFaceId ?? null,
+          name: reviewGroup?.target.name ?? t('people.unnamed'),
+        }}
+        items={stepperItems}
+        busy={busyReview}
+        onFinish={(verdict) => void handleGroupReviewFinish(verdict)}
       />
 
       <MiniToast message={toast} onDismissed={() => setToast(null)} />

@@ -53,6 +53,22 @@ public static class PeopleEndpoints
             Results.Ok(await people.ListPhotosAsync(principal.GetUserId(), id, page, pageSize, cancellationToken)))
         .WithName("ListPersonPhotos");
 
+        // Manual "assimilate several groups at once" candidates (doc 18 §7.3):
+        // the owner's other people ranked by centroid similarity to this one —
+        // including pairs below the suggestion threshold the review cards never
+        // surface. Feeds the multi-select merge sheet on the person page.
+        group.MapGet("/{id:guid}/similar", async (
+            Guid id,
+            ClaimsPrincipal principal,
+            PersonService people,
+            [FromQuery] float minSimilarity = 0.4f,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            CancellationToken cancellationToken = default) =>
+            Results.Ok(await people.ListSimilarAsync(
+                principal.GetUserId(), id, minSimilarity, page, pageSize, cancellationToken)))
+        .WithName("ListSimilarPeople");
+
         group.MapPatch("/{id:guid}", async (
             Guid id,
             ClaimsPrincipal principal,

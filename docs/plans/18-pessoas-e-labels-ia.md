@@ -246,6 +246,46 @@
 > (200/200). Verificação: build da solution limpo, tsc/vitest/eslint mobile
 > limpos, API reconstruída no compose (health 200).
 >
+> **Round 13 (2026-10-13)** — **assimilar todos os fragmentos de uma pessoa de
+> uma vez** (a IA partia a pessoa em N clusters e o encadeamento das sugestões
+> não os reunia num card só, forçando N merges manuais): (1) **knob dedicado
+> pessoa↔pessoa** — `MlOptions.PersonMergeSuggestThreshold` (default **0.65**,
+> `IPHOTOS_ML__PersonMergeSuggestThreshold`), desacoplado do `min(Suggest, Match)`
+> (0.75 na instância): centróide-a-centróide de dois clusters multi-rosto é sinal
+> mais forte que um rosto solto, então o encadeamento transitivo passa a rodar
+> bem abaixo da barra de rosto→pessoa e cadeias que quebravam (0.65–0.74) agora
+> rendem **um** card; (2) **pares nome↔nome encadeiam** (e componente com 2+
+> nomeadas não é mais descartada) — dois clusters que o usuário nomeou e que são
+> a mesma pessoa real eram o caso permanentemente sem sugestão; alvo = o nomeado
+> com mais faces, sem nomeado o maior; (3) **`GET /api/people/{id}/similar`** —
+> rede de segurança manual: outras pessoas do owner ranqueadas por similaridade
+> de centróide **em SQL via pgvector** (`ORDER BY centroid <=> alvo`, floor
+> `minSimilarity`, paged; raw SQL como `ListTopForOwnerAsync` — o EF não traduz
+> o operador através do value converter `float[]`, e o `SqlQuery` materializa
+> com aliases **snake_case** por causa do naming convention); (4) **mobile**:
+> `/people/review` ganha a seção **"Possible duplicates"** com os cards de grupo
+> (Merge all / Review um a um no stepper / Not now) acima da fila de novos
+> rostos, a row "Revisar sugestões" do hub conta os grupos (1 card = 1 item) e a
+> página da pessoa ganha a ação **"Parecidas"** — `SimilarPeopleSheet` com
+> multi-seleção das pessoas similares e **um** merge-batch para a pessoa atual
+> (direção oposta do sheet "Mesclar com", que funde a pessoa atual em outro
+> alvo). Nota: o `ISuggestionCache` é em memória — o novo limiar vale após
+> restart da API. Testes: `PersonServiceTests` (nome↔nome, 2+ nomeadas num
+> componente, encadeamento 0.65–0.75, knob configurável, `ListSimilarAsync`
+> ordenação/paginação/owner 404/sem centróide — 208) + integração pgvector do
+> ranking (`RepositoriesTests`, 35 no projeto). Verificação: build limpo, suíte
+> backend 430/430, tsc/vitest 49/49 mobile, eslint sem erros novos.
+> **Refinamentos da mesma rodada**: (a) `/people/review` para de recarregar as
+> filas após cada ação — mesclar/revisar um grupo, criar ou atribuir remove o
+> card **localmente** (o `useFocusEffect` re-sincroniza ao voltar; acabou o
+> flash de skeleton a cada aceite); (b) **cache local das pessoas** — novo
+> `stores/people-cache.ts` (zustand persist em SQLite, chave `people-cache`) com
+> a **cabeça das 30 primeiras pessoas** (janela default, nomeadas primeiro);
+> o hub pinta a grade do cache no cold start (skeleton só sem cache) e
+> `prefetchPeopleCovers` aquece o cache persistente de crops com os avatares
+> dessas 30 — avatares instantâneos nas visitas seguintes; janelas filtradas
+> (busca/chips) nunca sobrescrevem o cache.
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e
@@ -581,19 +621,24 @@ sem pessoa do owner, dividida por **destino** como no Google Fotos:
   owner-checked (404 cross-owner), pulam faces já atribuídas e disparam
   recompute exato (centróide/capa/contagem).
 
-**PersonMergeGroups (pessoa ↔ pessoa, Rounds 4–5)** — um `ClusterThreshold`
+**PersonMergeGroups (pessoa ↔ pessoa, Rounds 4–5, 13)** — um `ClusterThreshold`
 rígido (0.90 na instância) costuma partir uma pessoa em vários grupos "Unnamed"
-cujos centróides continuam próximos. Pares com centróides `≥ min(Suggest, Match)`
-encadeiam **transitivamente** (A≈B≈C via union-find; pares nome↔nome nunca geram
-aresta — e componente com 2+ nomeadas é descartada) e viram **um** card só
-`PersonMergeGroupDto` (`target` = lado nomeado ou o maior; `members` ordenados
-por faceCount; `MinSimilarity` = elo mais fraco do grupo, exibido como % match
-conservador). A fila ordena por **total de faces** (os duplicados óbvios da
-biblioteca vêm primeiro), cap de 20. Id = SHA-256 truncado com tag `"pmg"` +
-ids dos membros ordenados. Nada é mesclado automaticamente: o aceite (um clique)
-vira **um** `POST /api/people/merge-batch` atômico com todos os membros (Round 7;
-antes eram N chamadas de `POST /api/people/merge`, uma por membro, cada uma
-recarregando todos os embeddings do owner — lento e não-atômico). **UI (web)**: a revisão mora
+cujos centróides continuam próximos. Pares com centróides `≥ PersonMergeSuggestThreshold`
+(**0.65 default; knob próprio desde o Round 13 — desacoplado do `min(Suggest, Match)`
+= 0.75 da instância porque centróide-a-centróide de clusters multi-rosto é sinal
+mais forte que rosto-solto→pessoa**) encadeiam **transitivamente** (A≈B≈C via
+union-find; pares **nome↔nome também encadeiam desde o Round 13** — dois clusters
+que o usuário nomeou e que são a mesma pessoa real eram exatamente o caso que
+exigia N merges manuais) e viram **um** card só
+`PersonMergeGroupDto` (`target` = **o lado nomeado com mais faces; sem nomeado, o
+maior**; `members` ordenados por faceCount; `MinSimilarity` = elo mais fraco do
+grupo, exibido como % match conservador). A fila ordena por **total de faces** (os
+duplicados óbvios da biblioteca vêm primeiro), cap de 20. Id = SHA-256 truncado
+com tag `"pmg"` + ids dos membros ordenados. Nada é mesclado automaticamente: o
+aceite (um clique) vira **um** `POST /api/people/merge-batch` atômico com todos os
+membros (Round 7; antes eram N chamadas de `POST /api/people/merge`, uma por
+membro, cada uma recarregando todos os embeddings do owner — lento e não-atômico).
+**UI (web)**: a revisão mora
 **dentro da página da pessoa** (banner sobre o grid de fotos — "Merge all" no
 alvo, "Merge into X" nos membros, "Not now" persistido no mesmo localStorage);
 o hub `/people` volta a ser grade uniforme de círculos com um **ponto** nos tiles
@@ -612,6 +657,13 @@ centroide do membro vs. do alvo). **Listagem colapsada**: membros de um grupo
 pendente somem da grade do hub e aparecem como linha "+N groups · review" no tile
 do alvo — uma entrada por pessoa visual, sem mudar dado; dispensar a revisão
 devolve os tiles.
+
+**Rede de segurança manual (Round 13)** — para os fragmentos que o encadeamento
+ainda deixar de fora, `GET /api/people/{id}/similar` ranqueia as outras pessoas do
+owner por similaridade de centróide **em SQL via pgvector** (`ORDER BY centroid
+<=> alvo`, floor `minSimilarity`, paged) e a página da pessoa no mobile abre o
+sheet "Parecidas": multi-seleção + **um** `merge-batch` funde tudo de uma vez —
+o usuário corrigindo a IA sem gate de threshold.
 
 ### 7.5 Sinais auxiliares de agrupamento — timestamp/burst (design, não implementado)
 
@@ -654,6 +706,7 @@ diferentes. O uso correto é como **peso de grafo**, não regra dura:
 | `GET /api/people` | `[{ id, name, faceCount, coverFaceId }]` — nomeadas primeiro, depois Unnamed (faceCount desc); com `?page=&pageSize=` devolve `PagedResult` (Round 8) e aceita filtros `?name=` (substring case-insensitive) e `?isNamed=` (`true`/`false`, Round 9) — paginação e filtros rodam em SQL |
 | `GET /api/people/{id}` | detalhe: `PersonDetailDto` com `Confidence` (similaridade média membro→centroide, 0..1; null sem centróide) |
 | `GET /api/people/{id}/photos` | fotos da pessoa (paged, mesmo formato de `GET /api/photos`) |
+| `GET /api/people/{id}/similar` | outras pessoas do owner ordenadas por similaridade de centróide (`?minSimilarity=0.4&page=&pageSize=` → `PagedResult<PersonSimilarDto>`; ranking em SQL via pgvector `<=>`, Round 13) — alimenta o sheet manual "mesclar várias de uma vez" |
 | `PATCH /api/people/{id}` | `{ name: string \| null }` |
 | `POST /api/people/merge` | `{ sourceId, targetId }` — atômico (uma transação) |
 | `POST /api/people/merge-batch` | `{ targetId, sourceIds[] }` — funde todas as origens no alvo numa transação só (Round 7) |

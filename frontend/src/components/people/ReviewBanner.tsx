@@ -24,6 +24,9 @@ interface ReviewBannerProps {
   primaryBusyLabel?: string;
   /** Any review action is in flight — every button disables. */
   busy?: boolean;
+  /** Kill the built-in horizontal margin — for banners living inside an
+   * already-inset list (the review page cards). */
+  flush?: boolean;
   onReview: () => void;
   onPrimary: () => void;
   /** "Not now" — dismisses the suggestion for good (persisted). */
@@ -32,8 +35,9 @@ interface ReviewBannerProps {
 
 /** The "same person?" review banner above the person's photo grid (doc 18
  * §7.4, web parity): face strip + copy + Review / primary action / Not now.
- * The three banner variants (faces, group target, group member) only differ
- * in copy and handlers, so the screen composes those and this stays dumb. */
+ * The banner variants (faces, group target, group member, review-page group
+ * card) only differ in copy and handlers, so the screen composes those and
+ * this stays dumb. */
 export function ReviewBanner({
   faces,
   total,
@@ -43,6 +47,7 @@ export function ReviewBanner({
   primaryLabel,
   primaryBusyLabel,
   busy = false,
+  flush = false,
   onReview,
   onPrimary,
   onDismiss,
@@ -50,7 +55,7 @@ export function ReviewBanner({
   const { t } = useTranslation();
 
   return (
-    <Banner entering={FadeIn.duration(200)}>
+    <Banner entering={FadeIn.duration(200)} $flush={flush}>
       <TopRow>
         <FaceStrip faceIds={faces} total={total} />
         <Info>

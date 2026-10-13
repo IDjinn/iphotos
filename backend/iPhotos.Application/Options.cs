@@ -257,6 +257,15 @@ public sealed class MlOptions
     /// what the review UI asks the user to confirm.</summary>
     public float SuggestThreshold { get; set; } = 0.65f;
 
+    /// <summary>Cosine similarity between two persons' CENTROIDS for "same person?"
+    /// person-merge groups (doc 18 §7.4): the transitive chaining that folds one
+    /// real person's split clusters into a single review card. Decoupled from
+    /// SuggestThreshold on purpose — centroid-to-centroid of two multi-face
+    /// clusters is a much stronger signal than one unassigned face, so it chains
+    /// well below the face-suggestion bar. Named↔named pairs chain too: the card
+    /// is only a suggestion, nothing merges before the user confirms it.</summary>
+    public float PersonMergeSuggestThreshold { get; set; } = 0.65f;
+
     /// <summary>
     /// When true, the periodic cluster job re-runs the FULL Chinese Whispers pass
     /// over every face and may move faces the user assigned manually (repair tool

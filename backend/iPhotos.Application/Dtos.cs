@@ -247,6 +247,14 @@ public sealed record PersonMergeGroupDto(
     IReadOnlyList<PersonMergeMemberDto> Members,
     float MinSimilarity);
 
+/// <summary>One of the owner's other people ranked by centroid similarity to a
+/// given person (doc 18 §7.3): the candidate list behind the manual "merge
+/// several groups into this person" sheet — deliberately NOT threshold-gated by
+/// the suggestion pass, so below-the-bar duplicates the cards never surface can
+/// still be folded in one action. Ranked closest first; Similarity = 1 − pgvector
+/// cosine distance (0..1).</summary>
+public sealed record PersonSimilarDto(Guid Id, string? Name, Guid? CoverFaceId, int FaceCount, float Similarity);
+
 /// <summary>The review queue split by destination (doc 18 §7.4): faces that look
 /// like an existing person (Merges, grouped per person), faces that would form a
 /// new person (NewPeople), and existing people that look like each other

@@ -80,6 +80,18 @@ export interface PersonSuggestions {
   personMergeGroups: PersonMergeGroup[];
 }
 
+/** One of the owner's other people ranked by centroid similarity to a given
+ * person (doc 18 §7.3) — the manual "merge several groups into this one"
+ * candidates, including below-threshold pairs the review cards never surface. */
+export interface PersonSimilar {
+  id: string;
+  name: string | null;
+  coverFaceId: string | null;
+  faceCount: number;
+  /** Cosine similarity of this person's centroid to the reference one (0..1). */
+  similarity: number;
+}
+
 /** Per-face verdicts from the one-by-one review (doc 18 §7.4). */
 export interface FaceReviewSubmission {
   acceptedFaceIds: string[];
@@ -137,6 +149,20 @@ export async function listPersonPhotos(
 ): Promise<PagedResult<CloudPhoto>> {
   return apiJson<PagedResult<CloudPhoto>>(`/api/people/${personId}/photos`, {
     params: { page, pageSize },
+  });
+}
+
+/** Paged candidates for the manual "assimilate several groups at once" sheet:
+ * the owner's other people ranked by centroid similarity (closest first),
+ * floor-filtered by minSimilarity. */
+export async function listSimilarPeople(
+  personId: string,
+  minSimilarity = 0.4,
+  page = 1,
+  pageSize = 20,
+): Promise<PagedResult<PersonSimilar>> {
+  return apiJson<PagedResult<PersonSimilar>>(`/api/people/${personId}/similar`, {
+    params: { minSimilarity, page, pageSize },
   });
 }
 

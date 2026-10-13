@@ -229,4 +229,60 @@ public sealed class RepositoriesTests(PostgresFixture fixture)
 
         (await repository.GetByEmailAsync("missing@test.com")).ShouldBeNull();
     }
+
+    /// <summary>512-d unit vector with the cosine of (first, second) in the first
+    /// two axes — centroids live in vector(512) columns, so tests need the full width.</summary>
+    private static float[] Unit512(float first, float second)
+    {
+        var norm = MathF.Sqrt(first * first + second * second);
+        var vector = new float[512];
+        vector[0] = first / norm;
+        vector[1] = second / norm;
+        return vector;
+    }
+
+    [Fact]
+    public async Task PersonRepository_PageSimilarForOwnerAsync_RanksByCentroidSimilarity()
+    {
+        // The pgvector raw-SQL ranking behind the "merge several groups at once"
+        // sheet (doc 18 §7.3): closest first, floor-filtered, owner-scoped.
+        await using var db = await TestDatabase.CreateAsync(fixture);
+        var user = NewUser();
+        db.Users.Add(user);
+
+        var alice = Person.Create(user.Id, Now);
+        alice.Name = "Alice";
+        alice.Centroid = Unit512(1, 0);
+        alice.FaceCount = 10;
+        db.Persons.Add(alice);
+
+        var close = Person.Create(user.Id, Now);
+        close.Centroid = Unit512(0.97f, 0.24f);
+        close.FaceCount = 4;
+        db.Persons.Add(close);
+
+        var far = Person.Create(user.Id, Now);
+        far.Centroid = Unit512(0, 1);
+        far.FaceCount = 6;
+        db.Persons.Add(far);
+
+        var foreignUser = NewUser();
+        db.Users.Add(foreignUser);
+        var foreign = Person.Create(foreignUser.Id, Now);
+        foreign.Centroid = Unit512(1, 0);
+        foreign.FaceCount = 3;
+        db.Persons.Add(foreign);
+
+        await db.SaveChangesAsync();
+
+        var repository = new PersonRepository(db);
+        var page = await repository.PageSimilarForOwnerAsync(
+            user.Id, alice.Id, alice.Centroid!, minSimilarity: 0.4f, page: 1, pageSize: 10);
+
+        page.TotalCount.ShouldBe(1);
+        var similar = page.Items.ShouldHaveSingleItem();
+        similar.Id.ShouldBe(close.Id);
+        similar.Similarity.ShouldBeGreaterThanOrEqualTo(0.9f);
+        similar.CoverFaceId.ShouldBeNull();
+    }
 }

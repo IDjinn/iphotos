@@ -55,6 +55,11 @@ import {
 } from '@/data/people-repository';
 import { useTranslation } from '@/i18n/hook';
 import { useFaceCropSource } from '@/hooks/use-cloud-file';
+import {
+  PEOPLE_CACHE_SIZE,
+  prefetchPeopleCovers,
+  usePeopleCacheStore,
+} from '@/stores/people-cache';
 import { useSuggestionDismissalsStore } from '@/stores/suggestion-dismissals';
 import { columnsFor } from '@/theme/scale';
 import { useTheme } from '@/theme/context';
@@ -106,6 +111,9 @@ export default function PeopleScreen() {
   const [renaming, setRenaming] = useState<Person | null>(null);
 
   const dismissed = useSuggestionDismissalsStore((s) => s.dismissed);
+  // SQLite-backed persist rehydrates synchronously — the cached head is
+  // available on the very first render.
+  const cachedPeople = usePeopleCacheStore((s) => s.people);
 
   const nextPage = useRef(2);
   // Bumped by every page-1 (window) load; in-flight loads compare and drop
@@ -141,6 +149,13 @@ export default function PeopleScreen() {
       setPeople(page.items);
       setTotalCount(page.totalCount);
       setHasMore(page.items.length < page.totalCount);
+      // Offline-first head: only the default window feeds the persisted cache
+      // and the cover prefetch — a filtered window must not overwrite it.
+      if (!f.name && f.isNamed == null) {
+        const head = page.items.slice(0, PEOPLE_CACHE_SIZE);
+        usePeopleCacheStore.getState().setPeople(head);
+        prefetchPeopleCovers(head);
+      }
     } catch (err) {
       if (seq !== windowSeq.current) return;
       // Surface the error only when there is nothing on screen to keep.
@@ -238,6 +253,9 @@ export default function PeopleScreen() {
   const activeGroups = (suggestions?.personMergeGroups ?? []).filter(
     (group) => !dismissed.includes(group.id),
   );
+  // The review row counts every pending §7.4 item: new-face clusters plus the
+  // "same person?" groups (each group is one item — one accept, one action).
+  const reviewTotal = newPeople.length + activeGroups.length;
   // Review dot: every person involved in a live face-merge or group suggestion.
   const pendingIds = new Set<string>();
   (suggestions?.merges ?? []).forEach((merge) => {
@@ -250,11 +268,20 @@ export default function PeopleScreen() {
     group.members.forEach((member) => pendingIds.add(member.personId));
   });
 
-  const showSkeleton = people === null && !error;
+  // The persisted cache paints the grid on cold start while the first window
+  // loads — the empty/no-match states wait for the fetch, not for the cache.
+  const gridPeople = people ?? cachedPeople;
+  const windowPending = people === null;
+  const showSkeleton = gridPeople === null && !error;
   const showNoMatches =
-    !showSkeleton && !error && hasWindow && (people?.length ?? 0) === 0;
+    !showSkeleton && !error && !windowPending && hasWindow && (people?.length ?? 0) === 0;
   const showEmpty =
-    !showSkeleton && !error && !hasWindow && (people?.length ?? 0) === 0 && newPeople.length === 0;
+    !showSkeleton &&
+    !error &&
+    !windowPending &&
+    !hasWindow &&
+    (people?.length ?? 0) === 0 &&
+    newPeople.length === 0;
 
   return (
     <Screen $insetTop={insets.top}>
@@ -290,7 +317,7 @@ export default function PeopleScreen() {
         {/* The suggestions endpoint is the slow half — the affordance renders
           immediately (disabled, skeleton strip) so it never pops in late. The
           queue itself lives on the /people/review page. */}
-        {suggestionsLoading || newPeople.length > 0 ? (
+        {suggestionsLoading || reviewTotal > 0 ? (
           <ReviewSuggestionsButton
             entering={FadeIn.duration(Durations.normal)}
             $loading={suggestionsLoading}
@@ -315,7 +342,7 @@ export default function PeopleScreen() {
             </ReviewSuggestionsLabel>
             {!suggestionsLoading ? (
               <ThemedText variant="bodySmall" color="accent">
-                {tCount('people.reviewCount', newPeople.length, { count: newPeople.length })}
+                {tCount('people.reviewTotal', reviewTotal, { count: reviewTotal })}
               </ThemedText>
             ) : null}
             {!suggestionsLoading ? (
@@ -361,7 +388,7 @@ export default function PeopleScreen() {
           <FlatList<Person>
             key={columns}
             numColumns={columns}
-            data={people ?? []}
+            data={gridPeople ?? []}
             keyExtractor={(person) => person.id}
             renderItem={({ item }) => (
               <PersonCardItem

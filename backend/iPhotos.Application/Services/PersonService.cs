@@ -63,6 +63,33 @@ public sealed class PersonService(
             await ConfidenceAsync(ownerId, person, cancellationToken));
     }
 
+    /// <summary>The owner's other people ranked by centroid similarity to this one
+    /// (doc 18 §7.3) — the manual "assimilate several groups at once" candidates.
+    /// Deliberately below-suggestion-threshold: this is the user correcting the AI
+    /// for the fragments the chaining missed, so the bar is a display floor, not a
+    /// review gate.</summary>
+    public async Task<PagedResult<PersonSimilarDto>> ListSimilarAsync(
+        Guid ownerId,
+        Guid personId,
+        float minSimilarity,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        minSimilarity = Math.Clamp(minSimilarity, 0f, 1f);
+
+        var person = await GetPersonOrThrowAsync(ownerId, personId, cancellationToken);
+        if (person.Centroid is null)
+        {
+            return new PagedResult<PersonSimilarDto>([], page, pageSize, 0);
+        }
+
+        return await persons.PageSimilarForOwnerAsync(
+            ownerId, personId, person.Centroid, minSimilarity, page, pageSize, cancellationToken);
+    }
+
     public async Task<PagedResult<PhotoDto>> ListPhotosAsync(
         Guid ownerId, Guid personId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
@@ -260,9 +287,10 @@ public sealed class PersonService(
     /// SuggestThreshold become per-person <see cref="MergeSuggestionDto"/> groups
     /// ("is this the same person as X?"); the leftovers cluster via Chinese
     /// Whispers into <see cref="PersonSuggestionDto"/> candidates for a new
-    /// person; and existing people whose centroids clear the threshold become
-    /// <see cref="PersonMergeSuggestionDto"/> pairs (the split-into-many-Unnamed
-    /// case). Purely derived (nothing persisted), so a dismissed group can
+    /// person; and existing people whose centroids chain transitively above
+    /// PersonMergeSuggestThreshold become one <see cref="PersonMergeGroupDto"/>
+    /// card per real person (the split-into-many-clusters case, named people
+    /// included). Purely derived (nothing persisted), so a dismissed group can
     /// reappear until its faces are assigned or its members change — clients
     /// keep the dismissal list keyed by the stable suggestion id.
     /// </summary>
@@ -402,11 +430,15 @@ public sealed class PersonService(
         //    person into several "Unnamed" groups whose centroids still sit close
         //    together. Groups chain transitively (A≈B, B≈C) into ONE review card
         //    so the obvious duplicates surface first — the queue is ordered by
-        //    total faces, not by pair score. Named↔named links are excluded (the
-        //    user's explicit structure) and a component with two named members is
-        //    skipped entirely. Nothing is merged here: the card is the single
+        //    total faces, not by pair score. Chaining runs at its own, lower
+        //    threshold (PersonMergeSuggestThreshold): centroid-to-centroid of two
+        //    multi-face clusters is a much stronger signal than a lone unassigned
+        //    face, and named↔named pairs chain too — two clusters the user named
+        //    that are really one person are exactly the case that otherwise needs
+        //    N manual merges. Nothing is merged here: the card is the single
         //    confirmation that moves every member into the target.
         var mergeable = withCentroid.Where(p => p.FaceCount > 0).ToList();
+        var mergeThreshold = options.Value.PersonMergeSuggestThreshold;
         var indexOf = new Dictionary<Guid, int>(mergeable.Count);
         for (var i = 0; i < mergeable.Count; i++)
         {
@@ -433,13 +465,9 @@ public sealed class PersonService(
             for (var j = i + 1; j < mergeable.Count; j++)
             {
                 var (a, b) = (mergeable[i], mergeable[j]);
-                if (a.Name is not null && b.Name is not null)
-                {
-                    continue;
-                }
 
                 var score = TensorPrimitives.CosineSimilarity(a.Centroid!, b.Centroid!);
-                if (score < threshold)
+                if (score < mergeThreshold)
                 {
                     continue;
                 }
@@ -476,13 +504,12 @@ public sealed class PersonService(
                 continue;
             }
 
-            var named = members.Where(m => m.Name is not null).ToList();
-            if (named.Count > 1)
-            {
-                continue;
-            }
-
-            var target = named.Count == 1 ? named[0] : members.MaxBy(m => m.FaceCount)!;
+            // The named side absorbs: when several named people chained together,
+            // the biggest named one keeps the name and every other member — named
+            // or not — folds in. All-unnamed groups keep the largest-cluster rule.
+            var target = members.Where(m => m.Name is not null)
+                .OrderByDescending(m => m.FaceCount)
+                .FirstOrDefault() ?? members.MaxBy(m => m.FaceCount)!;
             var targetCentroid = target.Centroid!;
             personMergeGroups.Add(new PersonMergeGroupDto(
                 SuggestionId(members.Select(m => m.Id).ToList()),

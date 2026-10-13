@@ -5,11 +5,11 @@ import { ThemedText } from '@/components/ThemedText';
 
 /** Review banner card (doc 18 §7.4) — sits above the person photo grid. */
 
-export const Banner = styled(Animated.View)`
+export const Banner = styled(Animated.View)<{ $flush?: boolean }>`
   flex-direction: column;
   gap: ${({ theme }) => theme.space[3]}px;
   padding: ${({ theme }) => theme.space[3]}px;
-  margin-horizontal: ${({ theme }) => theme.space[3]}px;
+  margin-horizontal: ${({ theme, $flush }) => ($flush ? 0 : theme.space[3])}px;
   margin-bottom: ${({ theme }) => theme.space[2]}px;
   border-radius: ${({ theme }) => theme.radius.lg}px;
   border-width: ${({ theme }) => theme.border.width}px;
