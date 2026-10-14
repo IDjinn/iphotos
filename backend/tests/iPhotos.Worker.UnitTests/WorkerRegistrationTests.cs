@@ -36,14 +36,14 @@ public class WorkerRegistrationTests
     }
 
     [Fact]
-    public void AddMlJobWorkers_RegistersOneWorkerPerKind_PlusSweeper()
+    public void AddMlJobWorkers_RegistersOneWorkerPerKind_PlusSweepers()
     {
         var services = NewServices();
         services.AddMlJobWorkers();
 
         // TryAddEnumerable dedup (the AddHostedService trap) would collapse the
         // three same-typed MlJobWorker registrations into one — the count pins it.
-        services.Count(d => d.ServiceType == typeof(IHostedService)).ShouldBe(4);
+        services.Count(d => d.ServiceType == typeof(IHostedService)).ShouldBe(5);
     }
 
     [Fact]
@@ -54,8 +54,10 @@ public class WorkerRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         var hosted = provider.GetServices<IHostedService>().ToList();
-        hosted.Count.ShouldBe(4);
+        hosted.Count.ShouldBe(5);
         hosted.OfType<MlJobWorker>().Count().ShouldBe(3);
+        hosted.OfType<MlBackfillSweeper>().Count().ShouldBe(1);
+        hosted.OfType<FaceRecropSweeper>().Count().ShouldBe(1);
     }
 
     [Fact]

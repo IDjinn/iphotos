@@ -172,6 +172,11 @@ services:
       # photo's preview from S3. Flip IPHOTOS_AI_BACKFILL_ENABLED=true to index
       # the pre-existing library.
       Ai__BackfillEnabled: ${IPHOTOS_AI_BACKFILL_ENABLED:-false}
+      # Face-crop repair pass (doc 18 Round 15): one sweep per worker start that
+      # regenerates every stored crop from its persisted bbox with the current
+      # Ml__FaceCropPadding. OFF by default (one S3 GET + PUT per face); flip
+      # IPHOTOS_AI_FACE_RECROP_ENABLED=true, restart, then flip back off.
+      Ai__FaceRecropEnabled: ${IPHOTOS_AI_FACE_RECROP_ENABLED:-false}
       Ml__BaseUrl: ${IPHOTOS_ML_BASE_URL:-http://ml:8080}
       Ml__ApiKey: ${IPHOTOS_ML_API_KEY:-change-me-ml-api-key}
       # Recognition tuning (doc 18 §6.3): detection confidence/size filters and the
@@ -180,6 +185,9 @@ services:
       # merge more aggressively. Worker-only — the api never runs ML jobs.
       Ml__MinDetScore: ${IPHOTOS_ML__MIN_DET_SCORE:-0.5}
       Ml__MinFaceSizePx: ${IPHOTOS_ML__MIN_FACE_SIZE_PX:-40}
+      # Face-crop margin (fraction of the face size per side): 0.4 ≈ 1.8× the
+      # face tall, showing hair/neck so the round avatars read as a head.
+      Ml__FaceCropPadding: ${IPHOTOS_ML__FACE_CROP_PADDING:-0.4}
       Ml__MatchThreshold: ${IPHOTOS_ML__MATCH_THRESHOLD:-0.55}
       Ml__ClusterThreshold: ${IPHOTOS_ML__CLUSTER_THRESHOLD:-0.55}
       Ml__MinClusterFaces: ${IPHOTOS_ML__MIN_CLUSTER_FACES:-2}

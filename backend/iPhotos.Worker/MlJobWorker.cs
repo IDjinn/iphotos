@@ -261,3 +261,114 @@ public sealed class MlBackfillSweeper(
         }
     }
 }
+
+/// <summary>
+/// One-shot face-crop repair pass (Ai:FaceRecropEnabled, runs once per worker
+/// start): regenerates every stored crop from its persisted detection bbox with
+/// the current Ml:FaceCropPadding, overwriting the crop blobs in place. Exists
+/// because the faces job never revisits photos that already have face rows, so a
+/// crop-geometry change (doc 18 §6.2) would otherwise only reach new detections.
+/// No DB writes — bboxes and crop paths are immutable; only the JPEGs change.
+/// </summary>
+public sealed class FaceRecropSweeper(
+    IServiceScopeFactory scopeFactory,
+    IOptions<WorkerOptions> options,
+    IOptions<AiOptions> aiOptions,
+    IOptions<MlOptions> mlOptions,
+    ILogger<FaceRecropSweeper> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (!aiOptions.Value.FaceRecropEnabled)
+        {
+            return;
+        }
+
+        var padding = mlOptions.Value.FaceCropPadding;
+        var batchSize = Math.Max(1, options.Value.MlBackfillBatchSize);
+        logger.LogInformation("Face recrop pass started (padding {Padding}, batch {Batch})", padding, batchSize);
+
+        var done = 0;
+        var totalFaces = 0;
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var sp = scope.ServiceProvider;
+                var batch = await sp.GetRequiredService<IMlJobRepository>()
+                    .ListReadyPhotosWithFacesAsync(batchSize, done, stoppingToken);
+                if (batch.Count == 0)
+                {
+                    break;
+                }
+
+                var faces = sp.GetRequiredService<IFaceRepository>();
+                var cropper = sp.GetRequiredService<IFaceCropper>();
+                var blobs = sp.GetRequiredService<IBlobStorage>();
+
+                foreach (var (photoId, ownerId) in batch)
+                {
+                    try
+                    {
+                        totalFaces += await RecropPhotoAsync(
+                            photoId, ownerId, padding, faces, cropper, blobs, stoppingToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // One missing/corrupt preview must not abort the pass.
+                        logger.LogWarning(ex, "Face recrop failed for photo {PhotoId}; skipping", photoId);
+                    }
+                }
+
+                done += batch.Count;
+                logger.LogInformation(
+                    "Face recrop progress: {Photos} photos, {Faces} crops regenerated", done, totalFaces);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Shutdown mid-pass: restart with the flag still on to resume.
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Face recrop pass crashed after {Photos} photos", done);
+        }
+
+        logger.LogInformation(
+            "Face recrop pass finished: {Photos} photos, {Faces} crops; turn Ai:FaceRecropEnabled off",
+            done, totalFaces);
+    }
+
+    /// <summary>Re-crops every face of one photo from its stored bbox. The preview is
+    /// downloaded once and rewound between crops (ImageSharp reads whole-stream).</summary>
+    private static async Task<int> RecropPhotoAsync(
+        Guid photoId,
+        Guid ownerId,
+        float padding,
+        IFaceRepository faces,
+        IFaceCropper cropper,
+        IBlobStorage blobs,
+        CancellationToken cancellationToken)
+    {
+        var photoFaces = await faces.ListByPhotoAsync(photoId, cancellationToken);
+        if (photoFaces.Count == 0)
+        {
+            return 0;
+        }
+
+        await using var preview = await blobs.OpenReadAsync(
+            BlobPaths.Preview(ownerId, photoId), cancellationToken);
+        foreach (var face in photoFaces)
+        {
+            preview.Position = 0;
+            var (x, y, width, height) = FaceCropGeometry.Expand(
+                face.BboxX, face.BboxY, face.BboxW, face.BboxH, padding);
+            await using var crop = await cropper.CropAsync(
+                preview, x, y, width, height, FaceProcessingService.FaceCropLongEdge, cancellationToken);
+            await blobs.PutAsync(face.CropBlobPath, crop, cancellationToken);
+        }
+
+        return photoFaces.Count;
+    }
+}

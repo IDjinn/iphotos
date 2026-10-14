@@ -223,6 +223,15 @@ public sealed class AiOptions
     /// blob storage (S3 GETs). Turn on to index the existing library.
     /// </summary>
     public bool BackfillEnabled { get; set; }
+
+    /// <summary>
+    /// One-shot repair pass (run once per worker start): regenerates every stored
+    /// face crop from its persisted bbox with the current Ml:FaceCropPadding,
+    /// overwriting the crop blobs in place. Off by default — each face costs one
+    /// preview download + one crop upload. Flip on and restart the worker when
+    /// the crop geometry changes; flip off after the pass completes.
+    /// </summary>
+    public bool FaceRecropEnabled { get; set; }
 }
 
 /// <summary>Face inference service connection + clustering thresholds (doc 18 §6.3).</summary>
@@ -241,6 +250,13 @@ public sealed class MlOptions
 
     /// <summary>Minimum face bbox width in preview pixels (junk/rejects tiny backs-of-heads).</summary>
     public float MinFaceSizePx { get; set; } = 40;
+
+    /// <summary>Margin added around the detection bbox when cropping face thumbnails,
+    /// as a fraction of the face size per side (0.4 → crop is ~1.8× the face tall).
+    /// Detector bboxes are tight (eyebrows→chin); the margin shows hair/neck so the
+    /// round avatars read as a head instead of a peeled face. Applies to new crops
+    /// and to the recrop sweeper (Ai:FaceRecropEnabled).</summary>
+    public float FaceCropPadding { get; set; } = 0.4f;
 
     /// <summary>Cosine similarity to a person centroid for incremental assignment.</summary>
     public float MatchThreshold { get; set; } = 0.55f;

@@ -777,6 +777,9 @@ public sealed class InMemoryMlJobRepository : IMlJobRepository
 
     public Task<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>> ListReadyPhotosWithoutLabelsAsync(int limit, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>>([]);
+
+    public Task<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>> ListReadyPhotosWithFacesAsync(int limit, int offset, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>>([]);
 }
 
 /// <summary>MlJobEnqueuer factory for service tests: disabled by default (no jobs

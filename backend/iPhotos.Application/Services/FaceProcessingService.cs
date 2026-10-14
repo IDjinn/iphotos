@@ -14,6 +14,27 @@ public interface IMlJobHandler
 }
 
 /// <summary>
+/// Face-crop rectangle shared by the faces job and the recrop sweep: the detector
+/// bbox is tight (eyebrows→chin), so crops expand it by a padding fraction per
+/// side to show hair and neck — what the round avatars expect (doc 18 §6.2).
+/// </summary>
+public static class FaceCropGeometry
+{
+    /// <summary>Expands the detection bbox by <paramref name="padding"/> × face size on
+    /// every side (0.4 → ~1.8× the face tall/wide); negative padding counts as 0.
+    /// Clamping to image bounds happens in the cropper, so an expanded rect may fall
+    /// (partially) outside the image.</summary>
+    public static (float X, float Y, float Width, float Height) Expand(
+        float x, float y, float width, float height, float padding)
+    {
+        padding = Math.Max(0f, padding);
+        var padX = Math.Max(0f, width) * padding;
+        var padY = Math.Max(0f, height) * padding;
+        return (x - padX, y - padY, width + 2 * padX, height + 2 * padY);
+    }
+}
+
+/// <summary>
 /// Processes one faces job (doc 18 §6.2): runs detection over the photo's preview
 /// variant, stores face rows + crops, does incremental person assignment against
 /// stored centroids and schedules an owner reclustering pass. Owns the job's state
@@ -80,6 +101,7 @@ public sealed class FaceProcessingService(
             var storedFaces = new List<PhotoFace>(accepted.Count);
             if (accepted.Count > 0)
             {
+                // The persisted bbox stays the raw detection; only the crop grows.
                 await using var preview = await OpenInputAsync(photo.Id, MlInputKind.Preview, previewPath, cancellationToken);
                 foreach (var detection in accepted)
                 {
@@ -90,8 +112,10 @@ public sealed class FaceProcessingService(
                     face.CropBlobPath = BlobPaths.FaceCrop(photo.OwnerId, photo.Id, face.Id);
 
                     preview.Position = 0;
+                    var (cropX, cropY, cropW, cropH) = FaceCropGeometry.Expand(
+                        detection.X, detection.Y, detection.Width, detection.Height, ml.FaceCropPadding);
                     await using var crop = await cropper.CropAsync(
-                        preview, detection.X, detection.Y, detection.Width, detection.Height, FaceCropLongEdge, cancellationToken);
+                        preview, cropX, cropY, cropW, cropH, FaceCropLongEdge, cancellationToken);
                     await blobStorage.PutAsync(face.CropBlobPath, crop, cancellationToken);
 
                     storedFaces.Add(face);

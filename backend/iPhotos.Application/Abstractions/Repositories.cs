@@ -323,4 +323,10 @@ public interface IMlJobRepository
 
     /// <summary>Batch of Ready photos (oldest first) without labels yet — backfill sweep.</summary>
     Task<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>> ListReadyPhotosWithoutLabelsAsync(int limit, CancellationToken cancellationToken = default);
+
+    /// <summary>Paged Ready photos (oldest first) that HAVE face rows — face-crop
+    /// recrop sweep. Offset paging is stable enough for that pass: it writes
+    /// nothing, so rows don't move while it runs.</summary>
+    Task<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>> ListReadyPhotosWithFacesAsync(
+        int limit, int offset, CancellationToken cancellationToken = default);
 }

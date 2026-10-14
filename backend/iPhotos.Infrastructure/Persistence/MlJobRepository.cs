@@ -98,4 +98,19 @@ public sealed class MlJobRepository(PhotosDbContext db) : IMlJobRepository
             .ToListAsync(cancellationToken);
         return rows.Select(r => (r.PhotoId, r.OwnerId)).ToList();
     }
+
+    public async Task<IReadOnlyList<(Guid PhotoId, Guid OwnerId)>> ListReadyPhotosWithFacesAsync(int limit, int offset, CancellationToken cancellationToken = default)
+    {
+        var rows = await db.Database
+            .SqlQuery<BackfillPhotoRow>($"""
+                SELECT p.id AS photo_id, p.owner_id AS owner_id
+                FROM photos p
+                WHERE p.state = 'Ready' AND p.media_type = 'Photo'
+                  AND EXISTS (SELECT 1 FROM photo_faces f WHERE f.photo_id = p.id)
+                ORDER BY p.created_at
+                LIMIT {limit} OFFSET {offset}
+                """)
+            .ToListAsync(cancellationToken);
+        return rows.Select(r => (r.PhotoId, r.OwnerId)).ToList();
+    }
 }

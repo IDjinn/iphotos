@@ -298,6 +298,20 @@
 > janelas acumuladas; invalidações por prefixo `["people"]` continuam
 > alcançando o hub paginado e o merge dialog integral do `person-screen`.
 >
+> **Round 15 (2026-10-13)** — **padding no crop de rosto**: o crop usava o bbox
+> bruto do SCRFD (apertado, sobrancelha→queixo) e o avatar circular cortava
+> testa/pescoço — agora `Ml:FaceCropPadding` (default 0.4 ≈ 1.8× o rosto) expande
+> o bbox antes de recortar (`FaceCropGeometry.Expand`; mostra cabelo/pescoço, o
+> bbox persistido segue raw e o clamp nas bordas fica no cropper). Fotos já
+> processadas nunca são revisitadas pelo job de faces, então `Ai:FaceRecropEnabled`
+> (default false) liga o `FaceRecropSweeper` — **um passe por start do worker** que
+> regenera todos os crops a partir do bbox armazenado, sobrescrevendo os blobs
+> (sem migration, sem escrita no banco; desligar a flag depois). Mobile: o inset
+> de 12% do `FaceAvatar` cai para 4% (o crop já traz margem própria). O cache
+> persistente de crops no device não é invalidado (crops imutáveis por face id) —
+> limpar o armazenamento do app re-baixa os novos. Testes: `FaceCropGeometryTests`
+> (4), `ImageSharpFaceCropperTests` (3, clamp de bbox expandido).
+>
 > Depende de: 09 (backend, fotos `Ready` com variante `preview`) · Alimenta: 07 (settings), 05 (labels/busca semântica)
 > Objetivo: replicar o "People" do Google Fotos — detectar rostos, agrupar fotos da
 > mesma pessoa por semelhança facial, deixar o usuário nomear/mesclar pessoas — e
@@ -511,9 +525,13 @@ CREATE INDEX idx_ml_jobs_state ON ml_jobs (state, created_at);
   (Kind `faces`), lanes dedicadas (2 bastam), wall-clock CTS (budget ~2 min/job),
   retry ≤ 3. Fluxo: baixa o `preview` via `IBlobStorage` → `POST ml/v1/faces/detect`
   → filtra detecções (`detScore ≥ 0.5`, `bbox_w ≥ 40px` no preview) → recorta cada
-  rosto do preview com ImageSharp (160px JPEG q80) e sobe para
+  rosto do preview com ImageSharp (160px JPEG q80; bbox expandido por
+  `FaceCropPadding`, §6.3) e sobe para
   `{owner}/{photo}/faces/{faceId}.jpg` → grava `photo_faces` → atribuição incremental
   (§7.1) → enfileira job `cluster` do owner (se não houver um já `Queued`).
+  Um `FaceRecropSweeper` opt-in (`Ai:FaceRecropEnabled`, um passe por start)
+  regenera os crops já existentes do bbox armazenado — reparo para mudanças de
+  geometria de crop (Round 15).
 - `LabelProcessingWorker`: claim Kind `labels`, lanes 1–2 (latência de VLM é de
   segundos), budget ~5 min. Fluxo: baixa `preview` (ou `thumbnail` 320px, o VLM não
   precisa de 2048px) → `VisionLabeler.ClassifyAsync` (§8) → grava `photo_labels`
@@ -523,9 +541,9 @@ CREATE INDEX idx_ml_jobs_state ON ml_jobs (state, created_at);
 ### 6.3 Configuração (padrão `Options` do backend)
 
 ```jsonc
-"Ai":  { "Enabled": true, "BackfillEnabled": false },
+"Ai":  { "Enabled": true, "BackfillEnabled": false, "FaceRecropEnabled": false },
 "Ml":  { "BaseUrl": "http://ml:8080", "ApiKey": "...", "TimeoutSeconds": 60,
-         "MinDetScore": 0.5, "MinFaceSizePx": 40,
+         "MinDetScore": 0.5, "MinFaceSizePx": 40, "FaceCropPadding": 0.4,
          "MatchThreshold": 0.55, "ClusterThreshold": 0.55, "MinClusterFaces": 2 },
 "Vision": { "BaseUrl": "http://host.docker.internal:11434/v1", "ApiKey": "",
             "Model": "qwen2.5vl:7b", "MaxLabels": 8, "MinScore": 0.4,
@@ -539,6 +557,7 @@ Knobs de reconhecimento — consumidos só pelo worker; no compose ficam exposto
 |---|---|---|---|---|
 | `MinDetScore` | `IPHOTOS_ML__MIN_DET_SCORE` | 0.5 | Confiança mínima da detecção (SCRFD) | Menos falsos rostos; pode descartar rostos difíceis (perfil, pouca luz) |
 | `MinFaceSizePx` | `IPHOTOS_ML__MIN_FACE_SIZE_PX` | 40 | Tamanho mín. do bbox no preview (px) | Menos lixo; rostos pequenos (fotos de grupo) deixam de ser indexados |
+| `FaceCropPadding` | `IPHOTOS_ML__FACE_CROP_PADDING` | 0.4 | Margem ao redor do bbox no crop, fração do tamanho do rosto por lado (Round 15) | Mais contexto no avatar (cabelo/pescoço); rosto menor dentro do círculo |
 | `MatchThreshold` | `IPHOTOS_ML__MATCH_THRESHOLD` | 0.55 | Cosseno mín. p/ atribuir rosto novo a pessoa existente (§7.1) | Grupos mais limpos; mais rostos ficam "Unnamed" até o recluster |
 | `ClusterThreshold` | `IPHOTOS_ML__CLUSTER_THRESHOLD` | 0.55 | Aresta mín. do Chinese Whispers (§7.2) | Separa pessoas com mais facilidade; pode dividir a mesma pessoa em duas |
 | `SuggestThreshold` | `IPHOTOS_ML__SUGGEST_THRESHOLD` | 0.65 | Limite inferior da faixa de revisão "é a mesma pessoa?" (§7.4): rostos sem pessoa agrupados como sugestões | Revisão mais rigorosa; mais rostos ficam sem sugestão |

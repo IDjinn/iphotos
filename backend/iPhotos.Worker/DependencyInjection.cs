@@ -141,6 +141,7 @@ public static class DependencyInjection
             TimeSpan.FromMinutes(Math.Max(1, sp.GetRequiredService<IOptions<WorkerOptions>>().Value.MlLabelJobTimeoutMinutes)),
             sp.GetRequiredService<ILogger<MlJobWorker>>()));
         services.AddHostedService<MlBackfillSweeper>();
+        services.AddHostedService<FaceRecropSweeper>();
         return services;
     }
 
