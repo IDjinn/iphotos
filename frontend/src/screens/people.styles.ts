@@ -117,14 +117,14 @@ export const PersonCardAvatar = styled.View`
   background-color: ${({ theme }) => theme.colors.placeholder};
 `;
 
-/** Inset + contain: the face crop fits the circle with visible breathing room
- * instead of pressing against the edge. */
+/** Cover fills the whole circle — the server-side crop already carries the
+ * face padding (Ml:FaceCropPadding). */
 export const PersonCardImage = styled(Image)`
   position: absolute;
-  top: 12%;
-  right: 12%;
-  bottom: 12%;
-  left: 12%;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
 `;
 
 /** Pending-review dot, top-right of the card with a background ring. */

@@ -13,13 +13,12 @@ export const Circle = styled.View<{ $size: number }>`
   background-color: ${({ theme }) => theme.colors.placeholder};
 `;
 
-/** Small inset so the crop breathes inside the circle — the server-side crop
- * already carries the face padding (Ml:FaceCropPadding), so contain + a hair
- * of margin is enough. */
+/** Cover fills the whole circle — the server-side crop already carries the
+ * face padding (Ml:FaceCropPadding), so the face stays comfortably framed. */
 export const FaceImage = styled(Image)`
   position: absolute;
-  top: 4%;
-  right: 4%;
-  bottom: 4%;
-  left: 4%;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
 `;

@@ -127,13 +127,12 @@ export const PersonRow = styled(Pressable)<{ $pressed: boolean }>`
   opacity: ${({ $pressed }) => ($pressed ? 0.7 : 1)};
 `;
 
-/** Padding + contain (at the usage): the crop fits the circle instead of
- * pressing against the edge. */
+/** Cover fills the whole circle — the server-side crop already carries the
+ * face padding (Ml:FaceCropPadding). */
 export const PersonAvatar = styled(Image)`
   width: ${({ theme }) => theme.ms(44)}px;
   height: ${({ theme }) => theme.ms(44)}px;
   border-radius: ${({ theme }) => theme.radius.full}px;
-  padding: ${({ theme }) => theme.ms(4)}px;
   background-color: ${({ theme }) => theme.colors.placeholder};
 `;
 

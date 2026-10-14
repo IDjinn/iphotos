@@ -454,7 +454,7 @@ function PersonRowItem({
       accessibilityLabel={person.name ?? t('people.unnamed')}
     >
       {source ? (
-        <PersonAvatar source={source} contentFit="contain" recyclingKey={person.id} />
+        <PersonAvatar source={source} contentFit="cover" recyclingKey={person.id} />
       ) : (
         <PersonAvatarFallback>
           <Icon name="person-outline" size={20} color={colors.textSecondary} />

@@ -632,7 +632,7 @@ function MergeTargetRow({ target, onMerge }: { target: Person; onMerge: (target:
       accessibilityLabel={target.name ?? t('people.unnamed')}
     >
       {cover ? (
-        <MergeCircle source={cover} contentFit="contain" recyclingKey={target.id} />
+        <MergeCircle source={cover} contentFit="cover" recyclingKey={target.id} />
       ) : (
         <MergeCirclePlaceholder>
           <Icon name="person" size={20} color={colors.textSecondary} />

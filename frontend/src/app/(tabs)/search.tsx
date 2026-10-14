@@ -327,7 +327,7 @@ function PersonChipItem({ person }: { person: Person }) {
     >
       <PersonChipCircle>
         {cover ? (
-          <PersonChipImage source={cover} contentFit="contain" recyclingKey={person.id} />
+          <PersonChipImage source={cover} contentFit="cover" recyclingKey={person.id} />
         ) : (
           <Icon name="person" size={24} color={colors.textSecondary} />
         )}
