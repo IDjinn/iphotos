@@ -1,0 +1,178 @@
+# VPS deployment for aws-iphotos-cloud-br (Ubuntu 24.04, 2 vCPU, ~1 GB RAM).
+# Same stack as compose.yaml minus the ML service and cloudflared, plus the
+# Next.js web frontend. Public entry is the host WAF/reverse proxy (sentry on
+# :80/:443): it routes /api/* to 127.0.0.1:5000 and everything else to
+# 127.0.0.1:3000, so every published port below is loopback-only.
+#
+# Images are NOT built here: .github/workflows/images.yml builds and publishes
+# them to ghcr.io on every push to master. Redeploy = `pull` + `up -d` below.
+# Pin a build by setting IPHOTOS_IMAGE_TAG=<git sha> in backend/.env.
+#
+# AI/ML is OFF on this box: the VPS has no headroom for the face/label
+# pipelines, so the ml image is not built and Ml__BaseUrl is only dialed if
+# IPHOTOS_AI_ENABLED is ever flipped back to true.
+#
+# Secrets come from backend/.env next to this file (never committed). The
+# server database starts empty; migrations apply automatically on api start.
+#
+# Usage: docker compose -f compose.vps.yaml pull && docker compose -f compose.vps.yaml up -d
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: iphotos
+      POSTGRES_PASSWORD: ${IPHOTOS_PG_PASSWORD:-iphotos}
+      POSTGRES_DB: iphotos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iphotos -d iphotos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 256m
+    # Internal-only: api/worker reach it over the compose network. No host
+    # port — the host's native postgres (sentry WAF storage) owns 127.0.0.1:5432.
+
+  # Standalone blob/object storage. The api and worker talk to it over the
+  # compose network (BlobStorage__Mode=Http), no shared volume needed. With
+  # IPHOTOS_STORAGE_PROVIDER=s3 only zip-import staging touches local disk.
+  storage:
+    image: ghcr.io/idjinn/iphotos-storage:${IPHOTOS_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # ~1 GB host: workstation GC keeps the three .NET services lean.
+      DOTNET_SYSTEM_GC_SERVER: "0"
+      Storage__ApiKey: ${IPHOTOS_STORAGE_API_KEY:?set in backend/.env}
+      Storage__SigningKey: ${IPHOTOS_STORAGE_SIGNING_KEY:?set in backend/.env}
+      Storage__AllowPrivateNetworks: "true" # compose-internal endpoints (api -> storage, filesystem provider)
+      Storage__DefaultProvider: ${IPHOTOS_STORAGE_PROVIDER:-filesystem}
+      # Zip-import staging PUTs stream the whole archive through the storage host,
+      # so its body cap must stay above ZipImport:MaxZipBytes (100 GiB).
+      Storage__MaxBodyBytes: "118111600640"
+      Providers__FileSystem__RootPath: /var/lib/iphotos/objects
+      Providers__S3__Endpoint: ${IPHOTOS_S3_ENDPOINT:-}
+      Providers__S3__Region: ${IPHOTOS_S3_REGION:-us-east-1}
+      Providers__S3__Bucket: ${IPHOTOS_S3_BUCKET:-}
+      Providers__S3__AccessKey: ${IPHOTOS_S3_ACCESS_KEY:-}
+      Providers__S3__SecretKey: ${IPHOTOS_S3_SECRET_KEY:-}
+      # false for AWS proper; true for Wasabi/MinIO/B2/R2.
+      Providers__S3__ForcePathStyle: ${IPHOTOS_S3_FORCE_PATH_STYLE:-true}
+      Providers__S3__Prefix: ${IPHOTOS_S3_PREFIX:-}
+    volumes:
+      - storage-data:/var/lib/iphotos/objects
+    ports:
+      - "127.0.0.1:5206:8080" # loopback admin/debug only
+    mem_limit: 320m
+
+  api:
+    image: ghcr.io/idjinn/iphotos-api:${IPHOTOS_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_SYSTEM_GC_SERVER: "0"
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=iphotos;Username=iphotos;Password=${IPHOTOS_PG_PASSWORD:-iphotos}
+      BlobStorage__Mode: Http
+      StorageService__BaseUrl: http://storage:8080
+      StorageService__ApiKey: ${IPHOTOS_STORAGE_API_KEY:?set in backend/.env}
+      StorageService__AllowPrivateNetworks: "true"
+      # Zip staging (raw archives) goes to the storage host's filesystem provider
+      # (storage-data volume) so multi-GB uploads never round-trip through S3.
+      StorageService__StagingProvider: ${IPHOTOS_STORAGE_STAGING_PROVIDER:-filesystem}
+      Auth__Jwt__SigningKey: ${IPHOTOS_JWT_SIGNING_KEY:?set in backend/.env}
+      # Web reaches the API same-origin through the WAF (/api/* -> 127.0.0.1:5000),
+      # which needs no CORS; the desktop shell origin stays for the Electron client.
+      Cors__AllowedOrigins__0: ${IPHOTOS_PUBLIC_URL:?set in backend/.env}
+      Cors__AllowedOrigins__1: http://127.0.0.1:3210
+      # Per-file upload caps in bytes per (plan × upload quality): "original" modes
+      # reject oversize files; "saver" modes compress/transcode them to fit in the worker.
+      Upload__FreeSaverMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_SAVER_MAX_IMAGE_BYTES:-16777216}
+      Upload__FreeSaverMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_SAVER_MAX_VIDEO_BYTES:-1073741824}
+      Upload__PaidSaverMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_SAVER_MAX_IMAGE_BYTES:-262144000}
+      Upload__PaidSaverMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_SAVER_MAX_VIDEO_BYTES:-10737418240}
+      Upload__FreeOriginalMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_ORIGINAL_MAX_IMAGE_BYTES:-67108864}
+      Upload__FreeOriginalMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_ORIGINAL_MAX_VIDEO_BYTES:-1073741824}
+      Upload__PaidOriginalMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_ORIGINAL_MAX_IMAGE_BYTES:-524288000}
+      Upload__PaidOriginalMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_ORIGINAL_MAX_VIDEO_BYTES:-32212254720}
+      Upload__SaverVideoMaxHeight: ${IPHOTOS_UPLOAD__SAVER_VIDEO_MAX_HEIGHT:-1080}
+      Upload__AssumedUploadMbps: ${IPHOTOS_UPLOAD__ASSUMED_MBPS:-20}
+      Upload__UploadUrlMaxExpiryHours: ${IPHOTOS_UPLOAD__MAX_URL_EXPIRY_HOURS:-24}
+      Upload__DirectMultipartThresholdBytes: ${IPHOTOS_UPLOAD__MULTIPART_THRESHOLD_BYTES:-5368709120}
+      # AI off on the VPS: no ml service in this compose file, nothing dials Ml__BaseUrl.
+      Ai__Enabled: ${IPHOTOS_AI_ENABLED:-false}
+      Ml__BaseUrl: ${IPHOTOS_ML_BASE_URL:-http://ml:8080}
+      Ml__ApiKey: ${IPHOTOS_ML_API_KEY:-}
+      # ML input staging (doc 18 §6.2); inert while AI is off.
+      Ml__InputCacheDir: /var/lib/iphotos/ml-inputs
+    volumes:
+      - ml-inputs:/var/lib/iphotos/ml-inputs
+    ports:
+      - "127.0.0.1:5000:8080" # WAF upstream for /api/*
+    mem_limit: 512m
+
+  worker:
+    image: ghcr.io/idjinn/iphotos-worker:${IPHOTOS_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_SYSTEM_GC_SERVER: "0"
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=iphotos;Username=iphotos;Password=${IPHOTOS_PG_PASSWORD:-iphotos}
+      BlobStorage__Mode: Http
+      StorageService__BaseUrl: http://storage:8080
+      StorageService__ApiKey: ${IPHOTOS_STORAGE_API_KEY:?set in backend/.env}
+      StorageService__AllowPrivateNetworks: "true"
+      StorageService__StagingProvider: ${IPHOTOS_STORAGE_STAGING_PROVIDER:-filesystem}
+      # The worker applies the storage-saver caps (§3.5), so it needs the same
+      # Upload matrix as the api — keep these in sync.
+      Upload__FreeSaverMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_SAVER_MAX_IMAGE_BYTES:-16777216}
+      Upload__FreeSaverMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_SAVER_MAX_VIDEO_BYTES:-1073741824}
+      Upload__PaidSaverMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_SAVER_MAX_IMAGE_BYTES:-262144000}
+      Upload__PaidSaverMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_SAVER_MAX_VIDEO_BYTES:-10737418240}
+      Upload__FreeOriginalMaxImageBytes: ${IPHOTOS_UPLOAD__FREE_ORIGINAL_MAX_IMAGE_BYTES:-67108864}
+      Upload__FreeOriginalMaxVideoBytes: ${IPHOTOS_UPLOAD__FREE_ORIGINAL_MAX_VIDEO_BYTES:-1073741824}
+      Upload__PaidOriginalMaxImageBytes: ${IPHOTOS_UPLOAD__PAID_ORIGINAL_MAX_IMAGE_BYTES:-524288000}
+      Upload__PaidOriginalMaxVideoBytes: ${IPHOTOS_UPLOAD__PAID_ORIGINAL_MAX_VIDEO_BYTES:-32212254720}
+      Upload__SaverVideoMaxHeight: ${IPHOTOS_UPLOAD__SAVER_VIDEO_MAX_HEIGHT:-1080}
+      Worker__PollIntervalSeconds: "0.5"
+      # 2 vCPU / 1 GB host: keep processing lanes small (local default is 8/2).
+      Worker__PhotoLaneConcurrency: 2
+      Worker__VideoLaneConcurrency: 1
+      Worker__PhotoJobTimeoutMinutes: 10
+      Worker__VideoJobTimeoutMinutes: 60
+      Ai__Enabled: ${IPHOTOS_AI_ENABLED:-false}
+      Ml__BaseUrl: ${IPHOTOS_ML_BASE_URL:-http://ml:8080}
+      Ml__ApiKey: ${IPHOTOS_ML_API_KEY:-}
+      Ml__InputCacheDir: /var/lib/iphotos/ml-inputs
+    volumes:
+      - ml-inputs:/var/lib/iphotos/ml-inputs
+    mem_limit: 512m
+
+  # Next.js web client (standalone build). NEXT_PUBLIC_API_URL is baked into
+  # the image by .github/workflows/images.yml — changing the public origin
+  # means editing the workflow and redeploying.
+  web:
+    image: ghcr.io/idjinn/iphotos-web:${IPHOTOS_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "127.0.0.1:3000:3000" # WAF upstream for the web app
+    mem_limit: 256m
+
+volumes:
+  pgdata:
+  storage-data:
+  ml-inputs:

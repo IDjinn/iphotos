@@ -1,0 +1,18 @@
+# Keep the build context to what `next build` needs. web/.env is excluded on
+# purpose: the container build takes NEXT_PUBLIC_API_URL from a build arg, so
+# no machine-local value can leak into the image.
+node_modules
+.next
+.git
+.env
+.env.*
+dist-electron
+electron
+test-results
+tests
+playwright.config.ts
+vitest.config.ts
+eslint.config.mjs
+electron-builder.yml
+tsconfig.tsbuildinfo
+*.md
