@@ -1,8 +1,3 @@
-# Build and publish the deployment images to GHCR. The VPS never builds:
-# deploy is `docker compose -f compose.vps.yaml pull && docker compose -f
-# compose.vps.yaml up -d` (see backend/compose.vps.yaml).
-#
-# The ml image is intentionally not built — the VPS runs with AI/ML off.
 name: images
 
 on:
@@ -20,74 +15,67 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/idjinn/iphotos # lowercase; GHCR requires it
-  # Baked into the web client bundle at build time (public origin served by
-  # the VPS WAF). Changing the domain means editing this line and redeploying.
+  IMAGE_PREFIX: ghcr.io/idjinn/iphotos
   NEXT_PUBLIC_API_URL: https://iphotos.lucas-romero.com
 
 jobs:
   build:
+    name: Build ${{ matrix.image }}
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: storage
+            context: backend
+            file: backend/iPhotos.Storage.Host/Dockerfile
+            cache_scope: storage
+            build_args: ""
+          - image: api
+            context: backend
+            file: backend/iPhotos.Core/Dockerfile
+            cache_scope: api
+            build_args: ""
+          - image: worker
+            context: backend
+            file: backend/iPhotos.Worker/Dockerfile
+            cache_scope: worker
+            build_args: ""
+          - image: web
+            context: web
+            file: web/Dockerfile
+            cache_scope: web
+            build_args: |
+              NEXT_PUBLIC_API_URL=https://iphotos.lucas-romero.com
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - uses: docker/login-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push storage
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: backend
-          file: backend/iPhotos.Storage.Host/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           push: true
+          build-args: ${{ matrix.build_args }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}-storage:latest
-            ${{ env.IMAGE_PREFIX }}-storage:${{ github.sha }}
-          cache-from: type=gha,scope=storage
-          cache-to: type=gha,scope=storage,mode=max
-
-      - name: Build and push api
-        uses: docker/build-push-action@v6
-        with:
-          context: backend
-          file: backend/iPhotos.Core/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-api:latest
-            ${{ env.IMAGE_PREFIX }}-api:${{ github.sha }}
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,scope=api,mode=max
-
-      - name: Build and push worker
-        uses: docker/build-push-action@v6
-        with:
-          context: backend
-          file: backend/iPhotos.Worker/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-worker:latest
-            ${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
-          cache-from: type=gha,scope=worker
-          cache-to: type=gha,scope=worker,mode=max
-
-      - name: Build and push web
-        uses: docker/build-push-action@v6
-        with:
-          context: web
-          file: web/Dockerfile
-          push: true
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ env.NEXT_PUBLIC_API_URL }}
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-web:latest
-            ${{ env.IMAGE_PREFIX }}-web:${{ github.sha }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,scope=web,mode=max
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:latest
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,scope=${{ matrix.cache_scope }},mode=max
