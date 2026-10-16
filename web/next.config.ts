@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
   },
   rewrites() {
     return [
-      { source: '/api/:path*', destination: 'http://127.0.0.1:5000/api/:path*' },
+      { source: '/api/:path*', destination: 'http://backend-api:5000/api/:path*' },
     ];
   }
 };
