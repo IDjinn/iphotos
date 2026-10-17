@@ -34,11 +34,17 @@ export function shouldCommitPinchDismiss(scale: number, velocity: number): boole
 export function applyPinchStep(
   accum: number,
   columns: number,
-  min: number = COLUMNS_MIN,
-  max: number = COLUMNS_MAX,
-  step: number = PINCH_STEP
+  minArg?: number,
+  maxArg?: number,
+  stepArg?: number
 ): { columns: number; accum: number; changed: boolean } {
   'worklet';
+  // Defaults resolved in the body: the worklet plugin only captures module
+  // constants referenced in the body, not in default parameter initialisers
+  // (PINCH_STEP was undefined on the UI runtime).
+  const min = minArg ?? COLUMNS_MIN;
+  const max = maxArg ?? COLUMNS_MAX;
+  const step = stepArg ?? PINCH_STEP;
   let next = columns;
   let rest = accum;
   let changed = false;

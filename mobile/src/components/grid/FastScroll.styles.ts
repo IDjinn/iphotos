@@ -29,6 +29,15 @@ export const Handle = styled(Animated.View)<{ $height: number; $active: boolean 
   background-color: ${({ theme, $active }) => ($active ? theme.colors.accent : theme.colors.outline)};
 `;
 
+/** Month/year label pinned beside the rail at its timeline position. */
+export const Tick = styled.Text<{ $top: number }>`
+  position: absolute;
+  top: ${({ $top }) => $top}px;
+  right: ${({ theme }) => theme.ms(28)}px;
+  font-size: ${({ theme }) => theme.type.size.label}px;
+  color: ${({ theme }) => theme.colors.textSecondary};
+`;
+
 /** Month preview pill shown while scrubbing, left of the rail. */
 export const Bubble = styled(Animated.View)`
   position: absolute;
