@@ -47,14 +47,19 @@ export function LivePhotoPlayer({
   const [playing, setPlaying] = useState(false);
   const holdRef = useRef(false);
 
+  // The page shows only the key frame (the still); the clip is not requested
+  // until the first touch ("armed"), so browsing Live Photos costs no clip
+  // bandwidth. The 300 ms hold threshold gives the download a head start.
+  const [armed, setArmed] = useState(false);
+
   // Remote source with auth headers — the clip is small (~3 s), so streaming
   // starts fast and no cache-file hop is needed.
   const source = useMemo(
     () =>
-      asset.motionUri
+      armed && asset.motionUri
         ? { uri: asset.motionUri, headers: asset.sourceHeaders }
         : null,
-    [asset.motionUri, asset.sourceHeaders],
+    [armed, asset.motionUri, asset.sourceHeaders],
   );
   const player = useVideoPlayer(source, (p) => {
     p.muted = true;
@@ -86,6 +91,9 @@ export function LivePhotoPlayer({
   const longPress = useMemo(() => {
     const gesture = Gesture.LongPress()
       .minDuration(300)
+      .onBegin(() => {
+        runOnJS(setArmed)(true);
+      })
       .onStart(() => {
         holdRef.current = true;
         runOnJS(haptic)('light');
@@ -102,6 +110,7 @@ export function LivePhotoPlayer({
 
   const togglePlaying = () => {
     haptic('light');
+    setArmed(true);
     setPlaying((current) => !current);
   };
 

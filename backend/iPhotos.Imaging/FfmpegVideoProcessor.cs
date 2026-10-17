@@ -74,6 +74,56 @@ public sealed class FfmpegVideoProcessor(IOptions<VideoProcessorOptions> options
         }
     }
 
+    public async Task<Stream> NormalizeMotionAsync(Stream video, CancellationToken cancellationToken = default)
+    {
+        var inputPath = await MaterializeAsync(video, cancellationToken);
+        var outputPath = Path.Combine(Path.GetTempPath(), $"iphotos-motion-{Guid.NewGuid():N}.mov");
+        try
+        {
+            // ffmpeg's default autorotate applies the display matrix (rotation + hflip/vflip)
+            // to the decoded frames and drops it from the output, so the encoded pixels
+            // are already upright. Even dimensions + yuv420p keep every player happy.
+            await RunBinaryAsync(
+                optionsAccessor.Value.FfmpegPath,
+                args => args
+                    .Add("-nostdin").Add("-v").Add("error").Add("-y")
+                    .Add("-i").Add(inputPath)
+                    .Add("-map").Add("0:v:0").Add("-map").Add("0:a:0?")
+                    .Add("-vf").Add("scale=trunc(iw/2)*2:trunc(ih/2)*2")
+                    .Add("-c:v").Add("libx264").Add("-preset").Add("fast").Add("-crf").Add("20")
+                    .Add("-pix_fmt").Add("yuv420p")
+                    .Add("-c:a").Add("aac").Add("-b:a").Add("128k")
+                    .Add("-movflags").Add("+faststart")
+                    .Add("-f").Add("mov")
+                    .Add(outputPath),
+                cancellationToken,
+                allowEmptyOutput: true);
+
+            var output = new MemoryStream();
+            await using (var encoded = File.OpenRead(outputPath))
+            {
+                await encoded.CopyToAsync(output, cancellationToken);
+            }
+
+            if (output.Length == 0)
+            {
+                throw new InvalidImageException("The motion clip produced no output.");
+            }
+
+            output.Position = 0;
+            return output;
+        }
+        catch (FileNotFoundException)
+        {
+            throw new InvalidImageException("The motion clip produced no output.");
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
     /// <summary>MP4 containers need a seekable input, so streams land in a temp file first.</summary>
     private static async Task<string> MaterializeAsync(Stream video, CancellationToken cancellationToken)
     {
