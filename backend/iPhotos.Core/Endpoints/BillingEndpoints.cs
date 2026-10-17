@@ -17,7 +17,8 @@ public static class BillingEndpoints
                 var response = await billing.GetProductsAsync(cancellationToken);
                 return Results.Ok(response);
             })
-            .WithName("GetBillingProducts");
+            .WithName("GetBillingProducts")
+            .Produces<BillingProductsResponse>(200);
 
         group.MapPost("/verify", async (
                 ClaimsPrincipal principal,
@@ -30,7 +31,8 @@ public static class BillingEndpoints
                 return Results.Ok(status);
             })
             .RequireRateLimiting("auth")
-            .WithName("VerifyPurchase");
+            .WithName("VerifyPurchase")
+            .Produces<BillingStatusDto>(200);
 
         group.MapGet("/status", async (
                 ClaimsPrincipal principal,
@@ -40,7 +42,8 @@ public static class BillingEndpoints
                 var status = await billing.GetStatusAsync(principal.GetUserId(), cancellationToken);
                 return Results.Ok(status);
             })
-            .WithName("GetBillingStatus");
+            .WithName("GetBillingStatus")
+            .Produces<BillingStatusDto>(200);
 
         group.MapPost("/restore", async (
                 ClaimsPrincipal principal,
@@ -53,7 +56,8 @@ public static class BillingEndpoints
                 return Results.Ok(status);
             })
             .RequireRateLimiting("auth")
-            .WithName("RestorePurchase");
+            .WithName("RestorePurchase")
+            .Produces<BillingStatusDto>(200);
 
         return app;
     }

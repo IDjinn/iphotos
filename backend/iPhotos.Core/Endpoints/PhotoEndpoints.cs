@@ -28,7 +28,9 @@ public static class PhotoEndpoints
                 : Results.Created($"/api/photos/{result.Photo.Id}", result);
         })
         .DisableAntiforgery()
-        .WithName("UploadPhoto");
+        .WithName("UploadPhoto")
+        .Produces<PhotoUploadResult>(201)
+        .Produces<PhotoUploadResult>(200);
 
         // Direct-upload flow: reserve dedup/quota, then the client PUTs the bytes
         // straight to storage and confirms here. 501 = storage cannot presign;
@@ -46,7 +48,9 @@ public static class PhotoEndpoints
                 : Results.Created($"/api/photos/{ticket.Photo.Id}", ticket);
         })
         .DisableAntiforgery()
-        .WithName("CreateUploadTicket");
+        .WithName("CreateUploadTicket")
+        .Produces<UploadTicket>(201)
+        .Produces<UploadTicket>(200);
 
         group.MapPost("/{id:guid}/complete", async (
             Guid id,
@@ -56,7 +60,8 @@ public static class PhotoEndpoints
             CancellationToken cancellationToken) =>
             Results.Ok(await photos.CompleteUploadAsync(principal.GetUserId(), id, request, cancellationToken)))
         .DisableAntiforgery()
-        .WithName("CompleteUpload");
+        .WithName("CompleteUpload")
+        .Produces<PhotoDto>(200);
 
         // Oversize direct uploads ride a multipart session: the client presigns each
         // part through here and PUTs the bytes straight to storage. 501 = storage
@@ -75,7 +80,9 @@ public static class PhotoEndpoints
                 : Results.Ok(new PartUrlResponse(url.Url, request.PartNumber, url.ExpiresAt));
         })
         .DisableAntiforgery()
-        .WithName("CreatePartUrl");
+        .WithName("CreatePartUrl")
+        .Produces<PartUrlResponse>(200)
+        .Produces(501);
 
         group.MapPost("/{id:guid}/abort", async (
             Guid id,
@@ -86,7 +93,8 @@ public static class PhotoEndpoints
             await photos.AbortUploadAsync(principal.GetUserId(), id, cancellationToken);
             return Results.NoContent();
         })
-        .WithName("AbortUpload");
+        .WithName("AbortUpload")
+        .Produces(204);
 
         group.MapGet("/", async (
             ClaimsPrincipal principal,
@@ -147,7 +155,9 @@ public static class PhotoEndpoints
             var filter = new PhotoFilter(
                 principal.GetUserId(), from, to, fileName, camera, page, pageSize, parsedMediaType, isLive, sortBy, order);
             return Results.Ok(await photos.ListAsync(principal.GetUserId(), filter, cancellationToken));
-        });
+        })
+        .Produces<PagedResult<PhotoDto>>(200)
+        .WithName("ListPhotos");
 
         // Month buckets for fast-scroll rails: same owner scoping and filters as
         // the listing above, so clients can map timeline positions to months.
@@ -193,7 +203,9 @@ public static class PhotoEndpoints
 
             return Results.Ok(
                 await photos.ListMonthBucketsAsync(principal.GetUserId(), sortBy, parsedMediaType, isLive, cancellationToken));
-        });
+        })
+        .Produces<IReadOnlyList<PhotoMonthBucket>>(200)
+        .WithName("ListPhotoMonths");
 
         group.MapPost("/{id:guid}/key-photo", async (
             Guid id,
@@ -204,7 +216,8 @@ public static class PhotoEndpoints
             Results.Ok(await photos.SetKeyPhotoAsync(
                 principal.GetUserId(), id, request?.OffsetSeconds ?? 0, cancellationToken)))
         .DisableAntiforgery()
-        .WithName("SetKeyPhoto");
+        .WithName("SetKeyPhoto")
+        .Produces<PhotoDto>(200);
 
         // One-shot repair: video rows imported as standalone videos by builds before
         // Live Photo pairing existed become Motion variants of their stills.
@@ -215,14 +228,17 @@ public static class PhotoEndpoints
             Results.Ok(new LiveMotionAdoption(
                 await photos.AdoptPairedMotionVideosAsync(principal.GetUserId(), cancellationToken))))
         .DisableAntiforgery()
-        .WithName("AdoptLiveMotionVideos");
+        .WithName("AdoptLiveMotionVideos")
+        .Produces<LiveMotionAdoption>(200);
 
         group.MapGet("/{id:guid}", async (
             Guid id,
             ClaimsPrincipal principal,
             PhotoService photos,
             CancellationToken cancellationToken) =>
-            Results.Ok(await photos.GetAsync(principal.GetUserId(), id, cancellationToken)));
+            Results.Ok(await photos.GetAsync(principal.GetUserId(), id, cancellationToken)))
+        .Produces<PhotoDto>(200)
+        .WithName("GetPhoto");
 
         group.MapDelete("/{id:guid}", async (
             Guid id,
@@ -232,7 +248,9 @@ public static class PhotoEndpoints
         {
             await photos.DeleteAsync(principal.GetUserId(), id, cancellationToken);
             return Results.NoContent();
-        });
+        })
+        .Produces(204)
+        .WithName("DeletePhoto");
 
         group.MapGet("/{id:guid}/files/{kind}", async (
             Guid id,
@@ -271,7 +289,10 @@ public static class PhotoEndpoints
 
             var stream = await blobs.OpenReadAsync(file.BlobPath, cancellationToken);
             return Results.Stream(stream, file.ContentType, entityTag: etag, enableRangeProcessing: true);
-        });
+        })
+        .Produces(200, contentType: "application/octet-stream")
+        .Produces(304)
+        .WithName("GetPhotoFile");
 
         app.MapGet("/api/usage", async (
             ClaimsPrincipal principal,
@@ -279,7 +300,9 @@ public static class PhotoEndpoints
             CancellationToken cancellationToken) =>
             Results.Ok(await photos.GetUsageAsync(principal.GetUserId(), cancellationToken)))
             .WithTags("Photos")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .Produces<UsageSummary>(200)
+            .WithName("GetUsage");
 
         return app;
     }

@@ -428,6 +428,7 @@ export function GalleryScreen() {
                           photo={photo}
                           size={layout.cell}
                           selected={selection.has(photo.id)}
+                          priority={index < layout.columns * 2}
                           onOpen={() => openViewer(photos.map((p) => p.id), index)}
                           onToggleSelect={() => toggleSelect(photo.id)}
                         />

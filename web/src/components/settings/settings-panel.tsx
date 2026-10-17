@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { logout } from "@/data/api-client";
 import { getBillingStatus } from "@/data/billing";
-import { getUsage } from "@/data/cloud-photos-repository";
+import { adoptLiveMotionVideos, getUsage } from "@/data/cloud-photos-repository";
 import {
   getUserPreferences,
   updateUserPreferences,
@@ -109,6 +110,25 @@ export function SettingsPanel() {
       .catch(() => toast("Could not update the existing photos."));
   };
 
+  const [pairing, setPairing] = useState(false);
+  const pairLivePhotos = async () => {
+    setPairing(true);
+    try {
+      const { adopted } = await adoptLiveMotionVideos();
+      toast(
+        adopted > 0
+          ? `Paired ${adopted} Live ${adopted === 1 ? "Photo" : "Photos"}`
+          : "No unpaired Live Photo clips found",
+      );
+      await queryClient.invalidateQueries({ queryKey: ["photos"] });
+      await queryClient.invalidateQueries({ queryKey: ["usage"] });
+    } catch {
+      toast.error("Couldn't pair Live Photos. Try again.");
+    } finally {
+      setPairing(false);
+    }
+  };
+
   return (
     <PageScroll>
       <PageInner>
@@ -175,6 +195,23 @@ export function SettingsPanel() {
                 ))}
               </SelectContent>
             </Select>
+          </Row>
+        </Card>
+
+        <Card className="gap-4 p-6">
+          <h2 className="text-base font-semibold leading-tight">Live Photos</h2>
+          <Row>
+            <div className="meta">
+              <strong>Fix Live Photo pairing</strong>
+              <span>
+                Live Photos imported before pairing existed show up as separate short videos.
+                This merges each clip into its still (same name) and removes the duplicate video.
+              </span>
+            </div>
+            <Button variant="outline" disabled={pairing} onClick={() => void pairLivePhotos()}>
+              {pairing ? <Loader2Icon aria-hidden className="size-4 animate-spin" /> : null}
+              Fix pairing
+            </Button>
           </Row>
         </Card>
 

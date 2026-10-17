@@ -17,19 +17,28 @@ public static class AuthEndpoints
         {
             var result = await auth.RegisterAsync(request);
             return Results.Created($"/api/users/{result.UserId}", result);
-        });
+        })
+        .Produces<AuthResult>(201)
+        .WithName("Register");
 
         group.MapPost("/login", async (LoginRequest request, AuthService auth) =>
-            Results.Ok(await auth.LoginAsync(request)));
+            Results.Ok(await auth.LoginAsync(request)))
+        .Produces<AuthTokens>(200)
+        .WithName("Login");
 
         group.MapPost("/refresh", async (RefreshRequest request, AuthService auth) =>
-            Results.Ok(await auth.RefreshAsync(request.RefreshToken)));
+            Results.Ok(await auth.RefreshAsync(request.RefreshToken)))
+        .Produces<AuthTokens>(200)
+        .WithName("RefreshToken");
 
         group.MapPost("/logout", async (RefreshRequest request, AuthService auth) =>
         {
             await auth.LogoutAsync(request.RefreshToken);
             return Results.NoContent();
-        }).RequireAuthorization();
+        })
+        .RequireAuthorization()
+        .Produces(204)
+        .WithName("Logout");
 
         return app;
     }

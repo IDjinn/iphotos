@@ -18,6 +18,8 @@ public static class ImportEndpoints
     /// <summary>Cap for the recent-imports list served by GET /api/imports.</summary>
     private const int RecentImportsLimit = 50;
 
+    public sealed record ImportAcceptedResponse(Guid JobId);
+
     public static IEndpointRouteBuilder MapImportEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/imports").WithTags("Imports").RequireAuthorization();
@@ -116,10 +118,12 @@ public static class ImportEndpoints
             await imports.SaveAsync(job, cancellationToken);
             await imports.NotifyJobsQueuedAsync(cancellationToken);
 
-            return Results.Accepted($"/api/imports/{job.Id}", new { jobId = job.Id });
+            return Results.Accepted($"/api/imports/{job.Id}", new ImportAcceptedResponse(job.Id));
         })
         .DisableAntiforgery()
-        .WithName("ImportZip");
+        .WithName("ImportZip")
+        .Produces<ImportAcceptedResponse>(202)
+        .Produces(409);
 
         group.MapGet("/", async (
             ClaimsPrincipal principal,
@@ -131,7 +135,9 @@ public static class ImportEndpoints
             var jobs = await imports.ListRecentForOwnerAsync(
                 principal.GetUserId(), RecentImportsLimit, cancellationToken);
             return Results.Ok(jobs.Select(ZipImportJobDto.From));
-        });
+        })
+        .Produces<IReadOnlyList<ZipImportJobDto>>(200)
+        .WithName("ListImports");
 
         group.MapGet("/{id:guid}", async (
             Guid id,
@@ -142,7 +148,9 @@ public static class ImportEndpoints
             var job = await imports.GetByIdForOwnerAsync(id, principal.GetUserId(), cancellationToken)
                 ?? throw new NotFoundException($"Import job '{id}' was not found.");
             return Results.Ok(ZipImportJobDto.From(job));
-        });
+        })
+        .Produces<ZipImportJobDto>(200)
+        .WithName("GetImport");
 
         return app;
     }

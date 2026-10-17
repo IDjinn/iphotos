@@ -8,6 +8,11 @@ interface AuthImageProps {
   kind?: "thumbnail" | "preview";
   /** Fill the parent box (fixed size) instead of reserving an aspect ratio. */
   fill?: boolean;
+  /**
+   * Above-the-fold images get `fetchpriority=high` so the browser prioritizes
+   * their decode once the blob URL resolves; everything else defers.
+   */
+  priority?: boolean;
   className?: string;
 }
 
@@ -16,7 +21,7 @@ interface AuthImageProps {
  * behind a skeleton while the blob loads (no layout shift), then the image
  * cross-fades in. Never a blank box that pops in.
  */
-export function AuthImage({ photo, kind = "thumbnail", fill, className }: AuthImageProps) {
+export function AuthImage({ photo, kind = "thumbnail", fill, priority, className }: AuthImageProps) {
   const query = useAuthFileUrl(photo.id, kind);
   const url = query.data ?? null;
   const failed = query.isError;
@@ -31,7 +36,16 @@ export function AuthImage({ photo, kind = "thumbnail", fill, className }: AuthIm
       aria-label={photo.fileName}
     >
       <SkeletonFill />
-      {url ? <Photo src={url} alt="" $visible /> : null}
+      {url ? (
+        <Photo
+          src={url}
+          alt=""
+          $visible
+          fetchPriority={priority ? "high" : "auto"}
+          loading={priority ? "eager" : "lazy"}
+          decoding={priority ? "sync" : "async"}
+        />
+      ) : null}
       {failed ? (
         <Unavailable>
           <ImageOffIcon aria-hidden />

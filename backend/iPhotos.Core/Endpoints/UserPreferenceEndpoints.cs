@@ -20,7 +20,8 @@ public static class UserPreferenceEndpoints
             UserPreferencesService preferences,
             CancellationToken cancellationToken) =>
             Results.Ok(await preferences.GetAsync(principal.GetUserId(), cancellationToken)))
-        .WithName("GetUserPreferences");
+        .WithName("GetUserPreferences")
+        .Produces<UserPreferencesDto>(200);
 
         group.MapPut("/", async (
             ClaimsPrincipal principal,
@@ -28,7 +29,8 @@ public static class UserPreferenceEndpoints
             UserPreferencesService preferences,
             CancellationToken cancellationToken) =>
             Results.Ok(await preferences.UpdateAsync(principal.GetUserId(), request, cancellationToken)))
-        .WithName("UpdateUserPreferences");
+        .WithName("UpdateUserPreferences")
+        .Produces<UserPreferencesDto>(200);
 
         return app;
     }

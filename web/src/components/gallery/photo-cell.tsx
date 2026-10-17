@@ -12,11 +12,13 @@ interface PhotoCellProps {
   /** Measured cell size in px (square cells). */
   size: number;
   selected: boolean;
+  /** Above-the-fold cell: its image is fetched with high priority (LCP). */
+  priority?: boolean;
   onOpen: () => void;
   onToggleSelect: () => void;
 }
 
-export function PhotoCell({ photo, size, selected, onOpen, onToggleSelect }: PhotoCellProps) {
+export function PhotoCell({ photo, size, selected, priority, onOpen, onToggleSelect }: PhotoCellProps) {
   const [hovered, setHovered] = useState(false);
   const notReady = photo.state !== "Ready";
   const isVideo = photo.mediaType === "Video";
@@ -33,7 +35,7 @@ export function PhotoCell({ photo, size, selected, onOpen, onToggleSelect }: Pho
         onFocus={() => setHovered(true)}
         onBlur={() => setHovered(false)}
       >
-        <AuthImage photo={photo} fill />
+        <AuthImage photo={photo} fill priority={priority} />
       </CellButton>
       <SelectButton
         $selected={selected}

@@ -39,6 +39,10 @@ PostgreSQL/MinIO-style containers via Testcontainers; requires Docker to be runn
 | GET | `/api/usage` | used bytes vs quota `[auth]` |
 | GET | `/health` | liveness |
 
+OpenAPI 3.1 spec: [`docs/api/openapi.json`](../docs/api/openapi.json). Regenerate
+(no database needed) with `dotnet build iPhotos.Core -p:GenerateOpenApi=true`. In
+Development the live document is also served at `/openapi/v1.json`.
+
 Error mapping: 400 validation · 401 credentials/token · 404 not found ·
 409 duplicate email · 413 quota exceeded · 429 rate limit.
 

@@ -9,7 +9,7 @@ if "%~1"=="" (set "VARIANT=release") else (set "VARIANT=%~1")
 if "%~2"=="" (set "ABI=arm64-v8a") else (set "ABI=%~2")
 
 echo ==^> Building iPhotos %VARIANT% %ABI% in WSL (Ubuntu)...
-wsl -d Ubuntu bash /mnt/c/dev/react-native/iphotos/frontend/scripts/build-wsl.sh %VARIANT% %ABI%
+wsl -d Ubuntu bash /mnt/c/dev/react-native/iphotos/mobile/scripts/build-wsl.sh %VARIANT% %ABI%
 if errorlevel 1 (
     echo ==^> BUILD FAILED. See the log above.
     pause

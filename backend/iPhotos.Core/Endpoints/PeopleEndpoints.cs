@@ -33,7 +33,9 @@ public static class PeopleEndpoints
 
             return Results.Ok(await people.ListAsync(principal.GetUserId(), cancellationToken));
         })
-        .WithName("ListPeople");
+        .WithName("ListPeople")
+        .Produces<IReadOnlyList<PersonDto>>(200)
+        .Produces<PagedResult<PersonDto>>(200);
 
         group.MapGet("/{id:guid}", async (
             Guid id,
@@ -41,7 +43,8 @@ public static class PeopleEndpoints
             PersonService people,
             CancellationToken cancellationToken) =>
             Results.Ok(await people.GetAsync(principal.GetUserId(), id, cancellationToken)))
-        .WithName("GetPerson");
+        .WithName("GetPerson")
+        .Produces<PersonDetailDto>(200);
 
         group.MapGet("/{id:guid}/photos", async (
             Guid id,
@@ -51,7 +54,8 @@ public static class PeopleEndpoints
             [FromQuery] int pageSize = 20,
             CancellationToken cancellationToken = default) =>
             Results.Ok(await people.ListPhotosAsync(principal.GetUserId(), id, page, pageSize, cancellationToken)))
-        .WithName("ListPersonPhotos");
+        .WithName("ListPersonPhotos")
+        .Produces<PagedResult<PhotoDto>>(200);
 
         // Manual "assimilate several groups at once" candidates (doc 18 §7.3):
         // the owner's other people ranked by centroid similarity to this one —
@@ -67,7 +71,8 @@ public static class PeopleEndpoints
             CancellationToken cancellationToken = default) =>
             Results.Ok(await people.ListSimilarAsync(
                 principal.GetUserId(), id, minSimilarity, page, pageSize, cancellationToken)))
-        .WithName("ListSimilarPeople");
+        .WithName("ListSimilarPeople")
+        .Produces<PagedResult<PersonSimilarDto>>(200);
 
         group.MapPatch("/{id:guid}", async (
             Guid id,
@@ -79,7 +84,8 @@ public static class PeopleEndpoints
             await people.RenameAsync(principal.GetUserId(), id, request.Name, cancellationToken);
             return Results.NoContent();
         })
-        .WithName("RenamePerson");
+        .WithName("RenamePerson")
+        .Produces(204);
 
         group.MapPost("/merge", async (
             ClaimsPrincipal principal,
@@ -90,7 +96,8 @@ public static class PeopleEndpoints
             await people.MergeAsync(principal.GetUserId(), request.SourceId, request.TargetId, cancellationToken);
             return Results.NoContent();
         })
-        .WithName("MergePeople");
+        .WithName("MergePeople")
+        .Produces(204);
 
         // Whole-group merge (doc 18 §7.4): the "same person?" review card folds
         // every member into the target in ONE atomic request — nothing half-merges.
@@ -103,7 +110,8 @@ public static class PeopleEndpoints
             await people.MergeManyAsync(principal.GetUserId(), request.TargetId, request.SourceIds, cancellationToken);
             return Results.NoContent();
         })
-        .WithName("MergePeopleBatch");
+        .WithName("MergePeopleBatch")
+        .Produces(204);
 
         // "Same person?" review (doc 18 §7.4), split by destination: merges into
         // existing people and candidates for a new person. Dismissal is
@@ -125,7 +133,9 @@ public static class PeopleEndpoints
 
             return Results.Ok(await people.SuggestAsync(principal.GetUserId(), cancellationToken));
         })
-        .WithName("SuggestPeople");
+        .WithName("SuggestPeople")
+        .Produces<PersonSuggestionsDto>(200)
+        .Produces<PagedResult<PersonSuggestionDto>>(200);
 
         // Paged photos behind a new-face suggestion (doc 18 §7.4): the preview
         // grid scrolls the whole cluster, so the id resolves against the cached
@@ -138,7 +148,8 @@ public static class PeopleEndpoints
             [FromQuery] int pageSize = 20,
             CancellationToken cancellationToken = default) =>
             Results.Ok(await people.ListSuggestionPhotosAsync(principal.GetUserId(), id, page, pageSize, cancellationToken)))
-        .WithName("ListSuggestionPhotos");
+        .WithName("ListSuggestionPhotos")
+        .Produces<PagedResult<PhotoDto>>(200);
 
         group.MapPost("/suggestions/accept", async (
             ClaimsPrincipal principal,
@@ -146,7 +157,8 @@ public static class PeopleEndpoints
             PersonService people,
             CancellationToken cancellationToken) =>
             Results.Ok(await people.AcceptSuggestionAsync(principal.GetUserId(), request.FaceIds, cancellationToken)))
-        .WithName("AcceptSuggestion");
+        .WithName("AcceptSuggestion")
+        .Produces<PersonDto>(200);
 
         group.MapPost("/suggestions/merge", async (
             ClaimsPrincipal principal,
@@ -158,7 +170,8 @@ public static class PeopleEndpoints
                 principal.GetUserId(), request.PersonId, request.FaceIds, cancellationToken);
             return Results.NoContent();
         })
-        .WithName("AcceptMergeSuggestion");
+        .WithName("AcceptMergeSuggestion")
+        .Produces(204);
 
         // One-by-one review verdicts (doc 18 §7.4): accepted faces join the
         // person; rejections/deferrals persist so the queue stops re-asking.
@@ -177,7 +190,8 @@ public static class PeopleEndpoints
                 cancellationToken);
             return Results.NoContent();
         })
-        .WithName("ReviewSuggestion");
+        .WithName("ReviewSuggestion")
+        .Produces(204);
 
         // targetPersonId null = start a new person with the moved face (split).
         group.MapPost("/{id:guid}/faces", async (
@@ -190,7 +204,8 @@ public static class PeopleEndpoints
             await people.MoveFaceAsync(principal.GetUserId(), request.FaceId, request.TargetPersonId ?? id, cancellationToken);
             return Results.NoContent();
         })
-        .WithName("MoveFace");
+        .WithName("MoveFace")
+        .Produces(204);
 
         group.MapDelete("/{id:guid}", async (
             Guid id,
@@ -201,7 +216,8 @@ public static class PeopleEndpoints
             await people.DeleteAsync(principal.GetUserId(), id, cancellationToken);
             return Results.NoContent();
         })
-        .WithName("DeletePerson");
+        .WithName("DeletePerson")
+        .Produces(204);
 
         // Face crops back the People row circles and merge chips; same access model
         // as photo files (owner-checked, immutable, cached aggressively).
@@ -223,7 +239,8 @@ public static class PeopleEndpoints
         })
         .WithTags("People")
         .RequireAuthorization()
-        .WithName("GetFaceCrop");
+        .WithName("GetFaceCrop")
+        .Produces(200, contentType: "image/jpeg");
 
         return app;
     }
