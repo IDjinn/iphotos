@@ -18,7 +18,37 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info.Title = "iPhotos API";
+        document.Info.Version = "v1";
+        document.Components ??= new();
+        document.Components.SecuritySchemes ??= new Dictionary<string, Microsoft.OpenApi.IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["Bearer"] = new Microsoft.OpenApi.OpenApiSecurityScheme
+        {
+            Type = Microsoft.OpenApi.SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+        };
+        return Task.CompletedTask;
+    });
+    options.AddOperationTransformer((operation, context, _) =>
+    {
+        if (context.Description.ActionDescriptor.EndpointMetadata.OfType<Microsoft.AspNetCore.Authorization.IAuthorizeData>().Any()
+            && !context.Description.ActionDescriptor.EndpointMetadata.OfType<Microsoft.AspNetCore.Authorization.IAllowAnonymous>().Any())
+        {
+            operation.Security ??= [];
+            operation.Security.Add(new Microsoft.OpenApi.OpenApiSecurityRequirement
+            {
+                [new Microsoft.OpenApi.OpenApiSecuritySchemeReference("Bearer", context.Document)] = [],
+            });
+        }
+
+        return Task.CompletedTask;
+    });
+});
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
@@ -172,7 +202,13 @@ app.MapPeopleEndpoints();
 app.MapLabelEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", utcNow = DateTimeOffset.UtcNow }));
 
-await app.Services.MigrateDatabaseAsync();
+// The build-time OpenAPI generator boots the app without a database; skip migrations there.
+var isOpenApiGeneration = AppDomain.CurrentDomain.GetAssemblies()
+    .Any(a => a.GetName().Name?.Contains("getdocument", StringComparison.OrdinalIgnoreCase) == true);
+if (!isOpenApiGeneration)
+{
+    await app.Services.MigrateDatabaseAsync();
+}
 
 app.Run();
 

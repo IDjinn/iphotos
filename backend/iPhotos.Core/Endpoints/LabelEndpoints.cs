@@ -19,7 +19,8 @@ public static class LabelEndpoints
             [FromQuery] int limit = 100,
             CancellationToken cancellationToken = default) =>
             Results.Ok(await labels.ListTopAsync(principal.GetUserId(), limit, cancellationToken)))
-        .WithName("ListLabels");
+        .WithName("ListLabels")
+        .Produces<IReadOnlyList<LabelCount>>(200);
 
         group.MapGet("/{label}/photos", async (
             string label,
@@ -29,7 +30,8 @@ public static class LabelEndpoints
             [FromQuery] int pageSize = 20,
             CancellationToken cancellationToken = default) =>
             Results.Ok(await labels.ListPhotosAsync(principal.GetUserId(), label, page, pageSize, cancellationToken)))
-        .WithName("ListLabelPhotos");
+        .WithName("ListLabelPhotos")
+        .Produces<PagedResult<PhotoDto>>(200);
 
         app.MapGet("/api/photos/{id:guid}/labels", async (
             Guid id,
@@ -40,7 +42,8 @@ public static class LabelEndpoints
                 .Select(l => new PhotoLabelDto(l.PhotoId, l.Label, l.Score))))
         .WithTags("Labels")
         .RequireAuthorization()
-        .WithName("ListPhotoLabels");
+        .WithName("ListPhotoLabels")
+        .Produces<IReadOnlyList<PhotoLabelDto>>(200);
 
         return app;
     }
