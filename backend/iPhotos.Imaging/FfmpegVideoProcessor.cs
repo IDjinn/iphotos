@@ -159,7 +159,7 @@ public sealed class FfmpegVideoProcessor(IOptions<VideoProcessorOptions> options
                 && DateTimeOffset.TryParse(createdEl.GetString(), System.Globalization.CultureInfo.InvariantCulture,
                     System.Globalization.DateTimeStyles.AssumeUniversal, out var created))
             {
-                takenAt = created;
+                takenAt = PlausibleDate.OrNull(created);
             }
         }
 

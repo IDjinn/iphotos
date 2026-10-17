@@ -8,6 +8,10 @@ export type GridItem =
   | { kind: 'day'; key: string; label: string }
   | { kind: 'row'; key: string; assets: PhotoAsset[] };
 
+/** Assets with no usable date (creationTime 0) sort last and group under one header. */
+const UNDATED_KEY = 'undated';
+const UNDATED_LABEL = 'No date';
+
 export interface GridData {
   items: GridItem[];
   /** Indices of month headers — passed to FlashList stickyHeaderIndices. */
@@ -44,11 +48,16 @@ export function buildGridData(
 
   for (const asset of assets) {
     if (!pastDayCutoff && asset.creationTime < dayCutoff) pastDayCutoff = true;
-    const mKey = monthKey(asset.creationTime);
+    const undated = asset.creationTime <= 0;
+    const mKey = undated ? UNDATED_KEY : monthKey(asset.creationTime);
     if (mKey !== currentMonth) {
       flushRow();
       stickyIndices.push(items.length);
-      items.push({ kind: 'month', key: `m-${mKey}`, label: monthLabel(asset.creationTime) });
+      items.push({
+        kind: 'month',
+        key: `m-${mKey}`,
+        label: undated ? UNDATED_LABEL : monthLabel(asset.creationTime),
+      });
       currentMonth = mKey;
       currentDay = '';
     }

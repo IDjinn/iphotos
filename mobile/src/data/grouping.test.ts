@@ -71,6 +71,17 @@ describe('buildGridData month-only cutoff', () => {
     expect(data.stickyIndices).toEqual(monthIndices);
   });
 
+  it('groups assets without a date under a single trailing "No date" header', () => {
+    const data = buildGridData([asset('a', daysAgo(0)), asset('b', 0), asset('c', 0)], 3, { now: NOW });
+    const months = data.items.filter((i) => i.kind === 'month');
+    expect(months.map((m) => (m.kind === 'month' ? m.label : ''))).toEqual([
+      expect.any(String),
+      'No date',
+    ]);
+    expect(data.items.some((i) => i.kind === 'day' && i.label.includes('1969'))).toBe(false);
+    expect(data.items.at(-1)).toMatchObject({ kind: 'row' });
+  });
+
   it('handles an empty asset list', () => {
     expect(buildGridData([], 3, { now: NOW })).toEqual({ items: [], stickyIndices: [], total: 0 });
   });

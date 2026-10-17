@@ -463,7 +463,7 @@ export function ViewerOverlay() {
 
       <ViewerChrome
         visible={chromeVisible && !infoVisible && !moreVisible && !pickerVisible}
-        title={fullDateLabel(current.creationTime)}
+        title={current.creationTime > 0 ? fullDateLabel(current.creationTime) : 'No date'}
         isVideo={isVideo}
         isFavorite={isFavorite}
         playing={videoPlaying}
@@ -485,7 +485,14 @@ export function ViewerOverlay() {
       <BottomSheet visible={infoVisible} onClose={() => setInfoVisible(false)} maxHeightFactor={0.6}>
         <SheetHeading variant="titleMedium">Details</SheetHeading>
         <InfoRow label="File name" value={current.filename || '—'} />
-        <InfoRow label="Date" value={`${fullDateLabel(current.creationTime)} · ${timeLabel(current.creationTime)}`} />
+        <InfoRow
+          label="Date"
+          value={
+            current.creationTime > 0
+              ? `${fullDateLabel(current.creationTime)} · ${timeLabel(current.creationTime)}`
+              : '—'
+          }
+        />
         <InfoRow
           label="Type"
           value={isVideo ? `Video${current.duration ? ` · ${formatDuration(current.duration)}` : ''}` : 'Photo'}
