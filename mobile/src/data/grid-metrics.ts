@@ -50,6 +50,48 @@ export function computeGridLayout(items: GridItem[], heights: ItemHeights): Grid
   return { offsets, contentHeight: y, months };
 }
 
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export interface RailTick {
+  /** Index into `GridLayoutMetrics.months`. */
+  markerIndex: number;
+  offset: number;
+  label: string;
+}
+
+/** Year of a month marker key ("m-2026-09" → 2026); null for the undated bucket. */
+function markerYear(key: string): number | null {
+  const match = /^m-(\d{4})-\d{2}$/.exec(key);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Rail labels: every month of the current year ("Sep"), and one tick per
+ * older year ("2025") at its first marker in scroll order.
+ */
+export function buildRailTicks(months: MonthMarker[], currentYear: number): RailTick[] {
+  const ticks: RailTick[] = [];
+  let lastYear: number | null = null;
+  months.forEach((marker, markerIndex) => {
+    const year = markerYear(marker.key);
+    if (year === null) return;
+    if (year === currentYear) {
+      const month = Number(marker.key.slice(-2));
+      ticks.push({ markerIndex, offset: marker.offset, label: MONTH_ABBR[month - 1] ?? marker.label });
+    } else if (year !== lastYear) {
+      ticks.push({ markerIndex, offset: marker.offset, label: String(year) });
+    }
+    lastYear = year;
+  });
+  return ticks;
+}
+
+/** Scrub bubble text: "September 2026" for the current year, just the year before it. */
+export function markerBubbleLabel(marker: MonthMarker, currentYear: number): string {
+  const year = markerYear(marker.key);
+  return year === null || year === currentYear ? marker.label : String(year);
+}
+
 /**
  * Month whose header governs `offset` — the last header at or above it.
  * Offsets before the first header resolve to the first month.

@@ -77,7 +77,20 @@ export const MonthRailThumb = styled.div<{ $active: boolean }>`
   will-change: transform;
 `;
 
-export const MonthRailBubble = styled.div<{ $visible: boolean }>`
+/** Month/year label beside the rail, aligned with the thumb centre for its fraction. */
+export const MonthRailTick = styled.span<{ $fraction: number }>`
+  position: absolute;
+  right: 1.875rem;
+  top: calc(${({ $fraction }) => $fraction} * (100% - 2.5rem) + 1.25rem);
+  transform: translateY(-50%);
+  font-size: 0.6875rem;
+  line-height: 1;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  pointer-events: none;
+`;
+
+export const MonthRailBubble =styled.div<{ $visible: boolean }>`
   position: absolute;
   right: 1.875rem;
   top: 0;

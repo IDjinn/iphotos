@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { MonthRailBubble, MonthRailThumb, MonthRailTrack } from "./gallery.styles";
+import { MonthRailBubble, MonthRailThumb, MonthRailTick, MonthRailTrack } from "./gallery.styles";
 
 export interface MonthRailMonth {
   /** "yyyy-MM", or "" for photos without a taken date (timeline end). */
@@ -34,6 +34,42 @@ export function monthBucketLabel(month: string): string {
   return MONTH_FORMAT.format(new Date(year, m - 1, 1));
 }
 
+const MONTH_SHORT = new Intl.DateTimeFormat("en", { month: "short" });
+/** Minimum track fraction between ticks so labels never overlap. */
+const TICK_MIN_FRACTION = 0.035;
+
+/** Bubble text: full "Month YYYY" for the current year, only the year before it. */
+export function railBubbleLabel(entry: MonthRailMonth, currentYear: number): string {
+  if (!entry.month) return entry.label;
+  const year = Number(entry.month.slice(0, 4));
+  return year === currentYear ? entry.label : String(year);
+}
+
+/** Rail ticks: each month of the current year, one tick per older year. */
+export function buildRailTicks(
+  months: MonthRailMonth[],
+  currentYear: number,
+): { label: string; fraction: number }[] {
+  const ticks: { label: string; fraction: number }[] = [];
+  let lastYear: number | null = null;
+  let lastFraction = -Infinity;
+  for (const entry of months) {
+    if (!entry.month) continue;
+    const [year, m] = entry.month.split("-").map(Number);
+    const label =
+      year === currentYear
+        ? MONTH_SHORT.format(new Date(year, m - 1, 1))
+        : year !== lastYear
+          ? String(year)
+          : null;
+    lastYear = year;
+    if (label === null || entry.fraction - lastFraction < TICK_MIN_FRACTION) continue;
+    ticks.push({ label, fraction: entry.fraction });
+    lastFraction = entry.fraction;
+  }
+  return ticks;
+}
+
 /**
  * Google-Photos-style month rail for the gallery: a draggable right-edge
  * thumb with a month bubble; release snaps to the month under it (scrolls
@@ -47,6 +83,8 @@ export function MonthRail({ months, rowCount, scrollElement, scrollToRow, onJump
   const [active, setActive] = useState(false);
   const [bubble, setBubble] = useState<string | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const ticks = useMemo(() => buildRailTicks(months, currentYear), [months, currentYear]);
 
   const positionThumb = useCallback((progress: number) => {
     const track = trackRef.current;
@@ -119,13 +157,13 @@ export function MonthRail({ months, rowCount, scrollElement, scrollToRow, onJump
         setActive(true);
         const progress = progressFromEvent(event.currentTarget, event.clientY);
         positionThumb(progress);
-        setBubble(monthAt(progress).label);
+        setBubble(railBubbleLabel(monthAt(progress), currentYear));
       }}
       onPointerMove={(event) => {
         if (!draggingRef.current) return;
         const progress = progressFromEvent(event.currentTarget, event.clientY);
         positionThumb(progress);
-        setBubble(monthAt(progress).label);
+        setBubble(railBubbleLabel(monthAt(progress), currentYear));
       }}
       onPointerUp={(event) => {
         if (!draggingRef.current) return;
@@ -156,6 +194,11 @@ export function MonthRail({ months, rowCount, scrollElement, scrollToRow, onJump
         }
       }}
     >
+      {ticks.map((tick) => (
+        <MonthRailTick key={`${tick.label}-${tick.fraction}`} $fraction={tick.fraction} aria-hidden>
+          {tick.label}
+        </MonthRailTick>
+      ))}
       <MonthRailBubble ref={bubbleRef} $visible={bubble !== null}>
         {bubble}
       </MonthRailBubble>

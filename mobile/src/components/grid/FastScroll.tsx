@@ -19,12 +19,12 @@ import type { AccessibilityActionEvent } from 'react-native';
 
 import { useReducedMotion } from '@/animations/useReducedMotion';
 import { ThemedText } from '@/components/ThemedText';
-import type { GridLayoutMetrics } from '@/data/grid-metrics';
+import { buildRailTicks, markerBubbleLabel, type GridLayoutMetrics } from '@/data/grid-metrics';
 import { Durations } from '@/theme/tokens';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
-import { Bubble, Handle, Rail, Zone } from './FastScroll.styles';
+import { Bubble, Handle, Rail, Tick, Zone } from './FastScroll.styles';
 
 export interface FastScrollHandle {
   /** Show the rail and restart the auto-hide timer (grid calls this on scroll). */
@@ -55,6 +55,8 @@ interface FastScrollProps {
 const HIDE_DELAY_MS = 700;
 const MIN_THUMB_DP = 48;
 const BUBBLE_HALF_DP = 18;
+const TICK_MIN_GAP_DP = 16;
+const TICK_HALF_DP = 7;
 
 /**
  * Google-Photos-style fast scroll: a right-edge rail with a draggable
@@ -87,6 +89,7 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
   const draggingRef = useRef(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
   const inset = space[3];
   const timelineHeight = metrics.contentHeight;
   const windowH = windowHeight ?? timelineHeight;
@@ -129,11 +132,27 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
     (index: number) => {
       const marker = metrics.months[index];
       if (!marker) return;
-      setMonthLabel(marker.label);
+      setMonthLabel(markerBubbleLabel(marker, currentYear));
       haptic('selection');
     },
-    [metrics]
+    [metrics, currentYear]
   );
+
+  // Rail labels: months of this year + one tick per older year, thinned so
+  // neighbours never overlap.
+  const ticks = useMemo(() => {
+    const minGap = ms(TICK_MIN_GAP_DP);
+    const placed: { top: number; label: string }[] = [];
+    let lastTop = -Infinity;
+    for (const tick of buildRailTicks(metrics.months, currentYear)) {
+      const progress = Math.min(1, Math.max(0, tick.offset / timelineScrollable));
+      const top = inset + progress * travel + thumbHeight / 2 - ms(TICK_HALF_DP);
+      if (top - lastTop < minGap) continue;
+      placed.push({ top, label: tick.label });
+      lastTop = top;
+    }
+    return placed;
+  }, [metrics, currentYear, timelineScrollable, inset, travel, thumbHeight, ms]);
 
   const settle = useCallback(
     (index: number) => {
@@ -297,6 +316,11 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
           <Handle style={thumbStyle} $height={thumbHeight} $active={active} />
         </Zone>
       </GestureDetector>
+      {ticks.map((tick) => (
+        <Tick key={`${tick.label}-${tick.top}`} $top={tick.top} pointerEvents="none">
+          {tick.label}
+        </Tick>
+      ))}
       <Bubble style={bubbleStyle} pointerEvents="none">
         <ThemedText variant="body" color="textInverse">
           {monthLabel}
