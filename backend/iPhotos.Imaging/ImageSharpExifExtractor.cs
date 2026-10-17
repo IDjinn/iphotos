@@ -46,7 +46,7 @@ public sealed class ImageSharpExifExtractor : IExifExtractor
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
                 out var parsed)
-            ? new DateTimeOffset(parsed, TimeSpan.Zero)
+            ? PlausibleDate.OrNull(new DateTimeOffset(parsed, TimeSpan.Zero))
             : null;
     }
 
