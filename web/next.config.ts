@@ -8,8 +8,11 @@ const nextConfig: NextConfig = {
     styledComponents: true,
   },
   rewrites() {
+    // API_PROXY_TARGET lets `bun dev` proxy a remote API same-origin (no CORS);
+    // the default is the compose service name used by the Docker image.
+    const target = (process.env.API_PROXY_TARGET ?? "http://api:8080").replace(/\/+$/, "");
     return [
-      { source: '/api/:path*', destination: 'http://api:8080/api/:path*' },
+      { source: "/api/:path*", destination: `${target}/api/:path*` },
     ];
   }
 };

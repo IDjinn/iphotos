@@ -181,11 +181,12 @@ export const TopBarActions = styled.div`
   margin-left: auto;
 `;
 
-export const NavItem = styled(Link)<{ $active?: boolean }>`
+export const NavItem = styled(Link)<{ $active?: boolean; $nested?: boolean }>`
   display: flex;
   align-items: center;
   gap: 0.625rem;
   padding: 0.5rem 0.75rem;
+  padding-left: ${({ $nested }) => ($nested ? "2.125rem" : "0.75rem")};
   border-radius: var(--radius);
   font-size: 0.875rem;
   font-weight: 500;

@@ -10,6 +10,7 @@ import {
   SettingsIcon,
   SparklesIcon,
   SquareArrowOutUpRightIcon,
+  ScanFaceIcon,
   UsersIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -40,9 +41,16 @@ import {
   TopBarActions,
 } from "./app-shell.styles";
 
-const NAV_ITEMS = [
+const NAV_ITEMS: Array<{
+  href: string;
+  label: string;
+  icon: typeof ImagesIcon;
+  nested?: boolean;
+}> = [
   { href: "/photos", label: "Photos", icon: ImagesIcon },
   { href: "/people", label: "People", icon: UsersIcon },
+  // Submenu of People: indented under it.
+  { href: "/people/review", label: "Review faces", icon: ScanFaceIcon, nested: true },
   { href: "/import", label: "Import", icon: SquareArrowOutUpRightIcon },
   { href: "/subscription", label: "Subscription", icon: CreditCardIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
@@ -50,13 +58,18 @@ const NAV_ITEMS = [
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  // Longest matching href wins, so /people/review doesn't also light up People.
+  const activeHref = NAV_ITEMS.filter(
+    ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
+  ).sort((a, b) => b.href.length - a.href.length)[0]?.href;
   return (
     <>
-      {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
+      {NAV_ITEMS.map(({ href, label, icon: Icon, nested }) => (
         <NavItem
           key={href}
           href={href}
-          $active={pathname === href || pathname.startsWith(`${href}/`)}
+          $active={href === activeHref}
+          $nested={nested}
           onClick={onNavigate}
         >
           <Icon aria-hidden />

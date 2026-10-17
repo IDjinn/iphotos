@@ -1,6 +1,6 @@
 import { fetchFileBlob, type VariantKind } from "@/data/cloud-photos-repository";
 import { fetchFaceCropBlob } from "@/data/people-repository";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 
 /**
  * Object-URL cache for authenticated file variants. These requests carry the
@@ -90,7 +90,71 @@ export function useAuthFileUrl(photoId: string, kind: VariantKind, enabled = tru
   });
 }
 
-const faceCropCache = new BlobUrlCache(400);
+const faceCropCache = new BlobUrlCache(600);
+
+/**
+ * Caps concurrent face-crop downloads and lets on-screen crops jump ahead of
+ * background prefetches, so warming the next page never delays a visible tile
+ * (browsers allow ~6 connections per host anyway; queueing here keeps the
+ * order under our control).
+ */
+class LoadScheduler {
+  private active = 0;
+  private readonly high: Array<() => void> = [];
+  private readonly low: Array<() => void> = [];
+
+  constructor(private readonly limit: number) {}
+
+  run<T>(task: () => Promise<T>, priority: "high" | "low"): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const start = () => {
+        this.active += 1;
+        task()
+          .then(resolve, reject)
+          .finally(() => {
+            this.active -= 1;
+            this.next();
+          });
+      };
+      (priority === "high" ? this.high : this.low).push(start);
+      this.next();
+    });
+  }
+
+  private next(): void {
+    while (this.active < this.limit) {
+      const job = this.high.shift() ?? this.low.shift();
+      if (!job) return;
+      job();
+    }
+  }
+}
+
+const faceCropScheduler = new LoadScheduler(6);
+
+const faceCropQueryKey = (faceId: string) => ["face-crop-url", faceId] as const;
+
+function loadFaceCrop(faceId: string, priority: "high" | "low"): Promise<string> {
+  return faceCropCache.load(faceId, () =>
+    faceCropScheduler.run(() => fetchFaceCropBlob(faceId), priority),
+  );
+}
+
+/**
+ * Warms face crops into the same query cache `useFaceCropUrl` reads, at low
+ * priority — the tiles that later mount find their object URL already resolved.
+ */
+export function prefetchFaceCrops(queryClient: QueryClient, faceIds: Array<string | null>): void {
+  if (typeof window === "undefined") return;
+  for (const faceId of faceIds) {
+    if (!faceId) continue;
+    void queryClient.prefetchQuery({
+      queryKey: faceCropQueryKey(faceId),
+      queryFn: () => loadFaceCrop(faceId, "low"),
+      staleTime: Infinity,
+    });
+  }
+}
 
 /**
  * Drops the cached object URLs of one photo's variants — call after a server-side
@@ -109,8 +173,8 @@ export function invalidateAuthFileUrls(photoId: string): void {
  */
 export function useFaceCropUrl(faceId: string | null, enabled = true) {
   return useQuery({
-    queryKey: ["face-crop-url", faceId],
-    queryFn: () => faceCropCache.load(faceId!, () => fetchFaceCropBlob(faceId!)),
+    queryKey: faceCropQueryKey(faceId ?? ""),
+    queryFn: () => loadFaceCrop(faceId!, "high"),
     enabled: enabled && !!faceId && typeof window !== "undefined",
     staleTime: Infinity,
   });
