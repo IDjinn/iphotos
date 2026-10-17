@@ -73,7 +73,9 @@ export function mapAsset(a: MediaLibrary.Asset): PhotoAsset {
     isLive: type === 'photo' && (a.mediaSubtypes?.includes('livePhoto') ?? false),
     width: a.width ?? 0,
     height: a.height ?? 0,
-    creationTime: a.creationTime ?? 0,
+    // The media store reports 0 (not null) when DATE_TAKEN is missing, which
+    // renders as 1969/1970. Fall back to the file's modification time; 0 means undated.
+    creationTime: a.creationTime || a.modificationTime || 0,
     modificationTime: a.modificationTime ?? 0,
     duration: typeof a.duration === 'number' && a.duration > 0 ? a.duration : undefined,
   };
