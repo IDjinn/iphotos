@@ -42,7 +42,7 @@ export default function PhotosScreen() {
   const { t, tCount } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { assets, permission, loading, refreshing, loadMore, refresh, reloadCloud, askPermission, cloudById } =
+  const { assets, permission, loading, refreshing, loadMore, jumpToMonth, jumping, loadNewer, hasNewer, timelineMonths, refresh, reloadCloud, askPermission, cloudById } =
     useUnifiedFeed();
   const [playingCloud, setPlayingCloud] = useState<CloudPhoto | null>(null);
 
@@ -188,6 +188,10 @@ export default function PhotosScreen() {
           }}
           refreshing={refreshing}
           onEndReached={() => void loadMore()}
+          timelineMonths={timelineMonths}
+          onJumpToMonth={jumpToMonth}
+          jumping={jumping}
+          onStartReached={hasNewer ? () => void loadNewer() : undefined}
           onCloudVideoPress={(asset) => {
             const photo = cloudById.get(asset.id);
             if (photo) setPlayingCloud(photo);

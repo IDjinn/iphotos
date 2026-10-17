@@ -19,12 +19,19 @@ import type { AccessibilityActionEvent } from 'react-native';
 
 import { useReducedMotion } from '@/animations/useReducedMotion';
 import { ThemedText } from '@/components/ThemedText';
-import { buildRailTicks, markerBubbleLabel, type GridLayoutMetrics } from '@/data/grid-metrics';
+import {
+  buildRailKnots,
+  buildRailTicks,
+  markerBubbleLabel,
+  offsetToRail,
+  railToOffset,
+  type GridLayoutMetrics,
+} from '@/data/grid-metrics';
 import { Durations } from '@/theme/tokens';
 import { useTheme } from '@/theme/context';
 import { haptic } from '@/utils/haptics';
 
-import { Bubble, Handle, Rail, Tick, Zone } from './FastScroll.styles';
+import { Bubble, Handle, Rail, Tick, TickLayer, Zone } from './FastScroll.styles';
 
 export interface FastScrollHandle {
   /** Show the rail and restart the auto-hide timer (grid calls this on scroll). */
@@ -50,11 +57,19 @@ interface FastScrollProps {
    * refetches starting there. Without it, out-of-window months snap to top.
    */
   onJumpToMonth?: (markerIndex: number) => void;
+  /**
+   * Scrub reached the end of the loaded timeline — the owner should page in
+   * more (called on every update while held there, and on release).
+   */
+  onNeedMore?: () => void;
 }
 
 const HIDE_DELAY_MS = 700;
+/** Rail never fully hides, so it is always easy to grab. */
+const RAIL_IDLE_OPACITY = 1;
 const MIN_THUMB_DP = 48;
 const BUBBLE_HALF_DP = 18;
+const NEED_MORE_PROGRESS = 0.9;
 const TICK_MIN_GAP_DP = 16;
 const TICK_HALF_DP = 7;
 
@@ -73,13 +88,16 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
     windowOffset = 0,
     windowHeight,
     onJumpToMonth,
+    onNeedMore,
   },
   ref
 ) {
   const { ms, space } = useTheme();
   const reducedMotion = useReducedMotion();
 
-  const opacity = useSharedValue(0);
+  const opacity = useSharedValue(1);
+  // Labels only show while scrolling/scrubbing; the rail itself stays put.
+  const tickOpacity = useSharedValue(0);
   const dragging = useSharedValue(0);
   const dragProgress = useSharedValue(0);
   const lastMonth = useSharedValue(-1);
@@ -95,6 +113,10 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
   const windowH = windowHeight ?? timelineHeight;
   const maxScroll = Math.max(0, windowH - viewportHeight);
   const timelineScrollable = Math.max(1, timelineHeight - viewportHeight);
+  const knots = useMemo(
+    () => buildRailKnots(metrics.months, timelineScrollable),
+    [metrics, timelineScrollable]
+  );
   const trackHeight = Math.max(0, viewportHeight - inset * 2);
   const thumbHeight = Math.max(
     ms(MIN_THUMB_DP),
@@ -106,13 +128,15 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
 
   const reveal = useCallback(() => {
     opacity.value = withTiming(1, { duration: reducedMotion ? 0 : Durations.fast });
+    tickOpacity.value = withTiming(1, { duration: reducedMotion ? 0 : Durations.fast });
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       if (!draggingRef.current) {
-        opacity.value = withTiming(0, { duration: reducedMotion ? 0 : Durations.normal });
+        opacity.value = withTiming(RAIL_IDLE_OPACITY, { duration: reducedMotion ? 0 : Durations.normal });
+        tickOpacity.value = withTiming(0, { duration: reducedMotion ? 0 : Durations.normal });
       }
     }, HIDE_DELAY_MS);
-  }, [opacity, reducedMotion]);
+  }, [opacity, tickOpacity, reducedMotion]);
 
   useImperativeHandle(ref, () => ({ reveal }), [reveal]);
 
@@ -145,14 +169,14 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
     const placed: { top: number; label: string }[] = [];
     let lastTop = -Infinity;
     for (const tick of buildRailTicks(metrics.months, currentYear)) {
-      const progress = Math.min(1, Math.max(0, tick.offset / timelineScrollable));
+      const progress = offsetToRail(tick.offset, knots);
       const top = inset + progress * travel + thumbHeight / 2 - ms(TICK_HALF_DP);
       if (top - lastTop < minGap) continue;
       placed.push({ top, label: tick.label });
       lastTop = top;
     }
     return placed;
-  }, [metrics, currentYear, timelineScrollable, inset, travel, thumbHeight, ms]);
+  }, [metrics, currentYear, knots, inset, travel, thumbHeight, ms]);
 
   const settle = useCallback(
     (index: number) => {
@@ -163,16 +187,17 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
         reveal();
         return;
       }
-      if (marker.offset >= windowOffset) {
-        scrollToOffset(marker.offset - windowOffset, !reducedMotion);
-      } else if (onJumpToMonth) {
+      const beyondLoaded = marker.offset >= windowOffset + windowH;
+      if (onJumpToMonth && (marker.offset < windowOffset || beyondLoaded)) {
         onJumpToMonth(index);
+      } else if (marker.offset >= windowOffset) {
+        scrollToOffset(marker.offset - windowOffset, !reducedMotion);
       } else {
         scrollToOffset(0, !reducedMotion);
       }
       reveal();
     },
-    [metrics, scrollToOffset, reducedMotion, reveal, windowOffset, onJumpToMonth]
+    [metrics, scrollToOffset, reducedMotion, reveal, windowOffset, windowH, onJumpToMonth]
   );
 
   const beginScrub = useCallback(() => {
@@ -202,10 +227,11 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
           dragging.value = 1;
           const progress = Math.min(1, Math.max(0, (e.y - inset - thumbHeight / 2) / travel));
           dragProgress.value = progress;
+          if (onNeedMore && progress >= NEED_MORE_PROGRESS) runOnJS(onNeedMore)();
           // Scrub position on the full timeline: inside the loaded window it
           // scrolls live, above it the bubble previews the month a release
           // will jump to.
-          const target = progress * (timelineHeight - viewportHeight);
+          const target = railToOffset(progress, knots);
           if (target >= windowOffset) {
             runOnJS(scrubTo)(target - windowOffset);
           }
@@ -224,14 +250,14 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
         .onEnd(() => {
           dragging.value = 0;
           runOnJS(settle)(lastMonth.value);
+          if (onNeedMore && dragProgress.value >= NEED_MORE_PROGRESS) runOnJS(onNeedMore)();
         }),
     [
       ms,
       inset,
       thumbHeight,
       travel,
-      timelineHeight,
-      viewportHeight,
+      knots,
       windowOffset,
       metrics,
       dragging,
@@ -242,16 +268,17 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
       showMonth,
       scrubTo,
       settle,
+      onNeedMore,
     ]
   );
 
   const railStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  const tickLayerStyle = useAnimatedStyle(() => ({ opacity: tickOpacity.value }));
 
   const thumbStyle = useAnimatedStyle(() => {
-    const position = dragging.value
-      ? dragProgress.value * (timelineHeight - viewportHeight)
-      : windowOffset + Math.min(Math.max(scrollOffset.value, 0), maxScroll);
-    const progress = Math.min(1, Math.max(0, position / timelineScrollable));
+    const progress = dragging.value
+      ? dragProgress.value
+      : offsetToRail(windowOffset + Math.min(Math.max(scrollOffset.value, 0), maxScroll), knots);
     return { transform: [{ translateY: progress * travel }] };
   });
 
@@ -282,14 +309,14 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
       const next = Math.min(months.length - 1, Math.max(0, index + delta));
       const marker = months[next];
       haptic('selection');
-      if (marker.offset >= windowOffset) {
-        scrollToOffset(marker.offset - windowOffset, !reducedMotion);
-      } else if (onJumpToMonth) {
+      if (onJumpToMonth && (marker.offset < windowOffset || marker.offset >= windowOffset + windowH)) {
         onJumpToMonth(next);
+      } else if (marker.offset >= windowOffset) {
+        scrollToOffset(marker.offset - windowOffset, !reducedMotion);
       }
       reveal();
     },
-    [metrics, scrollOffset, maxScroll, windowOffset, scrollToOffset, reducedMotion, onJumpToMonth, reveal]
+    [metrics, scrollOffset, maxScroll, windowOffset, windowH, scrollToOffset, reducedMotion, onJumpToMonth, reveal]
   );
 
   const handleAccessibilityAction = useCallback(
@@ -316,11 +343,13 @@ export const FastScroll = forwardRef<FastScrollHandle, FastScrollProps>(function
           <Handle style={thumbStyle} $height={thumbHeight} $active={active} />
         </Zone>
       </GestureDetector>
-      {ticks.map((tick) => (
-        <Tick key={`${tick.label}-${tick.top}`} $top={tick.top} pointerEvents="none">
-          {tick.label}
-        </Tick>
-      ))}
+      <TickLayer style={tickLayerStyle} pointerEvents="none">
+        {ticks.map((tick) => (
+          <Tick key={`${tick.label}-${tick.top}`} $top={tick.top}>
+            {tick.label}
+          </Tick>
+        ))}
+      </TickLayer>
       <Bubble style={bubbleStyle} pointerEvents="none">
         <ThemedText variant="body" color="textInverse">
           {monthLabel}

@@ -58,3 +58,36 @@ export function mergeFeeds(device: FeedSource, cloud: FeedSource): MergedFeed {
   // The source with the newest low is the one holding the frontier back.
   return { assets: merged, blocker: cloudLow >= deviceLow ? 'cloud' : 'device' };
 }
+
+/** Highest loaded time of an unfinished ascending source; -Infinity while nothing is loaded. */
+function highOf(source: FeedSource): number {
+  if (source.horizon !== undefined) return source.horizon;
+  if (source.items.length === 0) return Number.NEGATIVE_INFINITY;
+  return source.items[source.items.length - 1].creationTime;
+}
+
+/**
+ * Upward counterpart of `mergeFeeds` for the "newer than the window" side: both
+ * sources are oldest-first, and an item is only safe once no unloaded page of
+ * either could still hold something older. Returns the safe items oldest-first.
+ */
+export function mergeNewer(device: FeedSource, cloud: FeedSource): PhotoAsset[] {
+  const deviceHigh = device.done ? Number.POSITIVE_INFINITY : highOf(device);
+  const cloudHigh = cloud.done ? Number.POSITIVE_INFINITY : highOf(cloud);
+  const frontier = Math.min(deviceHigh, cloudHigh);
+
+  const merged: PhotoAsset[] = [];
+  let d = 0;
+  let c = 0;
+  while (d < device.items.length || c < cloud.items.length) {
+    const takeDevice =
+      c >= cloud.items.length ||
+      (d < device.items.length && device.items[d].creationTime <= cloud.items[c].creationTime);
+    const next = takeDevice ? device.items[d] : cloud.items[c];
+    if (next.creationTime > frontier) break;
+    merged.push(next);
+    if (takeDevice) d += 1;
+    else c += 1;
+  }
+  return merged;
+}

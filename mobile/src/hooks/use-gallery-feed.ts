@@ -18,13 +18,16 @@ function toPermissionState(response: Awaited<ReturnType<typeof getPermissionStat
  * Paginated newest-first gallery feed for the Photos tab.
  * Excludes Locked Folder items and reacts to library changes.
  */
-export function useGalleryFeed() {
+export function useGalleryFeed(before?: number) {
   const [assets, setAssets] = useState<PhotoAsset[]>([]);
   const [permission, setPermission] = useState<PermissionState>('unknown');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [endReached, setEndReached] = useState(false);
   const cursorRef = useRef<string | undefined>(undefined);
+  const epochRef = useRef(0);
+  /** `before` bound the currently shown assets were loaded with. */
+  const [loadedBefore, setLoadedBefore] = useState<number | undefined>(undefined);
 
   const lockedSet = useLibraryStore((s) => s.lockedSet);
 
@@ -37,19 +40,28 @@ export function useGalleryFeed() {
 
   const loadFirstPage = useCallback(async () => {
     setLoading(true);
-    const page = await queryAssets({ excludeIds: useLibraryStore.getState().lockedSet });
+    const epoch = ++epochRef.current;
+    const page = await queryAssets({
+      excludeIds: useLibraryStore.getState().lockedSet,
+      createdBefore: before,
+    });
+    if (epoch !== epochRef.current) return; // a newer window superseded this one
     cursorRef.current = page.cursor;
     setEndReached(page.endReached);
     setAssets(page.assets);
+    setLoadedBefore(before);
     setLoading(false);
-  }, []);
+  }, [before]);
 
   const loadMore = useCallback(async () => {
     if (endReached || cursorRef.current === undefined) return;
+    const epoch = epochRef.current;
     const page = await queryAssets({
       cursor: cursorRef.current,
       excludeIds: useLibraryStore.getState().lockedSet,
+      createdBefore: before,
     });
+    if (epoch !== epochRef.current) return;
     cursorRef.current = page.cursor;
     if (page.endReached) setEndReached(true);
     if (page.assets.length > 0) {
@@ -58,7 +70,7 @@ export function useGalleryFeed() {
         return [...prev, ...page.assets.filter((a) => !seen.has(a.id))];
       });
     }
-  }, [endReached]);
+  }, [endReached, before]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -102,5 +114,5 @@ export function useGalleryFeed() {
     if (next === 'granted' || next === 'limited') await loadFirstPage();
   }, [loadFirstPage]);
 
-  return { assets, permission, loading, refreshing, endReached, loadMore, refresh, askPermission };
+  return { assets, permission, loading, refreshing, endReached, loadedBefore, loadMore, refresh, askPermission };
 }

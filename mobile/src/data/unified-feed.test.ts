@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mergeFeeds, type FeedSource } from './unified-feed';
+import { mergeFeeds, mergeNewer, type FeedSource } from './unified-feed';
 import type { PhotoAsset } from './types';
 
 function asset(id: string, creationTime: number): PhotoAsset {
@@ -73,5 +73,17 @@ describe('mergeFeeds', () => {
       assets: [],
       blocker: null,
     });
+  });
+});
+
+describe('mergeNewer', () => {
+  it('holds items past the lowest unfinished source frontier', () => {
+    const out = mergeNewer(source([10, 20, 30], false, 'd'), source([15, 25, 35, 45], false, 'c'));
+    expect(out.map((a) => a.creationTime)).toEqual([10, 15, 20, 25, 30]);
+  });
+
+  it('releases everything once both sources are done', () => {
+    const out = mergeNewer(source([10, 30], true, 'd'), source([20], true, 'c'));
+    expect(out.map((a) => a.creationTime)).toEqual([10, 20, 30]);
   });
 });

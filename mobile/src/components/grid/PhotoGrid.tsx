@@ -1,6 +1,7 @@
 import { FlashList, type FlashListRef, type ListRenderItem } from '@shopify/flash-list';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   RefreshControl,
   useWindowDimensions,
   type LayoutChangeEvent,
@@ -13,9 +14,11 @@ import { withCachedCloudUris } from '@/data/cloud-asset';
 import { buildGridData, type GridItem } from '@/data/grouping';
 import {
   computeGridLayout,
+  buildTimelineMetrics,
   offsetForPhotoIndex,
   photoAnchorAtOffset,
 } from '@/data/grid-metrics';
+import type { PhotoMonthBucket } from '@/data/cloud-photos-repository';
 import type { PhotoAsset } from '@/data/types';
 import { useSelectionStore } from '@/stores/selection';
 import { useViewerStore, type ViewerContext } from '@/stores/viewer';
@@ -26,7 +29,7 @@ import { useTheme } from '@/theme/context';
 import { FastScroll, type FastScrollHandle } from './FastScroll';
 import { DayHeader, GridRow, MonthHeader } from './GridHeaders';
 import { dayHeaderHeight, monthHeaderHeight } from './GridHeaders.styles';
-import { Grid } from './PhotoGrid.styles';
+import { Grid, JumpOverlay } from './PhotoGrid.styles';
 import { usePinchColumns } from './usePinchColumns';
 
 interface PhotoGridProps {
@@ -36,6 +39,14 @@ interface PhotoGridProps {
   onRefresh?: () => void;
   refreshing?: boolean;
   onEndReached?: () => void;
+  /** Scrolled to the top of a rebased window — load the newer photos above it. */
+  onStartReached?: () => void;
+  /** Full-timeline month buckets (newest first) so the rail covers unloaded months. */
+  timelineMonths?: PhotoMonthBucket[];
+  /** Rebase the feed onto a month ("YYYY-MM") — the rail jumped outside the loaded window. */
+  onJumpToMonth?: (month: string) => void;
+  /** A rebased window is loading: show a loader instead of stale photos. */
+  jumping?: boolean;
   stickyMonths?: boolean;
   /** Google-Photos-style month fast-scroll rail on the right edge. */
   fastScroll?: boolean;
@@ -62,6 +73,10 @@ export function PhotoGrid({
   onRefresh,
   refreshing = false,
   onEndReached,
+  onStartReached,
+  timelineMonths,
+  onJumpToMonth,
+  jumping = false,
   stickyMonths = true,
   fastScroll = true,
   onCellPress,
@@ -96,6 +111,36 @@ export function PhotoGrid({
       }),
     [gridData, cellSize, theme]
   );
+
+  const timeline = useMemo(
+    () =>
+      timelineMonths && timelineMonths.length > 0
+        ? buildTimelineMetrics(
+            gridLayout,
+            timelineMonths,
+            { monthHeaderHeight: monthHeaderHeight(theme), rowHeight: cellSize + GRID_GAP },
+            columns
+          )
+        : { metrics: gridLayout, windowOffset: 0 },
+    [gridLayout, timelineMonths, theme, cellSize, columns]
+  );
+
+  const handleJumpToMonth = useCallback(
+    (index: number) => {
+      const marker = timeline.metrics.months[index];
+      if (marker && onJumpToMonth) onJumpToMonth(marker.key.slice(2)); // "m-2026-03" → "2026-03"
+    },
+    [timeline, onJumpToMonth]
+  );
+
+  // A rebased window starts at the target month: back to the top once it lands.
+  const wasJumpingRef = useRef(false);
+  useEffect(() => {
+    if (wasJumpingRef.current && !jumping) {
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }
+    wasJumpingRef.current = jumping;
+  }, [jumping]);
 
   useEffect(() => {
     onStepRef.current = () => {
@@ -192,6 +237,8 @@ export function PhotoGrid({
             fastScrollRef.current?.reveal();
           }}
           onEndReached={onEndReached}
+          onStartReached={onStartReached}
+          onStartReachedThreshold={0.5}
           onEndReachedThreshold={0.6}
           refreshControl={
             onRefresh ? (
@@ -205,13 +252,22 @@ export function PhotoGrid({
           }
         />
       </GestureDetector>
+      {jumping ? (
+        <JumpOverlay pointerEvents="auto">
+          <ActivityIndicator size="large" color={theme.colors.accent} />
+        </JumpOverlay>
+      ) : null}
       {fastScroll && viewportHeight > 0 ? (
         <FastScroll
           ref={fastScrollRef}
-          metrics={gridLayout}
+          metrics={timeline.metrics}
           viewportHeight={viewportHeight}
           scrollOffset={scrollOffset}
           scrollToOffset={scrollToOffset}
+          windowOffset={timeline.windowOffset}
+          windowHeight={gridLayout.contentHeight}
+          onJumpToMonth={onJumpToMonth ? handleJumpToMonth : undefined}
+          onNeedMore={onEndReached}
         />
       ) : null}
     </Grid>
