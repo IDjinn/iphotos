@@ -771,6 +771,8 @@ public sealed class PhotoService(
     {
         content.Position = 0;
         var info = await videoProcessor.ProbeAsync(content, cancellationToken);
+        // PutAsync may dispose a spooled-file stream, so read the length up front.
+        var sizeBytes = content.Length;
 
         var blobPath = BlobPaths.Motion(photo.OwnerId, photo.Id, fileName);
         var existing = await variants.FindByKindAsync(photo.Id, VariantKind.Motion, cancellationToken);
@@ -785,13 +787,13 @@ public sealed class PhotoService(
         if (existing is not null)
         {
             existing.BlobPath = blobPath;
-            existing.SizeBytes = content.Length;
+            existing.SizeBytes = sizeBytes;
             existing.Format = VariantFormats.FromMime(contentType);
         }
         else
         {
             await variants.AddAsync(
-                PhotoVariant.Create(photo.Id, VariantKind.Motion, blobPath, 0, 0, content.Length,
+                PhotoVariant.Create(photo.Id, VariantKind.Motion, blobPath, 0, 0, sizeBytes,
                     VariantFormats.FromMime(contentType), dateTime.UtcNow),
                 cancellationToken);
         }
