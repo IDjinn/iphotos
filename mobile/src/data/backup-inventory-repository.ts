@@ -329,6 +329,30 @@ export function getUploadedHashes(): Set<string> {
   return new Set(rows.map((r) => r.content_hash));
 }
 
+/** Hashes of every device row, whatever its state — a cloud twin of any of them is not "cloud only". */
+export function getInventoryHashes(): Set<string> {
+  const rows = db.getAllSync<{ content_hash: string }>(
+    'SELECT DISTINCT content_hash FROM backup_inventory WHERE content_hash IS NOT NULL'
+  );
+  return new Set(rows.map((r) => r.content_hash));
+}
+
+/** Device asset ids already backed up — drives the sync badge in the Photos timeline. */
+export function getUploadedAssetIds(): Set<string> {
+  const rows = db.getAllSync<{ asset_id: string }>(
+    "SELECT asset_id FROM backup_inventory WHERE state = 'uploaded'"
+  );
+  return new Set(rows.map((r) => r.asset_id));
+}
+
+/** Cloud photo ids this device uploaded (`blob_key`) — lets legacy rows without a hash dedupe too. */
+export function getUploadedPhotoIds(): Set<string> {
+  const rows = db.getAllSync<{ blob_key: string }>(
+    "SELECT blob_key FROM backup_inventory WHERE state = 'uploaded' AND blob_key IS NOT NULL"
+  );
+  return new Set(rows.map((r) => r.blob_key));
+}
+
 /**
  * Marks every not-yet-uploaded row whose hash the server already knows as
  * `uploaded` — seeds the inventory after a reinstall or on a new device.

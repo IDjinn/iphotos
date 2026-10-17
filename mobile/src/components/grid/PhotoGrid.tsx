@@ -9,6 +9,7 @@ import { GestureDetector } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
 
 import { measureHeroCell } from '@/animations/hero';
+import { withCachedCloudUris } from '@/data/cloud-asset';
 import { buildGridData, type GridItem } from '@/data/grouping';
 import {
   computeGridLayout,
@@ -40,7 +41,14 @@ interface PhotoGridProps {
   fastScroll?: boolean;
   /** Overrides the default viewer open (e.g. decrypt-on-demand in encrypted mode). */
   onCellPress?: (asset: PhotoAsset) => void;
+  /**
+   * Cloud-only videos can't open in the pager viewer: they are left out of its
+   * swipe list and a tap on one goes to `onCloudVideoPress` instead.
+   */
+  onCloudVideoPress?: (asset: PhotoAsset) => void;
 }
+
+const isCloudVideo = (asset: PhotoAsset) => asset.syncState === 'cloud' && asset.mediaType === 'video';
 
 /**
  * The main photo grid: 3 columns, sticky month headers, day groups
@@ -57,6 +65,7 @@ export function PhotoGrid({
   stickyMonths = true,
   fastScroll = true,
   onCellPress,
+  onCloudVideoPress,
 }: PhotoGridProps) {
   const theme = useTheme();
   const listRef = useRef<FlashListRef<GridItem>>(null);
@@ -116,16 +125,25 @@ export function PhotoGrid({
     (asset: PhotoAsset) => {
       const selection = useSelectionStore.getState();
       if (selection.active) {
-        selection.toggle(asset.id);
+        // Cloud-only items can't take part in device bulk actions.
+        if (asset.syncState !== 'cloud') selection.toggle(asset.id);
         return;
       }
-      const index = assets.findIndex((a) => a.id === asset.id);
+      if (isCloudVideo(asset)) {
+        onCloudVideoPress?.(asset);
+        return;
+      }
+      const hasCloud = assets.some((a) => a.syncState === 'cloud');
+      const viewable = hasCloud
+        ? assets.filter((a) => !isCloudVideo(a)).map(withCachedCloudUris)
+        : assets;
+      const index = viewable.findIndex((a) => a.id === asset.id);
       if (index < 0) return;
       measureHeroCell(asset.id).then((origin) => {
-        openViewer(assets, index, context, { albumId, origin });
+        openViewer(viewable, index, context, { albumId, origin });
       });
     },
-    [assets, context, albumId, openViewer]
+    [assets, context, albumId, openViewer, onCloudVideoPress]
   );
 
   const handleCellPress = useCallback(

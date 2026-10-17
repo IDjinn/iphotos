@@ -108,6 +108,8 @@ export function ViewerOverlay() {
 
   const current = assets[index];
   const isVideo = current?.mediaType === 'video';
+  // Cloud-only items inside the unified Photos timeline behave like the cloud viewer.
+  const isCloudItem = context === 'cloud' || current?.syncState === 'cloud';
 
   const dur = (ms: number) => (reducedMotion ? 0 : ms);
 
@@ -263,7 +265,7 @@ export function ViewerOverlay() {
   };
 
   const handleShare = () => {
-    if (context === 'cloud') return;
+    if (isCloudItem) return;
     if (current) void shareAssets([current]);
   };
 
@@ -276,7 +278,7 @@ export function ViewerOverlay() {
   };
 
   const handleFavorite = () => {
-    if (!current || context === 'cloud') return;
+    if (!current || isCloudItem) return;
     const wasFavorite = useLibraryStore.getState().favoriteSet.has(current.id);
     useLibraryStore.getState().toggleFavorite(current.id);
     setToast(wasFavorite ? 'Removed from favorites' : 'Added to favorites');
@@ -284,7 +286,7 @@ export function ViewerOverlay() {
 
   const handleDelete = () => {
     if (!current) return;
-    if (context === 'cloud') {
+    if (isCloudItem) {
       void confirmDialog({
         title: 'Delete from cloud?',
         message: 'This photo will be removed from your backup on all devices.',
@@ -469,7 +471,7 @@ export function ViewerOverlay() {
         playing={videoPlaying}
         muted={videoMuted}
         favoriteKey={0}
-        variant={context === 'cloud' ? 'cloud' : 'device'}
+        variant={isCloudItem ? 'cloud' : 'device'}
         onClose={requestClose}
         onInfo={() => setInfoVisible(true)}
         onShare={handleShare}
@@ -501,11 +503,15 @@ export function ViewerOverlay() {
         <InfoRow
           label="Storage"
           value={
-            context === 'cloud'
+            isCloudItem
               ? 'Cloud backup'
               : current.vaultId
                 ? 'Encrypted in the Locked Folder'
-                : 'On device · cloud backup arrives in phase 2'
+                : current.syncState === 'synced'
+                  ? 'On device · backed up'
+                  : current.syncState === 'local'
+                    ? 'On device only · not backed up'
+                    : 'On device'
           }
         />
       </BottomSheet>

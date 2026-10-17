@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -25,9 +25,12 @@ import {
 } from '@/screens/(tabs)/index.styles';
 import { useBulkActions, BULK_TOAST, type BulkToast } from '@/hooks/use-bulk-actions';
 import { deviceDeleteHasSystemConfirm } from '@/utils/share';
-import { useGalleryFeed } from '@/hooks/use-gallery-feed';
+import { CloudVideoPlayer } from '@/components/CloudVideoPlayer';
+import type { CloudPhoto } from '@/data/cloud-photos-repository';
+import { useUnifiedFeed } from '@/hooks/use-unified-feed';
 import { useTranslation } from '@/i18n/hook';
 import { useSelectionStore } from '@/stores/selection';
+import { useViewerStore } from '@/stores/viewer';
 import { useTheme } from '@/theme/context';
 
 /**
@@ -39,7 +42,18 @@ export default function PhotosScreen() {
   const { t, tCount } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { assets, permission, loading, refreshing, loadMore, refresh, askPermission } = useGalleryFeed();
+  const { assets, permission, loading, refreshing, loadMore, refresh, reloadCloud, askPermission, cloudById } =
+    useUnifiedFeed();
+  const [playingCloud, setPlayingCloud] = useState<CloudPhoto | null>(null);
+
+  // The viewer can delete cloud-only photos itself — re-sync the cloud pages when it closes.
+  const viewerClosedAt = useViewerStore((s) => s.closedAt);
+  const lastSeenClose = useRef(0);
+  useEffect(() => {
+    if (viewerClosedAt === 0 || viewerClosedAt === lastSeenClose.current) return;
+    lastSeenClose.current = viewerClosedAt;
+    void reloadCloud();
+  }, [viewerClosedAt, reloadCloud]);
 
   const selectionActive = useSelectionStore((s) => s.active);
   const selectedCount = useSelectionStore((s) => s.ids.length);
@@ -146,7 +160,11 @@ export default function PhotosScreen() {
             <HeaderTitle variant="titleMedium">{tCount('selection.count', selectedCount, { count: selectedCount.toLocaleString() })}</HeaderTitle>
             <Pressable
               hitSlop={12}
-              onPress={() => useSelectionStore.getState().selectMany(shownAssets.map((a) => a.id))}
+              onPress={() =>
+                useSelectionStore
+                  .getState()
+                  .selectMany(shownAssets.filter((a) => a.syncState !== 'cloud').map((a) => a.id))
+              }
               accessibilityLabel={t('selection.selectAll')}
             >
               <Icon name="checkmark-circle-outline" size={24} />
@@ -170,7 +188,12 @@ export default function PhotosScreen() {
           }}
           refreshing={refreshing}
           onEndReached={() => void loadMore()}
+          onCloudVideoPress={(asset) => {
+            const photo = cloudById.get(asset.id);
+            if (photo) setPlayingCloud(photo);
+          }}
         />
+        <CloudVideoPlayer photo={playingCloud} onClose={() => setPlayingCloud(null)} />
 
         {selectionActive ? (
           <SelectionBar

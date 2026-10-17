@@ -12,13 +12,18 @@ import { registerHeroCell } from '@/animations/hero';
 import { Icon } from '@/components/Icon';
 import {
   CellImage,
+  CellPlaceholder,
   CellPressable,
   CheckCircle,
   CheckWrap,
   DimLayer,
   Duration,
   MediaBadge,
+  SyncBadge,
 } from '@/components/grid/PhotoCell.styles';
+import { getCachedCloudFileUri } from '@/data/cloud-media-cache';
+import { useCloudThumbnailUri } from '@/hooks/use-cloud-file';
+import { useIsOffline } from '@/hooks/use-net-info';
 import { useThumbnailUri } from '@/hooks/use-thumbnail-uri';
 import { useSelectionStore } from '@/stores/selection';
 import { Springs } from '@/theme/tokens';
@@ -31,6 +36,46 @@ interface PhotoCellProps {
   asset: PhotoAsset;
   size: number;
   onPress: (asset: PhotoAsset) => void;
+}
+
+/** Device asset thumbnail: persistent generated thumbnail, original as fallback. */
+function DeviceThumb({ asset }: { asset: PhotoAsset }) {
+  const sourceUri = useThumbnailUri(asset);
+  return (
+    <CellImage
+      source={{ uri: sourceUri }}
+      contentFit="cover"
+      transition={180}
+      recyclingKey={asset.id}
+      cachePolicy="memory-disk"
+    />
+  );
+}
+
+/** Cloud-only thumbnail: served from the persistent cloud cache, downloaded on first view. */
+function CloudThumb({ asset }: { asset: PhotoAsset }) {
+  const { colors } = useTheme();
+  const offline = useIsOffline();
+  const remote = useCloudThumbnailUri(asset.id);
+  // Offline the hook never downloads — look the persistent cache up directly.
+  const cachedUri = offline ? getCachedCloudFileUri(asset.id, 'thumbnail') : null;
+  const source = offline ? (cachedUri ? { uri: cachedUri } : null) : remote;
+  if (!source) {
+    return (
+      <CellPlaceholder>
+        <Icon name="cloud-outline" size={18} color={colors.iconInactive} />
+      </CellPlaceholder>
+    );
+  }
+  return (
+    <CellImage
+      source={source}
+      contentFit="cover"
+      transition={180}
+      recyclingKey={asset.id}
+      cachePolicy="memory-disk"
+    />
+  );
 }
 
 /**
@@ -62,7 +107,7 @@ export function PhotoCell({ asset, size, onPress }: PhotoCellProps) {
 
   const isVideo = asset.mediaType === 'video';
   const isLive = !isVideo && asset.isLive === true;
-  const sourceUri = useThumbnailUri(asset);
+  const cloudOnly = asset.syncState === 'cloud';
 
   return (
     <View ref={viewRef} collapsable={false} style={{ width: size, height: size }}>
@@ -70,17 +115,18 @@ export function PhotoCell({ asset, size, onPress }: PhotoCellProps) {
         <CellPressable
           onPress={() => onPress(asset)}
           onLongPress={() => {
+            // Cloud-only items have no device file: device bulk actions don't apply.
+            if (cloudOnly) return;
             haptic('medium');
             useSelectionStore.getState().begin(asset.id);
           }}
         >
-          <CellImage
-            source={{ uri: sourceUri }}
-            contentFit="cover"
-            transition={180}
-            recyclingKey={asset.id}
-            cachePolicy="memory-disk"
-          />
+          {cloudOnly ? <CloudThumb asset={asset} /> : <DeviceThumb asset={asset} />}
+          {asset.syncState === 'local' ? (
+            <SyncBadge pointerEvents="none" accessibilityLabel="Not backed up">
+              <Icon name="cloud-offline-outline" size={12} color={colors.textInverse} />
+            </SyncBadge>
+          ) : null}
           {isVideo || isLive ? (
             <MediaBadge pointerEvents="none">
               <Icon

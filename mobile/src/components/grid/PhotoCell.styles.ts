@@ -30,6 +30,30 @@ export const MediaBadge = styled.View`
   justify-content: center;
 `;
 
+/** Shown while a cloud-only thumbnail is not on disk yet (or offline and never cached). */
+export const CellPlaceholder = styled.View`
+  ${absoluteFill}
+  background-color: ${({ theme }) => theme.colors.surface};
+  align-items: center;
+  justify-content: center;
+`;
+
+/**
+ * "Not hosted" indicator pinned to the bottom-right corner: the item exists
+ * only on this device (not backed up), as in Google Photos' crossed-out cloud.
+ */
+export const SyncBadge = styled.View`
+  position: absolute;
+  bottom: ${({ theme }) => theme.space[1]}px;
+  right: ${({ theme }) => theme.space[1]}px;
+  width: ${({ theme }) => theme.ms(20)}px;
+  height: ${({ theme }) => theme.ms(20)}px;
+  border-radius: ${({ theme }) => theme.radius.full}px;
+  background-color: ${({ theme }) => theme.colors.scrim};
+  align-items: center;
+  justify-content: center;
+`;
+
 /** Duration label pinned to the cell's bottom edge (over media, theme-independent shadow). */
 export const Duration = styled(Text)`
   position: absolute;

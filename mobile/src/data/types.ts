@@ -38,6 +38,14 @@ export interface PhotoAsset {
    * fall back to when `uri` fails to load, e.g. while offline.
    */
   fallbackUri?: string;
+  /**
+   * Where the item lives in the unified Photos timeline (Google Photos model):
+   * `local` = only on this device (not backed up — shows the "not hosted" badge),
+   * `synced` = on the device and in the cloud, `cloud` = in the cloud only
+   * (`id` is then the cloud photo id and `uri` an authenticated/cached cloud file).
+   * Unset in contexts that don't track sync (albums, locked folder, search…).
+   */
+  syncState?: 'local' | 'synced' | 'cloud';
 }
 
 export interface AlbumRecord {
