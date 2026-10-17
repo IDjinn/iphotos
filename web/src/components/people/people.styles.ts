@@ -48,9 +48,61 @@ export const GridFooter = styled.div`
   }
 `;
 
+/** The page's own scroll box (gallery convention): header stays put and the
+ * virtualized rows scroll inside it. */
+export const PeopleScroll = styled.div`
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+`;
+
+/** Horizontal gutter shared with `PeopleGrid`, so virtual rows and the plain
+ * grids below line up. */
+export const PeopleRows = styled.div`
+  padding: 0.25rem 1rem 1rem;
+
+  ${breakpoint.lg} {
+    padding: 0.25rem 2rem 1rem;
+  }
+`;
+
+/** Sized to the virtualizer's total height; rows position inside it. */
+export const PeopleRowsInner = styled.div`
+  position: relative;
+  width: 100%;
+`;
+
+/** One virtual row: a tile grid (people, plus the suggestion cell when side by side). */
+export const PeopleRow = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+`;
+
+/** Tile grid of a row. Column count follows the measured width. */
+export const PeopleRowTiles = styled.div<{ $columns: number }>`
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(${(props) => props.$columns}, minmax(0, 1fr));
+  gap: 0.5rem;
+  align-items: start;
+`;
+
+/** Section heading as a virtual row (the gutter comes from PeopleRows). */
+export const RowTitle = styled.h2`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 1rem 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+`;
+
 export const PeopleGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
   gap: 0.5rem;
   align-items: start;
   padding: 0.25rem 1rem 2rem;
@@ -80,6 +132,16 @@ export const PersonTile = styled.button`
   }
 `;
 
+/** Loading twin of PersonTile — same padding/gap so the real tiles replace it
+ * without shifting the grid. */
+export const PersonTileSkeleton = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.5rem;
+`;
+
 /** Pending-review dot on a person tile — the review itself lives inside the
  * person's page, so the hub grid stays a uniform circle grid (doc 18 §10). */
 export const ReviewBadge = styled.span`
@@ -106,6 +168,48 @@ export const PersonTileCount = styled.span`
   color: var(--muted-foreground);
 `;
 
+/** Deck tile — the box of a person tile (same padding/gap), so the stack of
+ * suggestions takes exactly one grid cell. */
+export const DeckTileBox = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.5rem;
+  border-radius: var(--radius-md);
+`;
+
+/** Click target over the stacked cards (opens the review). */
+export const DeckStack = styled.button<{ $size: number }>`
+  position: relative;
+  width: ${(props) => props.$size}px;
+  height: ${(props) => props.$size}px;
+  border-radius: 9999px;
+
+  &:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 4px;
+  }
+`;
+
+/** One suggestion card in the deck. Position (offset/scale/opacity/stacking)
+ * comes inline from the cycle; only transform and opacity animate. */
+export const DeckCard = styled.span`
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  box-shadow:
+    0 0 0 2px var(--background),
+    0 0 0 3px var(--border);
+  transition:
+    transform 300ms ease,
+    opacity 300ms ease;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+`;
+
 export const SectionTitle = styled.h2`
   padding: 1rem 1rem 0.5rem;
   font-size: 1rem;
@@ -113,36 +217,6 @@ export const SectionTitle = styled.h2`
 
   ${breakpoint.lg} {
     padding: 1rem 2rem 0.5rem;
-  }
-`;
-
-/**
- * Review card living in the person's own grid slot (doc 18 §10): the person's
- * avatar next to the candidate faces, the question, and the actions. Spans two
- * columns so the strip and buttons fit without squeezing the tiles.
- */
-export const ReviewCard = styled.div`
-  grid-column: span 2;
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--card);
-`;
-
-/** Overlapping circle row for a review card's faces. */
-export const ReviewFaces = styled.div`
-  display: flex;
-  align-items: center;
-
-  & > * + * {
-    margin-left: -0.75rem;
-  }
-
-  & > * {
-    box-shadow: 0 0 0 2px var(--background);
   }
 `;
 
@@ -160,32 +234,4 @@ export const ReviewMore = styled.span`
   box-shadow: 0 0 0 2px var(--background);
   font-size: 0.6875rem;
   color: var(--muted-foreground);
-`;
-
-export const ReviewInfo = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  min-width: 0;
-
-  strong {
-    font-size: 0.875rem;
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  span {
-    font-size: 0.75rem;
-    color: var(--muted-foreground);
-    font-variant-numeric: tabular-nums;
-  }
-`;
-
-export const ReviewActions = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
 `;

@@ -1,54 +1,72 @@
 "use client";
 
-import { useEffect, useMemo, useState, useDeferredValue } from "react";
+import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   keepPreviousData,
   useInfiniteQuery,
-  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import {
   ImageOffIcon,
   ListFilterIcon,
-  UserRoundPlusIcon,
-  XIcon,
 } from "lucide-react";
-import { toast } from "sonner";
 import {
-  acceptPersonSuggestion,
   listPeoplePage,
   listPersonSuggestions,
+  type PeopleFilter,
   type Person,
-  type PersonSuggestion,
 } from "@/data/people-repository";
-import { SkeletonGrid, StatusArea, StatusBox } from "@/components/gallery/gallery.styles";
+import { prefetchFaceCrops } from "@/data/blob-cache";
+import { StatusArea, StatusBox } from "@/components/gallery/gallery.styles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Skeleton } from "@/components/ui/skeleton";
 import { FaceAvatar } from "./face-avatar";
+import { NewFacesDeck, NewFacesDeckSkeleton, useNewFaces } from "./new-faces";
+import { PeopleSkeletonGrid } from "./people-skeleton";
 import {
   CountLabel,
   GridFooter,
   PeopleArea,
-  PeopleGrid,
   PeopleHeader,
+  PeopleRow,
+  PeopleRowTiles,
+  PeopleRows,
+  PeopleRowsInner,
+  PeopleScroll,
   PersonTile,
   PersonTileCount,
   PersonTileName,
-  ReviewActions,
   ReviewBadge,
-  ReviewCard,
-  ReviewFaces,
-  ReviewInfo,
-  SectionTitle,
+  RowTitle,
 } from "./people.styles";
 import { useSuggestionDismissals } from "./use-suggestion-dismissals";
 
-const PAGE_SIZE = 50;
+/** Cover circle diameter in px (face crops are 160px, so this stays sharp). */
+const AVATAR_SIZE = 104;
+/** Window size — also the number of faces kept preloaded ahead of the scroll. */
+const PAGE_SIZE = 20;
+/** How long a prefetched window is reused before a re-request. */
+const WINDOW_STALE_MS = 30_000;
+/** Grid geometry of the virtual rows (px): min tile width, gap, and the fixed
+ * row heights. Fixed sizes keep the virtualizer from measuring every row (no
+ * per-row ResizeObserver, no layout shifts while scrolling); the tile row fits
+ * the tallest tile (cover + name + count + the optional "groups" line). */
+const TILE_MIN_WIDTH = 144;
+const TILE_GAP = 8;
+const TILE_ROW_HEIGHT = 208 + TILE_GAP;
+const TITLE_ROW_HEIGHT = 48;
+/** The suggestion deck is a pseudo-item: it takes the first cell of the grid. */
+const DECK = { deck: true } as const;
+type GridItem = Person | typeof DECK;
+
+type PeopleListRow =
+  | { kind: "title"; key: string; text: string }
+  | { kind: "tiles"; key: string; items: GridItem[] };
 
 /**
  * People hub (doc 18 §10), Google-Photos style: named people first, unnamed
@@ -66,21 +84,34 @@ export function PeopleScreen() {
 
   const name = searchParams.get("name") ?? "";
   const isNamed = searchParams.get("isNamed");
-  const deferred = useDeferredValue({ name, isNamed });
+  // Primitives, not an object literal: a fresh object every render never
+  // compares equal, so React would keep scheduling deferred re-renders forever.
+  const deferred = { name: useDeferredValue(name), isNamed: useDeferredValue(isNamed) };
   const hasFilters = Boolean(name || isNamed);
+
+  const filter = useMemo<PeopleFilter>(
+    () => ({
+      name: deferred.name || undefined,
+      isNamed:
+        deferred.isNamed === "true" ? true : deferred.isNamed === "false" ? false : undefined,
+    }),
+    [deferred.name, deferred.isNamed],
+  );
+  /** One window through the query cache: the scroll buffer below fetches the
+   * next window ahead of time under the same key, so reaching it is instant. */
+  const fetchWindow = useCallback(
+    (page: number) =>
+      queryClient.fetchQuery({
+        queryKey: ["people", "window", filter, page],
+        queryFn: () => listPeoplePage(page, PAGE_SIZE, filter),
+        staleTime: WINDOW_STALE_MS,
+      }),
+    [queryClient, filter],
+  );
 
   const peopleQuery = useInfiniteQuery({
     queryKey: ["people", deferred],
-    queryFn: ({ pageParam }) =>
-      listPeoplePage(pageParam, PAGE_SIZE, {
-        name: deferred.name || undefined,
-        isNamed:
-          deferred.isNamed === "true"
-            ? true
-            : deferred.isNamed === "false"
-              ? false
-              : undefined,
-      }),
+    queryFn: ({ pageParam }) => fetchWindow(pageParam),
     initialPageParam: 1,
     getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
     placeholderData: keepPreviousData,
@@ -92,56 +123,38 @@ export function PeopleScreen() {
     isFetchNextPageError,
     isPlaceholderData,
   } = peopleQuery;
+  // The suggestions endpoint is the heavy one (clusters every unassigned face):
+  // it waits for the first window so the grid's own requests get the line first.
   const suggestionsQuery = useQuery({
     queryKey: ["people-suggestions"],
     queryFn: listPersonSuggestions,
-  });
-  const { dismissed, dismiss } = useSuggestionDismissals();
-  /** The suggestion whose action is in flight — only its button disables. */
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  const create = useMutation({
-    mutationFn: (suggestion: PersonSuggestion) => acceptPersonSuggestion(suggestion.faceIds),
-    onMutate: (suggestion) => setBusyId(suggestion.id),
-    onSuccess: async (person) => {
-      setBusyId(null);
-      // Prefix key: refetches the visible page AND the merge-dialog listing.
-      await queryClient.invalidateQueries({ queryKey: ["people"] });
-      await queryClient.invalidateQueries({ queryKey: ["people-suggestions"] });
-      toast.success("Person created");
-      router.push(`/people/${person.id}`);
-    },
-    onError: () => {
-      setBusyId(null);
-      toast.error("Couldn't create the person. Try again.");
-    },
+    enabled: peopleQuery.data !== undefined,
+    staleTime: 60_000,
   });
 
-  // Infinite scroll: a sentinel under the grid pulls the next window before
-  // the user reaches the bottom. Paused while placeholder data shows (a filter
-  // change would otherwise fetch page 2 of the previous filter); the observer
-  // is re-created on fetch flips so a still-visible sentinel re-fires once a
-  // window lands without the user having to nudge the scroll.
-  const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
+  // Always keep the next window (PAGE_SIZE people) fetched and its face crops
+  // downloaded, so scrolling never waits on the network.
+  const lastWindow = peopleQuery.data?.pages.at(-1);
+  const nextWindow =
+    lastWindow && lastWindow.page < lastWindow.totalPages ? lastWindow.page + 1 : null;
   useEffect(() => {
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (
-          entries.some((entry) => entry.isIntersecting) &&
-          !isPlaceholderData &&
-          hasNextPage &&
-          !isFetchingNextPage
-        ) {
-          void fetchNextPage();
+    if (nextWindow === null || isPlaceholderData) return;
+    let cancelled = false;
+    fetchWindow(nextWindow)
+      .then((next) => {
+        if (!cancelled) {
+          prefetchFaceCrops(
+            queryClient,
+            next.items.map((person) => person.coverFaceId),
+          );
         }
-      },
-      { rootMargin: "600px 0px" },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [sentinel, fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData]);
-
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [nextWindow, isPlaceholderData, fetchWindow, queryClient]);
+  const { dismissed } = useSuggestionDismissals();
   const setFilter = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set(key, value);
@@ -175,11 +188,6 @@ export function PeopleScreen() {
     [activeGroups],
   );
 
-  const named = people.filter((p) => p.name !== null && !collapsedMemberIds.has(p.id));
-  const unnamed = people.filter((p) => p.name === null && !collapsedMemberIds.has(p.id));
-  const newPeople = (suggestionsQuery.data?.newPeople ?? []).filter(
-    (s) => !dismissed.includes(s.id),
-  );
 
   /** People with a pending review — the dot that leads to their page. `?? []`
    * tolerates stale cached payloads that predate personMergeGroups. */
@@ -197,6 +205,85 @@ export function PeopleScreen() {
     }
     return ids;
   }, [suggestionsQuery.data, dismissed]);
+
+  // Windowed grid: only the rows near the viewport are in the DOM, however many
+  // people have been paged in. Columns follow the measured width.
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
+  const [gridWidth, setGridWidth] = useState(1024);
+  useEffect(() => {
+    if (!gridEl) return;
+    const compute = () => setGridWidth(gridEl.clientWidth);
+    compute();
+    const observer = new ResizeObserver(compute);
+    observer.observe(gridEl);
+    return () => observer.disconnect();
+  }, [gridEl]);
+  const newFaces = useNewFaces(peopleQuery.data !== undefined, dismissed);
+  const { cards } = newFaces;
+  /** The deck holds the first grid cell while suggestions exist (or load). */
+  const hasDeck = !hasFilters && (cards.length > 0 || newFaces.isPending);
+  const columns = Math.max(1, Math.floor((gridWidth + TILE_GAP) / (TILE_MIN_WIDTH + TILE_GAP)));
+
+  const rows = useMemo(() => {
+    const visible = (p: Person) => !collapsedMemberIds.has(p.id);
+    const namedPeople: GridItem[] = people.filter((p) => p.name !== null && visible(p));
+    const unnamedPeople: GridItem[] = people.filter((p) => p.name === null && visible(p));
+    const out: PeopleListRow[] = [];
+    const push = (prefix: string, list: GridItem[]) => {
+      for (let i = 0; i < list.length; i += columns) {
+        const first = list[i];
+        out.push({
+          kind: "tiles",
+          key: `${prefix}:${"deck" in first ? "deck" : first.id}`,
+          items: list.slice(i, i + columns),
+        });
+      }
+    };
+    push("named", hasDeck ? [DECK, ...namedPeople] : namedPeople);
+    if (unnamedPeople.length > 0) {
+      out.push({ kind: "title", key: "unnamed-title", text: "Unnamed" });
+      push("unnamed", unnamedPeople);
+    }
+    return out;
+  }, [people, collapsedMemberIds, columns, hasDeck]);
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollEl,
+    estimateSize: (index) =>
+      rows[index]?.kind === "title" ? TITLE_ROW_HEIGHT : TILE_ROW_HEIGHT,
+    getItemKey: (index) => rows[index]?.key ?? index,
+    overscan: 4,
+    // Scroll events re-render through a normal (batched) update, not flushSync.
+    useFlushSync: false,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+
+  // Infinite scroll: pull the next window when the last rendered row nears the
+  // end of the list (the window is already prefetched, so it lands instantly).
+  // Paused during placeholder data (a filter switch would fetch page 2 of the
+  // previous filter) and after an error (retry is explicit).
+  const lastVirtualIndex = virtualItems.at(-1)?.index ?? -1;
+  useEffect(() => {
+    if (
+      lastVirtualIndex >= rows.length - 2 &&
+      hasNextPage &&
+      !isFetchingNextPage &&
+      !isFetchNextPageError &&
+      !isPlaceholderData
+    ) {
+      void fetchNextPage();
+    }
+  }, [
+    lastVirtualIndex,
+    rows.length,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    isPlaceholderData,
+    fetchNextPage,
+  ]);
 
   if (peopleQuery.isError) {
     return (
@@ -223,19 +310,12 @@ export function PeopleScreen() {
         <PeopleHeader>
           <h1>People</h1>
         </PeopleHeader>
-        <SkeletonGrid aria-busy="true">
-          {Array.from({ length: 12 }, (_, i) => (
-            <div key={i} className="flex flex-col items-center gap-2">
-              <Skeleton className="size-20 rounded-full" />
-              <Skeleton className="h-4 w-16" />
-            </div>
-          ))}
-        </SkeletonGrid>
+        <div aria-busy="true">
+          <PeopleSkeletonGrid count={PAGE_SIZE} />
+        </div>
       </>
     );
   }
-
-  const isEmpty = totalCount === 0 && newPeople.length === 0;
 
   return (
     <>
@@ -303,90 +383,87 @@ export function PeopleScreen() {
         </Popover>
       </PeopleHeader>
 
-      {isEmpty ? (
+      {totalCount === 0 ? (
         <StatusArea>
           <StatusBox>
-            <h2>No people yet</h2>
-            <p>
-              People show up here as face processing finds them in your photos. Uploads
-              are indexed automatically.
-            </p>
+            {hasFilters ? (
+              <>
+                <h2>No people match your filters</h2>
+                <p>Try a different name, or clear the filters to see everyone.</p>
+                <Button variant="outline" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              </>
+            ) : (
+              <>
+                <h2>No people yet</h2>
+                <p>
+                  People show up here as face processing finds them in your photos. Uploads
+                  are indexed automatically.
+                </p>
+              </>
+            )}
           </StatusBox>
         </StatusArea>
       ) : (
-        <>
+        <PeopleScroll ref={setScrollEl}>
           <PeopleArea $dimmed={peopleQuery.isPlaceholderData}>
-            {totalCount === 0 ? (
-              <StatusArea>
-                <StatusBox>
-                  <h2>No people match your filters</h2>
-                  <p>Try a different name, or clear the filters to see everyone.</p>
-                  <Button variant="outline" onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                </StatusBox>
-              </StatusArea>
-            ) : (
-              <>
-                {named.length > 0 ? <PeopleGrid>{named.map(renderPerson)}</PeopleGrid> : null}
+            <PeopleRows>
+              <PeopleRowsInner ref={setGridEl} style={{ height: virtualizer.getTotalSize() }}>
+                {virtualItems.map((item) => {
+                  const row = rows[item.index];
+                  if (!row) return null;
+                  const position = {
+                    height: item.size,
+                    transform: `translateY(${item.start}px)`,
+                  };
+                  return row.kind === "title" ? (
+                    <RowTitle key={item.key} style={position}>
+                      {row.text}
+                    </RowTitle>
+                  ) : (
+                    <PeopleRow key={item.key} style={position}>
+                      <PeopleRowTiles $columns={columns}>
+                        {row.items.map((entry) =>
+                          "deck" in entry ? (
+                            <div key="deck">{renderDeck()}</div>
+                          ) : (
+                            renderPerson(entry)
+                          ),
+                        )}
+                      </PeopleRowTiles>
+                    </PeopleRow>
+                  );
+                })}
+              </PeopleRowsInner>
+            </PeopleRows>
 
-                {unnamed.length > 0 ? (
-                  <>
-                    <SectionTitle>Unnamed</SectionTitle>
-                    <PeopleGrid>{unnamed.map(renderPerson)}</PeopleGrid>
-                  </>
-                ) : null}
-              </>
-            )}
-
-            {hasNextPage || isFetchingNextPage ? (
-              <>
-                <div ref={setSentinel} aria-hidden="true" />
-                {isFetchingNextPage ? (
-                  <PeopleGrid aria-hidden="true">
-                    {Array.from({ length: 8 }, (_, i) => (
-                      <div key={i} className="flex flex-col items-center gap-2">
-                        <Skeleton className="size-20 rounded-full" />
-                        <Skeleton className="h-4 w-16" />
-                      </div>
-                    ))}
-                  </PeopleGrid>
-                ) : null}
-                {isFetchNextPageError ? (
-                  <GridFooter>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void fetchNextPage()}
-                    >
-                      Couldn&apos;t load more. Try again
-                    </Button>
-                  </GridFooter>
-                ) : null}
-              </>
+            {isFetchingNextPage ? <PeopleSkeletonGrid count={columns} /> : null}
+            {isFetchNextPageError ? (
+              <GridFooter>
+                <Button variant="outline" size="sm" onClick={() => void fetchNextPage()}>
+                  Couldn&apos;t load more. Try again
+                </Button>
+              </GridFooter>
             ) : null}
           </PeopleArea>
-
-          {newPeople.length > 0 ? (
-            <>
-              <SectionTitle>New faces</SectionTitle>
-              <PeopleGrid>
-                {newPeople.map((suggestion) => (
-                  <NewPersonCard
-                    key={suggestion.id}
-                    suggestion={suggestion}
-                    busy={busyId === suggestion.id}
-                    onCreate={() => create.mutate(suggestion)}
-                    onDismiss={() => dismiss(suggestion.id)}
-                  />
-                ))}
-              </PeopleGrid>
-            </>
-          ) : null}
-        </>
+        </PeopleScroll>
       )}
     </>
   );
+
+  /** The suggestion deck (one grid cell); a skeleton while the queue loads. */
+  function renderDeck() {
+    if (cards.length === 0) return <NewFacesDeckSkeleton avatarSize={AVATAR_SIZE} />;
+    return (
+      <NewFacesDeck
+        cards={cards}
+        hasMore={newFaces.hasNextPage}
+        avatarSize={AVATAR_SIZE}
+        onReview={() => router.push("/people/review")}
+      />
+    );
+  }
 
   /** Every slot is the same circle tile — pending reviews only add a dot, and a
    * merge target shows how many duplicate groups are waiting behind it. */
@@ -399,7 +476,7 @@ export function PeopleScreen() {
         aria-label={person.name ?? "Unnamed person"}
       >
         {pendingReview.has(person.id) ? <ReviewBadge aria-hidden /> : null}
-        <FaceAvatar faceId={person.coverFaceId} size={80} label={person.name ?? "Unnamed"} />
+        <FaceAvatar faceId={person.coverFaceId} size={AVATAR_SIZE} label={person.name ?? "Unnamed"} />
         <PersonTileName>{person.name ?? "Unnamed"}</PersonTileName>
         <PersonTileCount>
           {person.faceCount} {person.faceCount === 1 ? "face" : "faces"}
@@ -412,54 +489,4 @@ export function PeopleScreen() {
       </PersonTile>
     );
   }
-}
-
-/** Review card for a cluster that matches no existing person — creating a person
- * groups the faces. */
-function NewPersonCard({
-  suggestion,
-  busy,
-  onCreate,
-  onDismiss,
-}: {
-  suggestion: PersonSuggestion;
-  busy: boolean;
-  onCreate: () => void;
-  onDismiss: () => void;
-}) {
-  const faces = [
-    suggestion.coverFaceId,
-    ...suggestion.faceIds.filter((id) => id !== suggestion.coverFaceId),
-  ].slice(0, 4);
-
-  return (
-    <ReviewCard>
-      <ReviewFaces>
-        {faces.map((faceId, index) => (
-          <FaceAvatar key={faceId ?? index} faceId={faceId} size={40} label="Suggested face" />
-        ))}
-      </ReviewFaces>
-      <ReviewInfo>
-        <strong>
-          {suggestion.faceCount} {suggestion.faceCount === 1 ? "face" : "faces"}
-        </strong>
-        <span>These may be the same new person.</span>
-      </ReviewInfo>
-      <ReviewActions>
-        <Button size="sm" disabled={busy} onClick={onCreate}>
-          <UserRoundPlusIcon aria-hidden />
-          {busy ? "Creating…" : "Create person"}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label="Dismiss suggestion"
-          onClick={onDismiss}
-        >
-          <XIcon aria-hidden />
-          Not now
-        </Button>
-      </ReviewActions>
-    </ReviewCard>
-  );
 }
