@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the iPhotos APK inside WSL (Ubuntu). See docs/BUILD_WSL.md for prerequisites.
 #
-# Usage (from WSL):  bash /mnt/c/dev/react-native/iphotos/frontend/scripts/build-wsl.sh [debug|release] [abi]
+# Usage (from WSL):  bash /mnt/c/dev/react-native/iphotos/mobile/scripts/build-wsl.sh [debug|release] [abi]
 # Default variant: release (standalone APK, JS bundled — no Metro needed).
 # Default ABI: arm64-v8a (physical phones). For an emulator use x86_64.
 #
@@ -22,7 +22,7 @@ case "${VARIANT_INPUT,,}" in
     ;;
 esac
 
-PROJECT_SRC=/mnt/c/dev/react-native/iphotos/frontend
+PROJECT_SRC=/mnt/c/dev/react-native/iphotos/mobile
 BUILD_DIR="$HOME/build/iphotos"
 OUT_APK="$BUILD_DIR/android/app/build/outputs/apk/$VARIANT_LOWER/app-$VARIANT_LOWER.apk"
 OUT_WIN=/mnt/c/Users/lucas/Downloads

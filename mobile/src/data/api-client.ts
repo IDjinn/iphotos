@@ -170,6 +170,9 @@ function toApiError(error: AxiosError): ApiError {
   return new ApiError(response.status, message);
 }
 
+/** Without a timeout an unreachable host leaves the login spinner pending forever. */
+const LOGIN_TIMEOUT_MS = 5_000;
+
 const http = create({ baseURL: API_URL });
 
 http.interceptors.request.use((config) => {
@@ -227,6 +230,8 @@ export interface ApiOptions {
   responseType?: AxiosRequestConfig['responseType'];
   /** Skip attaching the Bearer token and the 401 refresh retry (auth endpoints). */
   anonymous?: boolean;
+  /** Per-request timeout in ms; omitted = no timeout. */
+  timeout?: number;
 }
 
 /** Performs a request through the authenticated axios instance and returns the parsed body. */
@@ -241,6 +246,7 @@ export async function apiJson<T>(path: string, options: ApiOptions = {}): Promis
       data: options.body,
       responseType: options.responseType,
       anonymous: options.anonymous,
+      timeout: options.timeout,
     });
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -268,6 +274,7 @@ export async function login(email: string, password: string): Promise<AuthUser> 
     method: 'POST',
     body: { email, password },
     anonymous: true,
+    timeout: LOGIN_TIMEOUT_MS,
   });
   setSession(extractTokens(body));
   return { email };
