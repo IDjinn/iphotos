@@ -102,3 +102,17 @@ describe('pinch-column anchors', () => {
     expect(offsetForPhotoIndex(anchorItems, layout, -1)).toBe(40);
   });
 });
+
+describe('rail knots', () => {
+  const marker = (offset: number, key: string) => ({ itemIndex: 0, offset, key, label: key });
+
+  it('maps offsets and progress back and forth, giving small months a floor', async () => {
+    const { buildRailKnots, offsetToRail, railToOffset } = await import('./grid-metrics');
+    const knots = buildRailKnots([marker(0, 'm-2026-09'), marker(9000, 'm-2012-05')], 10000);
+    expect(offsetToRail(0, knots)).toBe(0);
+    expect(offsetToRail(10000, knots)).toBeCloseTo(1);
+    // The 1000px-tall old month still gets well over its 10% linear share.
+    expect(1 - offsetToRail(9000, knots)).toBeGreaterThan(0.25);
+    expect(railToOffset(offsetToRail(4321, knots), knots)).toBeCloseTo(4321);
+  });
+});

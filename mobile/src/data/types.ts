@@ -67,6 +67,8 @@ export interface AssetQuery {
   ids?: string[];
   createdAfter?: number;
   createdBefore?: number;
+  /** Oldest-first order (default newest-first) — pairs with `createdAfter` to walk upward. */
+  ascending?: boolean;
   mediaTypes?: PhotoAsset['mediaType'][];
   excludeIds?: Set<string>;
   cursor?: string;

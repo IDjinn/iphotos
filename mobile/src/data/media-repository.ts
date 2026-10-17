@@ -144,7 +144,7 @@ export async function queryAssets(query: AssetQuery = {}): Promise<GalleryPage> 
       MediaLibrary.getAssetsAsync({
         first: limit,
         after: cursor,
-        sortBy: [['creationTime', false]],
+        sortBy: [['creationTime', query.ascending === true]],
         mediaType: mediaTypeFilters(query.mediaTypes),
         createdAfter: query.createdAfter,
         createdBefore: query.createdBefore,

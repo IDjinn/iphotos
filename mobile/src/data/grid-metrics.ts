@@ -167,3 +167,113 @@ export function offsetForPhotoIndex(
   }
   return metrics.contentHeight;
 }
+
+/**
+ * Full-timeline rail metrics around a loaded window (newest-first buckets):
+ * months newer than the window become estimated markers above it (the
+ * window is shifted down by their height → `windowOffset`), months older than
+ * it estimated markers below. Heights are estimates (count / columns rows).
+ */
+export function buildTimelineMetrics(
+  loaded: GridLayoutMetrics,
+  buckets: { month: string; count: number }[],
+  heights: Pick<ItemHeights, 'monthHeaderHeight' | 'rowHeight'>,
+  columns: number
+): { metrics: GridLayoutMetrics; windowOffset: number } {
+  const first = loaded.months[0];
+  const last = loaded.months[loaded.months.length - 1];
+  const firstKey = first ? first.key.slice(2) : '';
+  const lastKey = last ? last.key.slice(2) : '';
+  const estimate = (count: number) =>
+    heights.monthHeaderHeight + Math.ceil(count / columns) * heights.rowHeight;
+
+  const months: MonthMarker[] = [];
+  let y = 0;
+  for (const bucket of buckets) {
+    if (!bucket.month || (firstKey && bucket.month <= firstKey)) continue;
+    months.push({ itemIndex: -1, offset: y, key: `m-${bucket.month}`, label: monthBucketLabelLocal(bucket.month) });
+    y += estimate(bucket.count);
+  }
+  const windowOffset = y;
+  for (const marker of loaded.months) months.push({ ...marker, offset: marker.offset + windowOffset });
+  y = windowOffset + loaded.contentHeight;
+  for (const bucket of buckets) {
+    if (!bucket.month || (lastKey && bucket.month >= lastKey)) continue;
+    months.push({ itemIndex: -1, offset: y, key: `m-${bucket.month}`, label: monthBucketLabelLocal(bucket.month) });
+    y += estimate(bucket.count);
+  }
+  return { metrics: { offsets: loaded.offsets, contentHeight: y, months }, windowOffset };
+}
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function monthBucketLabelLocal(month: string): string {
+  const [year, m] = month.split('-');
+  return `${MONTH_NAMES[Number(m) - 1] ?? m} ${year}`;
+}
+
+export interface RailKnots {
+  /** Timeline scroll offsets, ascending. */
+  offsets: number[];
+  /** Rail progress (0..1) for each offset, ascending. */
+  positions: number[];
+}
+
+/** Share of the rail given equally to every month, regardless of photo count. */
+const RAIL_EQUAL_SHARE = 0.5;
+
+/**
+ * Piecewise-linear map between timeline offset and rail progress. Each month
+ * gets half its rail space equally and half by content height, so sparse old
+ * months stay big enough to hit and busy months don't swallow the rail.
+ */
+export function buildRailKnots(months: MonthMarker[], scrollable: number): RailKnots {
+  const end = Math.max(1, scrollable);
+  const offsets: number[] = [];
+  for (const marker of months) {
+    const clamped = Math.min(Math.max(marker.offset, 0), end);
+    if (offsets.length === 0 || clamped > offsets[offsets.length - 1]) offsets.push(clamped);
+  }
+  if (offsets.length === 0 || offsets[0] > 0) offsets.unshift(0);
+  if (offsets[offsets.length - 1] < end) offsets.push(end);
+  const segments = offsets.length - 1;
+  const weights: number[] = [];
+  let total = 0;
+  for (let i = 0; i < segments; i += 1) {
+    const w = (1 - RAIL_EQUAL_SHARE) * ((offsets[i + 1] - offsets[i]) / end) + RAIL_EQUAL_SHARE / segments;
+    weights.push(w);
+    total += w;
+  }
+  const positions = [0];
+  let acc = 0;
+  for (let i = 0; i < segments; i += 1) {
+    acc += weights[i];
+    positions.push(acc / total);
+  }
+  return { offsets, positions };
+}
+
+/** Interpolates `value` along `from` → `to` knots (both ascending). */
+function mapKnots(value: number, from: number[], to: number[]): number {
+  'worklet';
+  const last = from.length - 1;
+  if (value <= from[0]) return to[0];
+  if (value >= from[last]) return to[last];
+  for (let i = 0; i < last; i += 1) {
+    if (value <= from[i + 1]) {
+      const span = from[i + 1] - from[i];
+      const t = span > 0 ? (value - from[i]) / span : 0;
+      return to[i] + t * (to[i + 1] - to[i]);
+    }
+  }
+  return to[last];
+}
+
+export function railToOffset(progress: number, knots: RailKnots): number {
+  'worklet';
+  return mapKnots(progress, knots.positions, knots.offsets);
+}
+
+export function offsetToRail(offset: number, knots: RailKnots): number {
+  'worklet';
+  return mapKnots(offset, knots.offsets, knots.positions);
+}
