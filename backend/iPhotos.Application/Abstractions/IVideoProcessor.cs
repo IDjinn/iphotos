@@ -29,4 +29,13 @@ public interface IVideoProcessor
     /// decodable frame; throws <see cref="InvalidImageException"/> when none does.
     /// </summary>
     Task<VideoFrame> ExtractFrameAsync(Stream video, double offsetSeconds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-encodes a Live Photo motion clip to H.264 in a QuickTime container with its
+    /// display transform (rotation and the front-camera mirror flip) baked into the
+    /// pixels. Players that ignore flip metadata (Android ExoPlayer) then render the
+    /// clip exactly like the still. Returns a seekable stream at position 0; throws
+    /// <see cref="InvalidImageException"/> when the stream cannot be transcoded.
+    /// </summary>
+    Task<Stream> NormalizeMotionAsync(Stream video, CancellationToken cancellationToken = default);
 }

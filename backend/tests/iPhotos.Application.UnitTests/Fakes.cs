@@ -677,6 +677,24 @@ public sealed class FakeVideoProcessor : IVideoProcessor
 
     public List<double> ExtractOffsets { get; } = [];
 
+    /// <summary>Thrown by <see cref="NormalizeMotionAsync"/> when set.</summary>
+    public Exception? ThrowOnNormalize { get; set; }
+
+    public int NormalizeCalls { get; private set; }
+
+    public Task<Stream> NormalizeMotionAsync(Stream video, CancellationToken cancellationToken = default)
+    {
+        NormalizeCalls++;
+        if (ThrowOnNormalize is not null)
+        {
+            throw ThrowOnNormalize;
+        }
+
+        // Identity: tests assert on stored bytes, the real transcode is ffmpeg's job.
+        video.Position = 0;
+        return Task.FromResult(video);
+    }
+
     public Task<VideoInfo> ProbeAsync(Stream video, CancellationToken cancellationToken = default)
     {
         ProbeCalls++;

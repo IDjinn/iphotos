@@ -771,6 +771,20 @@ public sealed class PhotoService(
     {
         content.Position = 0;
         var info = await videoProcessor.ProbeAsync(content, cancellationToken);
+
+        // Bake rotation/mirroring into the pixels so every player renders the clip like
+        // the still (Android ignores the front-camera flip). A failed transcode keeps the
+        // original bytes — the clip is never lost over a cosmetic fix.
+        content.Position = 0;
+        try
+        {
+            content = await videoProcessor.NormalizeMotionAsync(content, cancellationToken);
+        }
+        catch (InvalidImageException)
+        {
+            content.Position = 0;
+        }
+
         // PutAsync may dispose a spooled-file stream, so read the length up front.
         var sizeBytes = content.Length;
 
